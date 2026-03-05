@@ -109,7 +109,7 @@ class AppDrawerTileService : TileService() {
         }
 
         // Set the icon
-        tile.icon = Icon.createWithResource(this, R.drawable.ic_launcher_foreground)
+        tile.icon = Icon.createWithResource(this, R.mipmap.ic_launcher_foreground)
 
         tile.updateTile()
     }

@@ -1,0 +1,7 @@
+Initial F-Droid release
+
+- Multi-page home screen with drag-and-drop
+- App drawer with search and folders
+- Widget support with resize and cross-page drag
+- Customizable dock, icon sizes, grid sizes, and fonts
+- All data stored locally, no internet required

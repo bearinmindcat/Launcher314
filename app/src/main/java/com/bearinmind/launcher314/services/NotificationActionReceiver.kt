@@ -107,7 +107,7 @@ object NotificationDrawerAction {
 
         // Build the notification
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.mipmap.ic_launcher_foreground)
             .setContentTitle("App Drawer")
             .setContentText("Tap to open app drawer")
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -116,7 +116,7 @@ object NotificationDrawerAction {
             .setShowWhen(false) // Hide timestamp
             .setContentIntent(openDrawerPendingIntent)
             .addAction(
-                R.drawable.ic_launcher_foreground,
+                R.mipmap.ic_launcher_foreground,
                 "Open Drawer",
                 actionPendingIntent
             )
