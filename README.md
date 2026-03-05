@@ -1,4 +1,6 @@
-# <img width="100" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Launcher314"> Launcher314
+# <img width="100" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Launcher314" style="vertical-align: middle;"> Launcher314
+
+## ⚠️ Due to Android restrictions, you may have to disable Android Play Protect during installation, to avoid Launcher314 being blocked by Google
 
 ## About
 
