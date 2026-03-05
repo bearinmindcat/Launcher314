@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Launcher314</string>
+    <string name="accessibility_service_description">Adds an accessibility button to quickly open the app drawer. Tap the accessibility button (floating icon or nav bar button) to launch the drawer from anywhere.</string>
+</resources>
