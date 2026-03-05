@@ -1,8 +1,8 @@
-# <img width="40" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Launcher314"> Launcher314
+# <img width="100" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Launcher314"> Launcher314
 
 ## About
 
-Launcher314 is just a simple one screen android launcher people can use.
+I built this launcher for people to be able to easily access settings and customization all from one screen without having to go on a scavenger hunt to change something simple like row count or font size. I built this app to help me move to a more secure OS and thought oh, other people can use this too!
 
 All your data is stored locally on the device, no exuberant permissions required such as internet connection or any data collection libraries (you can check with apps like TrackerControl or apps that will scan libraries for trackers).
 
