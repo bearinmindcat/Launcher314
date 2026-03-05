@@ -6,6 +6,11 @@
 
 ⚠️ PSA; shit will go wrong while using this app, there will be features missing that you wish I added; but this app is in **BETA** and in the very early stages of testing and development, so I'll try to make note of your issues, run through them myself and fix them as quick as possible. My goal is to get this app to a clean smooth state, but in order to do that, people like you can help test and present issues & features that come up. I will do my best to fix everything in a timely manner while incorperating **YOUR** feature wishlist in a way that I think will work for everyone :)
 
+<a href="https://accrescent.app/app/com.bearinmind.launcher314"><img alt="Get it on Accrescent" src="https://accrescent.app/badges/get-it-on.png" height="80"></a>
+<a href="https://play.google.com/store/apps/details?id=com.bearinmind.launcher314"><img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="80"></a>
+<a href="https://f-droid.org/packages/com.bearinmind.launcher314/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80"></a>
+<a href="https://apt.izzysoft.de/packages/com.bearinmind.launcher314"><img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png" alt="Get it on IzzyOnDroid" height="80"></a>
+
 ## About
 
 I built this launcher for people to be able to easily access settings and customization all from one screen without having to go on a scavenger hunt to change something simple like row count or font size. I built this app to help me move to a more secure OS and thought oh, other people can use this too!
