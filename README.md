@@ -1,16 +1,4 @@
-<div align="center">
-
-<img width="100" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Launcher314">
-
-# Launcher314
-
-Just a simple one screen android launcher people can use
-
-![GitHub Release](https://img.shields.io/github/v/release/bearinmindcat/Launcher314?style=for-the-badge&color=lightseagreen)
-![GitHub License](https://img.shields.io/github/license/bearinmindcat/Launcher314?style=for-the-badge&color=teal)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/bearinmindcat/Launcher314/total?style=for-the-badge&color=aquamarine)
-
-</div>
+# <img width="40" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Launcher314"> Launcher314
 
 ## About
 
