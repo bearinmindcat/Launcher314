@@ -5,6 +5,7 @@
 /build
 /app/build
 /app/release
+/release
 *.apk
 *.ap_
 *.aab
