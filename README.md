@@ -1,6 +1,6 @@
-<table><tr><td><img width="100" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Launcher314"></td><td><h1>Launcher314</h1></td></tr></table>
+<h1><img width="100" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Launcher314" align="absmiddle"> Launcher314</h1>
 
-## ⚠️ PSA, shit will go wrong in this app, there will be features you don't like and wish I added, this app in in BETA and very early stages in testing to fix everything I couldn't catch myself. My goal is to get this app to a clean smooth state, but in order to do that, people like you can help test and present issues & features that come up. I will do my best to fix everything in a timely manner while incorperating YOUR feature wishlist in a way that I think will work for everyone :)
+⚠️ PSA, shit will go wrong in this app, there will be features you don't like and wish I added, this app is in BETA and in very early stages in testing to fix everything I couldn't catch myself. My goal is to get this app to a clean smooth state, but in order to do that, people like you can help test and present issues & features that come up. I will do my best to fix everything in a timely manner while incorperating YOUR feature wishlist in a way that I think will work for everyone :)
 
 ## About
 
