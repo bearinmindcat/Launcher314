@@ -1472,7 +1472,6 @@ fun HomeScreenPreviewSection(
                     .weight(1f)
                     .padding(start = 16.dp)
             ) {
-                key(iconSizePercent.roundToInt()) {
                     HomeScreenPreview(
                         gridColumns = gridColumns.roundToInt(),
                         gridRows = gridRows.roundToInt(),
@@ -1489,7 +1488,6 @@ fun HomeScreenPreviewSection(
                         wallpaperDrawable = wallpaperDrawable,
                         onPlayClick = onPreviewLauncher
                     )
-                }
             }
 
             // Vertical Icon Size Slider (50-125, red zone above overflow threshold)
@@ -1887,7 +1885,7 @@ private fun HomeScreenPreview(
                                                     model = File(cell.app.iconPath),
                                                     contentDescription = cell.app.name,
                                                     modifier = Modifier
-                                                        .size(baseIconSize)
+                                                        .requiredSize(baseIconSize)
                                                         .clip(RoundedCornerShape(4.dp)),
                                                     contentScale = ContentScale.Fit
                                                 )
@@ -1923,11 +1921,11 @@ private fun HomeScreenPreview(
                                             Column(
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
-                                                val folderBoxSize = minOf(baseIconSize, availableSize)
+                                                val folderBoxSize = baseIconSize
                                                 val folderCornerRadius = baseIconSize * 0.29f
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(folderBoxSize)
+                                                        .requiredSize(folderBoxSize)
                                                         .clip(RoundedCornerShape(folderCornerRadius))
                                                         .background(Color(0xFF1A1A1A)),
                                                     contentAlignment = Alignment.Center
@@ -2206,7 +2204,7 @@ private fun HomeScreenPreview(
                                         model = File(app.iconPath),
                                         contentDescription = app.name,
                                         modifier = Modifier
-                                            .size(dockIconSize)
+                                            .requiredSize(dockIconSize)
                                             .clip(RoundedCornerShape(4.dp)),
                                         contentScale = ContentScale.Fit
                                     )
