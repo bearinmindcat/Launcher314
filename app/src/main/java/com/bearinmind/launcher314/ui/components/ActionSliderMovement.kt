@@ -60,11 +60,12 @@ fun VerticalIconSizeSlider(
     // Track if user is currently dragging
     var isDragging by remember { mutableStateOf(false) }
     var isDragOnThumb by remember { mutableStateOf(false) }  // Only drag if started on thumb
+    var isOverflowSnapping by remember { mutableStateOf(false) }
 
     // Sync animated value with external changes (e.g., from linked slider)
     // Animate smoothly when not dragging
     LaunchedEffect(clampedSize) {
-        if (!isDragging) {
+        if (!isDragging && !isOverflowSnapping) {
             animatedValue.animateTo(
                 targetValue = clampedSize,
                 animationSpec = spring(
@@ -149,20 +150,29 @@ fun VerticalIconSizeSlider(
                             },
                             onDragEnd = {
                                 if (isDragOnThumb) {
-                                    // Snap to nearest valid tick at or below dragMax
+                                    // === Icon size slider snap-back animation ===
+                                    // When released from the red overflow zone, animate back
+                                    // to the nearest valid tick with a bouncy spring.
+                                    // stiffness = 300f controls the speed, DampingRatioMediumBouncy adds bounce.
                                     val validSnaps = snapTickValues.filter { it.toFloat() <= dragMax }
                                     val snappedValue = validSnaps.minByOrNull {
                                         kotlin.math.abs(it - animatedValue.value)
                                     }?.toFloat() ?: dragMax
+                                    val wasInOverflow = animatedValue.value > dragMax
+                                    if (wasInOverflow) isOverflowSnapping = true
                                     onSizeChange(snappedValue)
                                     coroutineScope.launch {
                                         animatedValue.animateTo(
                                             targetValue = snappedValue,
-                                            animationSpec = spring(
+                                            animationSpec = if (wasInOverflow) spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = 300f
+                                            ) else spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
                                                 stiffness = Spring.StiffnessMedium
                                             )
                                         )
+                                        isOverflowSnapping = false
                                         onSizeChangeFinished()
                                     }
                                 }
@@ -171,19 +181,27 @@ fun VerticalIconSizeSlider(
                             },
                             onDragCancel = {
                                 if (isDragOnThumb) {
+                                    // === Icon size slider snap-back animation (on cancel) ===
+                                    // Same logic as onDragEnd above.
                                     val validSnaps = snapTickValues.filter { it.toFloat() <= dragMax }
                                     val snappedValue = validSnaps.minByOrNull {
                                         kotlin.math.abs(it - animatedValue.value)
                                     }?.toFloat() ?: dragMax
+                                    val wasInOverflow = animatedValue.value > dragMax
+                                    if (wasInOverflow) isOverflowSnapping = true
                                     onSizeChange(snappedValue)
                                     coroutineScope.launch {
                                         animatedValue.animateTo(
                                             targetValue = snappedValue,
-                                            animationSpec = spring(
+                                            animationSpec = if (wasInOverflow) spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = 300f
+                                            ) else spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
                                                 stiffness = Spring.StiffnessMedium
                                             )
                                         )
+                                        isOverflowSnapping = false
                                     }
                                 }
                                 isDragging = false

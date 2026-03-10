@@ -171,7 +171,9 @@ fun AppDrawerPreviewSection(
     scrollbarHeightOverride: Int? = null,
     scrollbarColorOverride: Int? = null,
     scrollbarIntensityOverride: Int? = null,
-    iconTextSizeOverride: Int? = null
+    iconTextSizeOverride: Int? = null,
+    sharedIconSize: Float? = null,
+    onSharedIconSizeChanged: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -185,6 +187,14 @@ fun AppDrawerPreviewSection(
     var drawerGridRows by remember { mutableFloatStateOf(getDrawerGridRows(context).toFloat()) }
     var isPagedMode by remember { mutableStateOf(getDrawerPagedMode(context)) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
+
+    // Sync icon size from shared state (updated by either section's slider)
+    LaunchedEffect(sharedIconSize) {
+        if (sharedIconSize != null && sharedIconSize != currentIconSizePercent) {
+            currentIconSizePercent = sharedIconSize
+            setDrawerIconSizePercent(context, sharedIconSize.roundToInt())
+        }
+    }
 
     // Scrollbar settings (percentages) - use overrides if provided, otherwise load from SharedPreferences
     val scrollbarWidthPercent = scrollbarWidthOverride ?: remember { getScrollbarWidthPercent(context) }
@@ -311,6 +321,8 @@ fun AppDrawerPreviewSection(
             val maxSnap = snapTicks.filter { it.toFloat() <= universalOverflowThreshold }.maxOrNull()?.toFloat() ?: 50f
             currentIconSizePercent = maxSnap
             setDrawerIconSizePercent(context, maxSnap.roundToInt())
+            setHomeIconSizePercent(context, maxSnap.roundToInt())
+            onSharedIconSizeChanged(maxSnap)
         }
     }
 
@@ -358,6 +370,8 @@ fun AppDrawerPreviewSection(
                 onSizeChange = { newSize ->
                     currentIconSizePercent = newSize
                     setDrawerIconSizePercent(context, newSize.roundToInt())
+                    setHomeIconSizePercent(context, newSize.roundToInt())
+                    onSharedIconSizeChanged(newSize)
                     // If linked, update grid size to match
                     if (isLinked) {
                         val newGridSize = calculateLinkedGridSize(newSize.roundToInt()).toFloat()
@@ -369,6 +383,7 @@ fun AppDrawerPreviewSection(
                 },
                 onSizeChangeFinished = {
                     setDrawerIconSizePercent(context, currentIconSizePercent.roundToInt())
+                    setHomeIconSizePercent(context, currentIconSizePercent.roundToInt())
                     if (isLinked) {
                         val size = currentGridSize.roundToInt()
                         setGridSize(context, size)
@@ -1342,7 +1357,9 @@ fun loadPreviewWidgets(context: Context): List<PlacedWidget> {
 @Composable
 fun HomeScreenPreviewSection(
     onPreviewLauncher: () -> Unit = {},
-    iconTextSizeOverride: Int? = null
+    iconTextSizeOverride: Int? = null,
+    sharedIconSize: Float? = null,
+    onSharedIconSizeChanged: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1354,6 +1371,14 @@ fun HomeScreenPreviewSection(
     var dockColumns by remember { mutableFloatStateOf(getDockColumns(context).toFloat()) }
     var iconSizePercent by remember { mutableFloatStateOf(getHomeIconSizePercent(context).toFloat()) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
+
+    // Sync icon size from shared state (updated by either section's slider)
+    LaunchedEffect(sharedIconSize) {
+        if (sharedIconSize != null && sharedIconSize != iconSizePercent) {
+            iconSizePercent = sharedIconSize
+            setHomeIconSizePercent(context, sharedIconSize.roundToInt())
+        }
+    }
 
     // Load home screen apps, dock apps, folders, and widgets for preview
     var homeScreenApps by remember { mutableStateOf<List<HomeScreenAppData>>(emptyList()) }
@@ -1453,6 +1478,8 @@ fun HomeScreenPreviewSection(
             val maxSnap = snapTicks.filter { it.toFloat() <= universalOverflowThreshold }.maxOrNull()?.toFloat() ?: 50f
             iconSizePercent = maxSnap
             setHomeIconSizePercent(context, maxSnap.roundToInt())
+            setDrawerIconSizePercent(context, maxSnap.roundToInt())
+            onSharedIconSizeChanged(maxSnap)
         }
     }
 
@@ -1498,9 +1525,12 @@ fun HomeScreenPreviewSection(
                 onSizeChange = { newSize ->
                     iconSizePercent = newSize
                     setHomeIconSizePercent(context, newSize.roundToInt())
+                    setDrawerIconSizePercent(context, newSize.roundToInt())
+                    onSharedIconSizeChanged(newSize)
                 },
                 onSizeChangeFinished = {
                     setHomeIconSizePercent(context, iconSizePercent.roundToInt())
+                    setDrawerIconSizePercent(context, iconSizePercent.roundToInt())
                 }
             )
         }
@@ -1879,6 +1909,8 @@ private fun HomeScreenPreview(
                                                 horizontalAlignment = Alignment.CenterHorizontally,
                                                 modifier = Modifier
                                                     .fillMaxWidth()
+                                                    .wrapContentHeight(unbounded = true)
+                                                    .graphicsLayer { clip = false }
                                                     .padding(markerHalfSize)
                                             ) {
                                                 AsyncImage(
@@ -1911,15 +1943,13 @@ private fun HomeScreenPreview(
                                         }
                                         is HomePreviewCell.Folder -> {
                                             // Folder: 2x2 mini-icon grid in a dark rounded box + name
-                                            BoxWithConstraints(
-                                                contentAlignment = Alignment.TopCenter,
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
                                                 modifier = Modifier
                                                     .fillMaxWidth()
+                                                    .wrapContentHeight(unbounded = true)
+                                                    .graphicsLayer { clip = false }
                                                     .padding(markerHalfSize)
-                                            ) {
-                                            val availableSize = minOf(maxWidth, maxHeight - baseFontSize.value.dp - iconTextSpacer).coerceAtLeast(0.dp)
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 val folderBoxSize = baseIconSize
                                                 val folderCornerRadius = baseIconSize * 0.29f
@@ -2003,7 +2033,6 @@ private fun HomeScreenPreview(
                                                         )
                                                     )
                                                 )
-                                            }
                                             }
                                         }
                                         is HomePreviewCell.WidgetOrigin,

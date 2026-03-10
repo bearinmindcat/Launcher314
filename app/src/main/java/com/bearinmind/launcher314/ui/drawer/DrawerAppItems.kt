@@ -157,7 +157,7 @@ internal fun FolderItem(
     )   {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
+                .wrapContentHeight(unbounded = true)
                 .then(
                     if (dragEnabled) {
                         // Unified gesture: tap, long press (context menu), long press + drag
@@ -972,7 +972,7 @@ internal fun SelectableAppItem(
     Box {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
+                .wrapContentHeight(unbounded = true)
                 .then(
                     if (dragEnabled) {
                         // Unified gesture: tap, long press (context menu), long press + drag

@@ -54,6 +54,7 @@ import com.bearinmind.launcher314.helpers.FontManager
 import com.bearinmind.launcher314.data.getSelectedFont
 import com.bearinmind.launcher314.data.getSettingsSelectedTab
 import com.bearinmind.launcher314.data.setSettingsSelectedTab
+import com.bearinmind.launcher314.data.getDrawerIconSizePercent
 import androidx.compose.ui.text.font.FontFamily
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,6 +88,9 @@ fun SettingsScreen(
 
     // Icon text size state (shared between home screen and app drawer)
     var iconTextSizePercent by remember { mutableFloatStateOf(getIconTextSizePercent(context).toFloat()) }
+
+    // Icon size state (shared between home screen and app drawer previews)
+    var sharedIconSizePercent by remember { mutableFloatStateOf(getDrawerIconSizePercent(context).toFloat()) }
 
     // Accessibility service state - reflects actual system state
     var isAccessibilityServiceEnabled by remember {
@@ -217,7 +221,9 @@ fun SettingsScreen(
                         scrollbarHeightOverride = scrollbarHeight.roundToInt(),
                         scrollbarColorOverride = scrollbarColor,
                         scrollbarIntensityOverride = scrollbarIntensity.roundToInt(),
-                        iconTextSizeOverride = iconTextSizePercent.roundToInt()
+                        iconTextSizeOverride = iconTextSizePercent.roundToInt(),
+                        sharedIconSize = sharedIconSizePercent,
+                        onSharedIconSizeChanged = { sharedIconSizePercent = it }
                     )
                 }
 
@@ -230,7 +236,9 @@ fun SettingsScreen(
                         onPreviewLauncher = {
                             onPreviewLauncher()
                         },
-                        iconTextSizeOverride = iconTextSizePercent.roundToInt()
+                        iconTextSizeOverride = iconTextSizePercent.roundToInt(),
+                        sharedIconSize = sharedIconSizePercent,
+                        onSharedIconSizeChanged = { sharedIconSizePercent = it }
                     )
                 }
 
