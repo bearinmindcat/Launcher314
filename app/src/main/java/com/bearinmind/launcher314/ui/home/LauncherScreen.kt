@@ -1,5 +1,7 @@
 package com.bearinmind.launcher314.ui.home
 
+import com.bearinmind.launcher314.ui.components.EdgeScrollIndicators
+import com.bearinmind.launcher314.ui.components.handleEdgeScrollDetection
 import com.bearinmind.launcher314.ui.components.GridCellHoverIndicator
 import android.content.Context
 import android.content.Intent
@@ -313,6 +315,14 @@ fun LauncherScreen(
     var escapedToHomeGrid by remember { mutableStateOf(false) }
     // Grid area offset (root-relative) for geometry-based cell lookup
     var gridAreaOffset by remember { mutableStateOf(Offset.Zero) }
+    // Grid area box position and size (for edge-scroll indicator positioning)
+    var gridAreaBoxOffset by remember { mutableStateOf(Offset.Zero) }
+    var gridAreaBoxSize by remember { mutableStateOf(IntSize.Zero) }
+    // Edge-scroll hover state — true when drag is in the left/right edge zone
+    var isHoveringLeftEdge by remember { mutableStateOf(false) }
+    var isHoveringRightEdge by remember { mutableStateOf(false) }
+    // Brief cooldown after page scroll — suppresses indicator so it flashes out
+    var edgeIndicatorSuppressed by remember { mutableStateOf(false) }
 
     // External drag from drawer
     var externalDragActive by remember { mutableStateOf(false) }
@@ -755,6 +765,9 @@ fun LauncherScreen(
     // Shared drop logic — called from cell-level onDragEnd and root-level drag continuation
     fun performDrop() {
         dragContinuedAfterPageSwitch = false
+        isHoveringLeftEdge = false
+        isHoveringRightEdge = false
+        edgeIndicatorSuppressed = false
         val intendedPage = pagerState.targetPage
         edgeScrollJob?.cancel()
         edgeScrollJob = null
@@ -1081,6 +1094,9 @@ fun LauncherScreen(
     // Shared widget drop logic — called from widget gesture handler and root-level continuation
     fun performWidgetDrop() {
         widgetDragContinuedAfterPageSwitch = false
+        isHoveringLeftEdge = false
+        isHoveringRightEdge = false
+        edgeIndicatorSuppressed = false
         widgetEdgeScrollJob?.cancel()
         widgetEdgeScrollJob = null
         val widget = widgetDragState.draggedWidget ?: run {
@@ -1326,27 +1342,15 @@ fun LauncherScreen(
         }
 
         // Edge scroll near screen edges
-        val dragCenterX = fingerPos.x
-        if (dragCenterX < edgeScrollZonePx && pagerState.currentPage > 0) {
-            if (edgeScrollJob == null || edgeScrollJob?.isActive != true) {
-                edgeScrollJob = dropScope.launch {
-                    kotlinx.coroutines.delay(400)
-                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                }
-            }
-        } else if (dragCenterX > screenWidthPx - edgeScrollZonePx && pagerState.currentPage < totalPages - 1) {
-            if (edgeScrollJob == null || edgeScrollJob?.isActive != true) {
-                edgeScrollJob = dropScope.launch {
-                    kotlinx.coroutines.delay(400)
-                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                }
-            }
-        } else {
-            if (!pagerState.isScrollInProgress) {
-                edgeScrollJob?.cancel()
-                edgeScrollJob = null
-            }
-        }
+        edgeScrollJob = handleEdgeScrollDetection(
+            dragCenterX = fingerPos.x, edgeScrollZonePx = edgeScrollZonePx,
+            screenWidthPx = screenWidthPx, currentPage = pagerState.currentPage,
+            totalPages = totalPages, isScrollInProgress = pagerState.isScrollInProgress,
+            currentJob = edgeScrollJob, scope = dropScope, pagerState = pagerState,
+            setHoveringLeft = { isHoveringLeftEdge = it },
+            setHoveringRight = { isHoveringRightEdge = it },
+            setSuppressed = { edgeIndicatorSuppressed = it }
+        )
     }
 
     // Shared cleanup for external drag
@@ -1506,26 +1510,15 @@ fun LauncherScreen(
                                 val widgetCenterX = widgetCenter.x
 
                                 // Edge scroll
-                                if (widgetCenterX < edgeScrollZonePx && pagerState.currentPage > 0) {
-                                    if (widgetEdgeScrollJob == null || widgetEdgeScrollJob?.isActive != true) {
-                                        widgetEdgeScrollJob = dropScope.launch {
-                                            kotlinx.coroutines.delay(400)
-                                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                                        }
-                                    }
-                                } else if (widgetCenterX > screenWidthPx - edgeScrollZonePx && pagerState.currentPage < totalPages - 1) {
-                                    if (widgetEdgeScrollJob == null || widgetEdgeScrollJob?.isActive != true) {
-                                        widgetEdgeScrollJob = dropScope.launch {
-                                            kotlinx.coroutines.delay(400)
-                                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                        }
-                                    }
-                                } else {
-                                    if (!pagerState.isScrollInProgress) {
-                                        widgetEdgeScrollJob?.cancel()
-                                        widgetEdgeScrollJob = null
-                                    }
-                                }
+                                widgetEdgeScrollJob = handleEdgeScrollDetection(
+                                    dragCenterX = widgetCenterX, edgeScrollZonePx = edgeScrollZonePx,
+                                    screenWidthPx = screenWidthPx, currentPage = pagerState.currentPage,
+                                    totalPages = totalPages, isScrollInProgress = pagerState.isScrollInProgress,
+                                    currentJob = widgetEdgeScrollJob, scope = dropScope, pagerState = pagerState,
+                                    setHoveringLeft = { isHoveringLeftEdge = it },
+                                    setHoveringRight = { isHoveringRightEdge = it },
+                                    setSuppressed = { edgeIndicatorSuppressed = it }
+                                )
 
                                 // Update hovered cells for highlighting
                                 val widget = widgetDragState.draggedWidget!!
@@ -1591,27 +1584,15 @@ fun LauncherScreen(
                                 showFolderCreationIndicator = false
                             }
 
-                            val dragCenterX = centerPos.x
-                            if (dragCenterX < edgeScrollZonePx && pagerState.currentPage > 0) {
-                                if (edgeScrollJob == null || edgeScrollJob?.isActive != true) {
-                                    edgeScrollJob = dropScope.launch {
-                                        kotlinx.coroutines.delay(400)
-                                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                                    }
-                                }
-                            } else if (dragCenterX > screenWidthPx - edgeScrollZonePx && pagerState.currentPage < totalPages - 1) {
-                                if (edgeScrollJob == null || edgeScrollJob?.isActive != true) {
-                                    edgeScrollJob = dropScope.launch {
-                                        kotlinx.coroutines.delay(400)
-                                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                    }
-                                }
-                            } else {
-                                if (!pagerState.isScrollInProgress) {
-                                    edgeScrollJob?.cancel()
-                                    edgeScrollJob = null
-                                }
-                            }
+                            edgeScrollJob = handleEdgeScrollDetection(
+                                dragCenterX = centerPos.x, edgeScrollZonePx = edgeScrollZonePx,
+                                screenWidthPx = screenWidthPx, currentPage = pagerState.currentPage,
+                                totalPages = totalPages, isScrollInProgress = pagerState.isScrollInProgress,
+                                currentJob = edgeScrollJob, scope = dropScope, pagerState = pagerState,
+                                setHoveringLeft = { isHoveringLeftEdge = it },
+                                setHoveringRight = { isHoveringRightEdge = it },
+                                setSuppressed = { edgeIndicatorSuppressed = it }
+                            )
                         } else {
                             performDrop()
                         }
@@ -1659,6 +1640,10 @@ fun LauncherScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .zIndex(if (isWidgetBeingDragged) 1f else 0f)
+                    .onGloballyPositioned { coordinates ->
+                        gridAreaBoxOffset = coordinates.positionInRoot()
+                        gridAreaBoxSize = coordinates.size
+                    }
             ) {
                 if (isLoading) {
                     Box(
@@ -1881,34 +1866,15 @@ fun LauncherScreen(
                                                 }
 
                                                 // Edge scroll detection - switch pages when dragging near screen edges
-                                                val dragCenterX = centerPos.x
-                                                if (dragCenterX < edgeScrollZonePx && pagerState.currentPage > 0) {
-                                                    // Near left edge - scroll to previous page
-                                                    if (edgeScrollJob == null || edgeScrollJob?.isActive != true) {
-                                                        edgeScrollJob = dropScope.launch {
-                                                            kotlinx.coroutines.delay(400)
-                                                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                                                        }
-                                                    }
-                                                } else if (dragCenterX > screenWidthPx - edgeScrollZonePx && pagerState.currentPage < totalPages - 1) {
-                                                    // Near right edge - scroll to next page
-                                                    if (edgeScrollJob == null || edgeScrollJob?.isActive != true) {
-                                                        edgeScrollJob = dropScope.launch {
-                                                            kotlinx.coroutines.delay(400)
-                                                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                                        }
-                                                    }
-                                                } else {
-                                                    // Not near edge - cancel any pending scroll
-                                                    // BUT don't cancel if the pager is actively animating:
-                                                    // during animateScrollToPage, currentPage flips at ~50%,
-                                                    // making edge conditions fail even though animation is still running.
-                                                    // Cancelling here would leave the page stuck halfway.
-                                                    if (!pagerState.isScrollInProgress) {
-                                                        edgeScrollJob?.cancel()
-                                                        edgeScrollJob = null
-                                                    }
-                                                }
+                                                edgeScrollJob = handleEdgeScrollDetection(
+                                                    dragCenterX = centerPos.x, edgeScrollZonePx = edgeScrollZonePx,
+                                                    screenWidthPx = screenWidthPx, currentPage = pagerState.currentPage,
+                                                    totalPages = totalPages, isScrollInProgress = pagerState.isScrollInProgress,
+                                                    currentJob = edgeScrollJob, scope = dropScope, pagerState = pagerState,
+                                                    setHoveringLeft = { isHoveringLeftEdge = it },
+                                                    setHoveringRight = { isHoveringRightEdge = it },
+                                                    setSuppressed = { edgeIndicatorSuppressed = it }
+                                                )
                                             },
                                             onDragEnd = {
                                                 // The cell gesture gets cancelled when the pager scrolls
@@ -2178,27 +2144,15 @@ fun LauncherScreen(
                                                                             val widgetCenter = widgetCenterAtGestureStart + widgetDragState.dragOffset
 
                                                                             // Edge scroll: check if widget center is near screen edges
-                                                                            val widgetCenterX = widgetCenter.x
-                                                                            if (widgetCenterX < edgeScrollZonePx && pagerState.currentPage > 0) {
-                                                                                if (widgetEdgeScrollJob == null || widgetEdgeScrollJob?.isActive != true) {
-                                                                                    widgetEdgeScrollJob = dropScope.launch {
-                                                                                        kotlinx.coroutines.delay(400)
-                                                                                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                                                                                    }
-                                                                                }
-                                                                            } else if (widgetCenterX > screenWidthPx - edgeScrollZonePx && pagerState.currentPage < totalPages - 1) {
-                                                                                if (widgetEdgeScrollJob == null || widgetEdgeScrollJob?.isActive != true) {
-                                                                                    widgetEdgeScrollJob = dropScope.launch {
-                                                                                        kotlinx.coroutines.delay(400)
-                                                                                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                                                                    }
-                                                                                }
-                                                                            } else {
-                                                                                if (!pagerState.isScrollInProgress) {
-                                                                                    widgetEdgeScrollJob?.cancel()
-                                                                                    widgetEdgeScrollJob = null
-                                                                                }
-                                                                            }
+                                                                            widgetEdgeScrollJob = handleEdgeScrollDetection(
+                                                                                dragCenterX = widgetCenter.x, edgeScrollZonePx = edgeScrollZonePx,
+                                                                                screenWidthPx = screenWidthPx, currentPage = pagerState.currentPage,
+                                                                                totalPages = totalPages, isScrollInProgress = pagerState.isScrollInProgress,
+                                                                                currentJob = widgetEdgeScrollJob, scope = dropScope, pagerState = pagerState,
+                                                                                setHoveringLeft = { isHoveringLeftEdge = it },
+                                                                                setHoveringRight = { isHoveringRightEdge = it },
+                                                                                setSuppressed = { edgeIndicatorSuppressed = it }
+                                                                            )
 
                                                                             // Use CENTER-based drop target calculation
                                                                             val dropTarget = calculateWidgetDropTargetFromCenter(
@@ -2951,6 +2905,18 @@ fun LauncherScreen(
                 }
             }
         }
+
+        // ========== EDGE SCROLL INDICATORS ==========
+        // Rounded rectangles on left/right edges — only visible when hovering in edge zone
+        EdgeScrollIndicators(
+            hoveringLeft = isHoveringLeftEdge && !edgeIndicatorSuppressed && pagerState.currentPage == pagerState.targetPage,
+            hoveringRight = isHoveringRightEdge && !edgeIndicatorSuppressed && pagerState.currentPage == pagerState.targetPage,
+            showLeft = pagerState.currentPage > 0,
+            showRight = pagerState.currentPage < totalPages - 1,
+            gridHPaddingPx = with(density) { gridHPadding.toPx() },
+            screenWidthPx = screenWidthPx,
+            modifier = Modifier.zIndex(500f)
+        )
 
         // ========== WIDGET DRAG OVERLAY ==========
         // Rendered at root level so it draws above dock bar (HorizontalPager clips internally)
