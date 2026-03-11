@@ -20,6 +20,8 @@ private const val KEY_DRAWER_PAGED_MODE = "drawer_paged_mode"
 private const val KEY_ICON_TEXT_SIZE_PERCENT = "icon_text_size_percent"
 private const val KEY_SELECTED_FONT = "selected_font_id"
 private const val KEY_IMPORTED_FONTS = "imported_font_paths"
+private const val KEY_SELECTED_ICON_PACK = "selected_icon_pack"
+private const val DEFAULT_SELECTED_ICON_PACK = ""  // Empty = system icons
 
 private const val DEFAULT_GRID_SIZE = 4
 private const val DEFAULT_ICON_SIZE = 48
@@ -286,6 +288,24 @@ fun removeImportedFontPath(context: Context, path: String) {
     current.remove(path)
     prefs.edit().putStringSet(KEY_IMPORTED_FONTS, current).apply()
 }
+
+// ============================================================================
+// ICON PACK SELECTION
+// ============================================================================
+
+fun getSelectedIconPack(context: Context): String {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getString(KEY_SELECTED_ICON_PACK, DEFAULT_SELECTED_ICON_PACK) ?: DEFAULT_SELECTED_ICON_PACK
+}
+
+fun setSelectedIconPack(context: Context, iconPackPackage: String) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putString(KEY_SELECTED_ICON_PACK, iconPackPackage).apply()
+}
+
+// ============================================================================
+// SETTINGS TAB SELECTION
+// ============================================================================
 
 fun getSettingsSelectedTab(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

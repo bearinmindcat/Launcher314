@@ -8,6 +8,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.bearinmind.launcher314.helpers.IconPackManager
 import java.io.File
 import java.io.FileOutputStream
 
@@ -64,7 +65,7 @@ fun loadAvailableApps(context: Context): List<HomeAppInfo> {
                 HomeAppInfo(
                     name = resolveInfo.loadLabel(packageManager).toString(),
                     packageName = packageName,
-                    iconPath = iconFile.absolutePath
+                    iconPath = IconPackManager.resolveIconPath(context, packageName, iconFile.absolutePath)
                 )
             } catch (e: Exception) {
                 null

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.ResolveInfo
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.bearinmind.launcher314.helpers.IconPackManager
 import java.io.File
 
 // Storage functions for drawer data
@@ -67,7 +68,7 @@ fun getInstalledApps(context: Context): List<AppInfo> {
                 AppInfo(
                     name = resolveInfo.loadLabel(packageManager).toString(),
                     packageName = packageName,
-                    iconPath = iconFile.absolutePath,
+                    iconPath = IconPackManager.resolveIconPath(context, packageName, iconFile.absolutePath),
                     installTime = packageInfo.firstInstallTime,
                     lastUpdateTime = packageInfo.lastUpdateTime,
                     sizeBytes = apkSize

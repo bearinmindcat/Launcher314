@@ -32,6 +32,7 @@ import com.bearinmind.launcher314.ui.settings.SettingsScreen
 import com.bearinmind.launcher314.ui.widgets.WidgetInfo
 import com.bearinmind.launcher314.ui.widgets.WidgetsScreen
 import com.bearinmind.launcher314.ui.settings.FontsScreen
+import com.bearinmind.launcher314.ui.settings.IconPacksScreen
 import com.bearinmind.launcher314.ui.theme.Launcher314Theme
 
 class MainActivity : ComponentActivity() {
@@ -534,6 +535,9 @@ fun MainScreen(
                             },
                             onFontsClick = {
                                 navController.navigate("fonts")
+                            },
+                            onIconPacksClick = {
+                                navController.navigate("icon_packs")
                             }
                         )
                     }
@@ -541,6 +545,11 @@ fun MainScreen(
             }
             composable("fonts") {
                 FontsScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable("icon_packs") {
+                IconPacksScreen(
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -620,11 +629,19 @@ fun MainScreen(
                         },
                         onFontsClick = {
                             navController.navigate("fonts")
+                        },
+                        onIconPacksClick = {
+                            navController.navigate("icon_packs")
                         }
                     )
                 }
                 composable("fonts") {
                     FontsScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable("icon_packs") {
+                    IconPacksScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }

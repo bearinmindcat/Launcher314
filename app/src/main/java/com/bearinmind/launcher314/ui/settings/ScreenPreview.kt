@@ -3,6 +3,7 @@
 package com.bearinmind.launcher314.ui.settings
 
 import android.content.Context
+import com.bearinmind.launcher314.helpers.IconPackManager
 import com.bearinmind.launcher314.data.getHomeGridSize
 import com.bearinmind.launcher314.data.setHomeGridSize
 import com.bearinmind.launcher314.data.getHomeGridRows
@@ -1190,7 +1191,7 @@ fun loadPreviewApps(context: Context): List<PreviewAppInfo> {
                 PreviewAppInfo(
                     name = resolveInfo.loadLabel(packageManager).toString(),
                     packageName = packageName,
-                    iconPath = iconFile.absolutePath
+                    iconPath = IconPackManager.resolveIconPath(context, packageName, iconFile.absolutePath)
                 )
             } catch (e: Exception) {
                 null

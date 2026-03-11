@@ -58,7 +58,7 @@ fun FontsScreen(
     // Build the full font list: Default + Bundled + Imported
     val defaultItem = FontManager.FontItem(
         id = "default",
-        displayName = "Default (System Font)",
+        displayName = "System Font (Default)",
         fontFamily = FontFamily.Default,
         isBundled = true
     )
@@ -76,7 +76,8 @@ fun FontsScreen(
             it.displayName.contains(searchQuery, ignoreCase = true)
         }
     }
-    val showDefault = searchQuery.isBlank() || "default".contains(searchQuery, ignoreCase = true)
+    val showDefault = searchQuery.isBlank() ||
+        "system font".contains(searchQuery, ignoreCase = true)
 
     val fontsBackground = Color(0xFF121212)
 
@@ -114,7 +115,6 @@ fun FontsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
         ) {
             // Search bar (matching WidgetsScreen style)
             TextField(

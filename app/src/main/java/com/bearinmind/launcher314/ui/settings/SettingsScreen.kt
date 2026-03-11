@@ -50,7 +50,10 @@ import com.bearinmind.launcher314.services.AppDrawerAccessibilityService
 import com.bearinmind.launcher314.services.AppDrawerTileService
 import com.bearinmind.launcher314.data.LauncherUtils
 import com.bearinmind.launcher314.services.NotificationDrawerAction
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.bearinmind.launcher314.helpers.FontManager
+import com.bearinmind.launcher314.helpers.IconPackManager
 import com.bearinmind.launcher314.data.getSelectedFont
 import com.bearinmind.launcher314.data.getSettingsSelectedTab
 import com.bearinmind.launcher314.data.setSettingsSelectedTab
@@ -67,7 +70,8 @@ fun SettingsScreen(
     onPreviewDrawer: () -> Unit = {},
     onPreviewLauncher: () -> Unit = {},
     onGridSizeChanged: (Int) -> Unit = {},
-    onFontsClick: () -> Unit = {}
+    onFontsClick: () -> Unit = {},
+    onIconPacksClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -244,14 +248,15 @@ fun SettingsScreen(
 
                 // Shared settings sections (same for both tabs)
                 CollapsibleSection(
-                    title = "Icon Text",
+                    title = "Icon Personalization",
                     expanded = iconTextSectionExpanded,
                     onToggle = { iconTextSectionExpanded = !iconTextSectionExpanded }
                 ) {
                     IconTextPersonalizationCard(
                         textSizePercent = iconTextSizePercent,
                         onTextSizeChange = { iconTextSizePercent = it },
-                        onFontsClick = onFontsClick
+                        onFontsClick = onFontsClick,
+                        onIconPacksClick = onIconPacksClick
                     )
                 }
 
@@ -534,13 +539,16 @@ fun SettingsToggleItem(
 fun IconTextPersonalizationCard(
     textSizePercent: Float,
     onTextSizeChange: (Float) -> Unit,
-    onFontsClick: () -> Unit = {}
+    onFontsClick: () -> Unit = {},
+    onIconPacksClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    // Re-read on every recomposition so it updates when returning from FontsScreen
+    // Re-read on every recomposition so it updates when returning from FontsScreen/IconPacksScreen
     val selectedFontId = getSelectedFont(context)
     val selectedFontName = FontManager.getSelectedFontName(context)
     val selectedFontFamily = FontManager.getSelectedFontFamily(context)
+    val selectedIconPackName = IconPackManager.getSelectedIconPackName(context)
+    val selectedIconPackIconPath = IconPackManager.getSelectedIconPackIconPath(context)
 
     Column(
         modifier = Modifier
@@ -593,6 +601,48 @@ fun IconTextPersonalizationCard(
         // "Font" label centered below button, matching slider label style
         Text(
             text = "Font",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 76.dp, top = 4.dp),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Icon Pack selection button — same layout as font button
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 76.dp)
+        ) {
+            Button(
+                onClick = onIconPacksClick,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                if (selectedIconPackIconPath != null) {
+                    AsyncImage(
+                        model = java.io.File(selectedIconPackIconPath),
+                        contentDescription = selectedIconPackName,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(text = selectedIconPackName)
+            }
+        }
+
+        // "Icon Pack" label centered below button
+        Text(
+            text = "Icon Pack",
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),

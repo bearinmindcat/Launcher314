@@ -268,12 +268,12 @@ object FontManager {
 
     fun getSelectedFontName(context: Context): String {
         val fontId = getSelectedFont(context)
-        if (fontId == "default") return "Default"
+        if (fontId == "default") return "System Font (Default)"
 
         bundledFonts.find { it.id == fontId }?.let { return it.displayName }
         getImportedFonts(context).find { it.id == fontId }?.let { return it.displayName }
 
-        return "Default"
+        return "System Font (Default)"
     }
 
     private fun getFileNameFromUri(context: Context, uri: Uri): String? {
