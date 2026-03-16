@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,13 +70,20 @@ fun ThumbDragHorizontalSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    overflowThreshold: Float = config.maxValue // above this value, track/thumb turns red and snaps back
 ) {
+    // Cap at highest usable snap value (below overflow threshold)
+    val dragMax = if (overflowThreshold >= config.maxValue) config.maxValue
+        else config.snapTickValues.filter { it.toFloat() <= overflowThreshold }.maxOrNull()?.toFloat() ?: config.minValue
+
     val animatedValue = remember { Animatable(currentValue) }
+    // Synchronous drag value — avoids one-frame lag from coroutineScope.launch { snapTo }
+    var dragValue by remember { mutableFloatStateOf(currentValue) }
     val coroutineScope = rememberCoroutineScope()
     var isDragging by remember { mutableStateOf(false) }
     var isDragOnThumb by remember { mutableStateOf(false) }
-    var dragStartValue by remember { mutableFloatStateOf(0f) }
+    var isOverflowSnapping by remember { mutableStateOf(false) }
 
     // rememberUpdatedState prevents stale capture inside pointerInput(Unit)
     val currentOnValueChange by rememberUpdatedState(onValueChange)
@@ -88,7 +96,8 @@ fun ThumbDragHorizontalSlider(
     val disabledTextColor = Color(0xFF3A3A3A)
 
     LaunchedEffect(currentValue) {
-        if (!isDragging) {
+        if (!isDragging && !isOverflowSnapping) {
+            dragValue = currentValue
             animatedValue.animateTo(
                 targetValue = currentValue,
                 animationSpec = spring(
@@ -99,7 +108,16 @@ fun ThumbDragHorizontalSlider(
         }
     }
 
-    val thumbFraction = ((animatedValue.value - config.minValue) / (config.maxValue - config.minValue)).coerceIn(0f, 1f)
+    // Use dragValue during drag (synchronous), animatedValue during animation (snap-back bounce)
+    val displayValue = if (isDragging) dragValue else animatedValue.value
+    val thumbFraction = ((displayValue - config.minValue) / (config.maxValue - config.minValue)).coerceIn(0f, 1f)
+
+    // Overflow zone colors (matches vertical slider exactly)
+    val overflowRed = Color(0xFFCC4444)
+    val overflowRange = config.maxValue - overflowThreshold
+    val zoneRedFraction = if (overflowThreshold >= config.maxValue || displayValue <= overflowThreshold) 0f
+        else if (overflowRange > 0f) ((displayValue - overflowThreshold) / overflowRange).coerceIn(0f, 1f) else 1f
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     Column(modifier = modifier.fillMaxWidth()) {
         Box(
@@ -112,9 +130,9 @@ fun ThumbDragHorizontalSlider(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(32.dp)
-                    .pointerInput(enabled) {
+                    .pointerInput(enabled, overflowThreshold) {
                         if (!enabled) return@pointerInput
-                        detectDragGestures(
+                        detectHorizontalDragGestures(
                             onDragStart = { offset: Offset ->
                                 val x = offset.x
                                 val width = size.width.toFloat()
@@ -125,81 +143,66 @@ fun ThumbDragHorizontalSlider(
                                 if (kotlin.math.abs(x - currentThumbX) <= thumbTouchRadius) {
                                     isDragging = true
                                     isDragOnThumb = true
-                                    dragStartValue = animatedValue.value
                                 } else {
                                     isDragOnThumb = false
                                 }
                             },
                             onDragEnd = {
                                 if (isDragOnThumb) {
-                                    val currentVal = animatedValue.value
-                                    // Directional snap: if dragged left, snap down; if dragged right, snap up
-                                    val snappedValue = if (currentVal < dragStartValue) {
-                                        // Dragged left — snap to nearest tick at or below current value
-                                        config.snapTickValues.filter { it <= currentVal }
-                                            .maxOrNull()?.toFloat()
-                                            ?: config.snapTickValues.minOrNull()?.toFloat()
-                                            ?: currentVal
-                                    } else if (currentVal > dragStartValue) {
-                                        // Dragged right — snap to nearest tick at or above current value
-                                        config.snapTickValues.filter { it >= currentVal }
-                                            .minOrNull()?.toFloat()
-                                            ?: config.snapTickValues.maxOrNull()?.toFloat()
-                                            ?: currentVal
-                                    } else {
-                                        // Didn't move — snap to nearest
-                                        config.snapTickValues.minByOrNull {
-                                            kotlin.math.abs(it - currentVal)
-                                        }?.toFloat() ?: currentVal
-                                    }
+                                    val validSnaps = config.snapTickValues.filter { it.toFloat() <= dragMax }
+                                    val snappedValue = validSnaps.minByOrNull {
+                                        kotlin.math.abs(it - dragValue)
+                                    }?.toFloat() ?: dragMax
+                                    val wasInOverflow = dragValue > dragMax
+                                    if (wasInOverflow) isOverflowSnapping = true
                                     currentOnValueChange(snappedValue)
                                     coroutineScope.launch {
+                                        animatedValue.snapTo(dragValue) // sync animatable to drag position
+                                        isDragging = false // safe: animatedValue now matches dragValue
+                                        isDragOnThumb = false
                                         animatedValue.animateTo(
                                             targetValue = snappedValue,
-                                            animationSpec = spring(
+                                            animationSpec = if (wasInOverflow) spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = 300f
+                                            ) else spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
                                                 stiffness = Spring.StiffnessMedium
                                             )
                                         )
+                                        isOverflowSnapping = false
                                         currentOnValueChangeFinished()
                                     }
                                 }
-                                isDragging = false
-                                isDragOnThumb = false
                             },
                             onDragCancel = {
                                 if (isDragOnThumb) {
-                                    val currentVal = animatedValue.value
-                                    val snappedValue = if (currentVal < dragStartValue) {
-                                        config.snapTickValues.filter { it <= currentVal }
-                                            .maxOrNull()?.toFloat()
-                                            ?: config.snapTickValues.minOrNull()?.toFloat()
-                                            ?: currentVal
-                                    } else if (currentVal > dragStartValue) {
-                                        config.snapTickValues.filter { it >= currentVal }
-                                            .minOrNull()?.toFloat()
-                                            ?: config.snapTickValues.maxOrNull()?.toFloat()
-                                            ?: currentVal
-                                    } else {
-                                        config.snapTickValues.minByOrNull {
-                                            kotlin.math.abs(it - currentVal)
-                                        }?.toFloat() ?: currentVal
-                                    }
+                                    val validSnaps = config.snapTickValues.filter { it.toFloat() <= dragMax }
+                                    val snappedValue = validSnaps.minByOrNull {
+                                        kotlin.math.abs(it - dragValue)
+                                    }?.toFloat() ?: dragMax
+                                    val wasInOverflow = dragValue > dragMax
+                                    if (wasInOverflow) isOverflowSnapping = true
                                     currentOnValueChange(snappedValue)
                                     coroutineScope.launch {
+                                        animatedValue.snapTo(dragValue)
+                                        isDragging = false
+                                        isDragOnThumb = false
                                         animatedValue.animateTo(
                                             targetValue = snappedValue,
-                                            animationSpec = spring(
+                                            animationSpec = if (wasInOverflow) spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = 300f
+                                            ) else spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
                                                 stiffness = Spring.StiffnessMedium
                                             )
                                         )
+                                        isOverflowSnapping = false
                                     }
                                 }
-                                isDragging = false
-                                isDragOnThumb = false
                             },
-                            onDrag = { change, _: Offset ->
+                            onHorizontalDrag = { change, _ ->
                                 if (isDragOnThumb) {
                                     change.consume()
                                     val x = change.position.x
@@ -207,7 +210,7 @@ fun ThumbDragHorizontalSlider(
                                     val fraction = (x / width).coerceIn(0f, 1f)
                                     val newValue = (config.minValue + fraction * (config.maxValue - config.minValue))
                                         .coerceIn(config.minValue, config.maxValue)
-                                    coroutineScope.launch { animatedValue.snapTo(newValue) }
+                                    dragValue = newValue  // synchronous — no frame lag
                                     currentOnValueChange(newValue)
                                 }
                             }
@@ -226,30 +229,64 @@ fun ThumbDragHorizontalSlider(
                         .background(if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f) else disabledColor)
                 )
 
-                // Tick marks
+                // Red tint overlay on track — gradient fade at the threshold boundary
+                if (overflowThreshold < config.maxValue && zoneRedFraction > 0f) {
+                    val thresholdFraction = ((overflowThreshold - config.minValue) / (config.maxValue - config.minValue)).coerceIn(0f, 1f)
+                    val fadePadding = 0.05f * (1f - thresholdFraction)
+                    val fadeStart = (thresholdFraction - fadePadding).coerceAtLeast(0f)
+                    val tintColor = overflowRed.copy(alpha = zoneRedFraction * 0.8f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .align(Alignment.Center)
+                            .background(
+                                Brush.horizontalGradient(
+                                    colorStops = arrayOf(
+                                        0f to Color.Transparent,
+                                        fadeStart to Color.Transparent,
+                                        thresholdFraction to tintColor,
+                                        1f to tintColor
+                                    )
+                                )
+                            )
+                    )
+                }
+
+                // Tick marks (two-layer like vertical slider: normal always visible, red overlay on top)
                 if (config.showMinorTicks) {
-                    // Show all ticks with varying sizes
                     config.snapTickValues.forEach { value ->
                         val fraction = (value - config.minValue) / (config.maxValue - config.minValue)
                         val xOffset = trackWidth * fraction
                         val isMajorTick = value in config.labeledTickValues
+                        val tickWidth = if (isMajorTick) 2.dp else 1.dp
+                        val tickHeight = if (isMajorTick) 8.dp else 5.dp
+                        val tickXOff = xOffset - (if (isMajorTick) 1.dp else 0.5.dp)
+                        val tickYOff = trackCenterY - (if (isMajorTick) 4.dp else 2.5.dp)
 
+                        // Normal tick (always visible)
                         Box(
                             modifier = Modifier
-                                .width((if (isMajorTick) 2.dp else 1.dp))
-                                .height((if (isMajorTick) 8.dp else 5.dp))
-                                .offset(
-                                    x = xOffset - (if (isMajorTick) 1.dp else 0.5.dp),
-                                    y = trackCenterY - (if (isMajorTick) 4.dp else 2.5.dp)                                )
+                                .width(tickWidth)
+                                .height(tickHeight)
+                                .offset(x = tickXOff, y = tickYOff)
                                 .background(
-                                    if (enabled)
-                                        MaterialTheme.colorScheme.onSurface.copy(
-                                            alpha = if (isMajorTick) 0.5f else 0.3f
-                                        )
-                                    else
-                                        disabledTickColor
+                                    if (!enabled) disabledTickColor
+                                    else MaterialTheme.colorScheme.onSurface.copy(
+                                        alpha = if (isMajorTick) 0.5f else 0.3f
+                                    )
                                 )
                         )
+                        // Red overlay on tick (additive, matching vertical slider)
+                        if (overflowThreshold < config.maxValue && value.toFloat() > overflowThreshold && zoneRedFraction > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .width(tickWidth)
+                                    .height(tickHeight)
+                                    .offset(x = tickXOff, y = tickYOff)
+                                    .background(overflowRed.copy(alpha = zoneRedFraction * 0.8f))
+                            )
+                        }
                     }
                 } else {
                     // Show only major ticks
@@ -267,6 +304,14 @@ fun ThumbDragHorizontalSlider(
                     }
                 }
 
+                // Thumb color: normal when at or below threshold, gradient red when past
+                val thumbColor = if (!enabled) disabledThumbColor
+                    else if (overflowThreshold >= config.maxValue || displayValue <= overflowThreshold) primaryColor
+                    else {
+                        val t = if (overflowRange > 0f) ((displayValue - overflowThreshold) / overflowRange).coerceIn(0f, 1f) else 1f
+                        androidx.compose.ui.graphics.lerp(primaryColor, overflowRed, t)
+                    }
+
                 // Thumb
                 val thumbXOffset = trackWidth * thumbFraction
                 Box(
@@ -275,7 +320,7 @@ fun ThumbDragHorizontalSlider(
                         .height(20.dp)
                         .offset(x = thumbXOffset - 3.dp, y = trackCenterY - 10.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(if (enabled) MaterialTheme.colorScheme.primary else disabledThumbColor)
+                        .background(thumbColor)
                 )
             }
 
@@ -283,15 +328,16 @@ fun ThumbDragHorizontalSlider(
             if (isDragging) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val thumbXOffset = maxWidth * thumbFraction
+                    val touchColor = if (!enabled) disabledThumbColor.copy(alpha = 0.15f)
+                        else if (overflowThreshold < config.maxValue && displayValue > overflowThreshold)
+                            overflowRed.copy(alpha = zoneRedFraction * 0.25f)
+                        else primaryColor.copy(alpha = 0.15f)
                     Box(
                         modifier = Modifier
                             .size(48.dp)
                             .offset(x = thumbXOffset - 24.dp)
                             .clip(CircleShape)
-                            .background(
-                                if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                else disabledThumbColor.copy(alpha = 0.15f)
-                            )
+                            .background(touchColor)
                     )
                 }
             }
@@ -698,6 +744,28 @@ object SliderConfigs {
         snapTickValues = (0..100 step 5).toList(),
         showMinorTicks = true,
         label = "Color Intensity",
+        labelSuffix = "%"
+    )
+
+    val tintIntensity = HorizontalSliderConfig(
+        minValue = 0f,
+        maxValue = 100f,
+        tickValues = listOf(0, 25, 50, 75, 100),
+        labeledTickValues = listOf(0, 25, 50, 75, 100),
+        snapTickValues = (0..100 step 5).toList(),
+        showMinorTicks = true,
+        label = "Tint Intensity",
+        labelSuffix = "%"
+    )
+
+    val perAppIconSize = HorizontalSliderConfig(
+        minValue = 50f,
+        maxValue = 125f,
+        tickValues = listOf(50, 75, 100, 125),
+        labeledTickValues = listOf(50, 75, 100, 125),
+        snapTickValues = (50..125 step 5).toList(),
+        showMinorTicks = true,
+        label = "Icon Size",
         labelSuffix = "%"
     )
 

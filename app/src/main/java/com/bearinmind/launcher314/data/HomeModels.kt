@@ -95,7 +95,8 @@ data class HomeScreenData(
 data class HomeAppInfo(
     val name: String,
     val packageName: String,
-    val iconPath: String
+    val iconPath: String,
+    val customization: AppCustomization? = null
 )
 
 // ========== Grid Cell Model (for rendering) ==========

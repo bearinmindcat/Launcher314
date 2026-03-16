@@ -20,7 +20,10 @@ import com.bearinmind.launcher314.data.getScrollbarIntensity
 import com.bearinmind.launcher314.helpers.getDrawerTransparency
 import com.bearinmind.launcher314.data.getDrawerGridRows
 import com.bearinmind.launcher314.data.getDrawerPagedMode
+import com.bearinmind.launcher314.data.getGlobalIconShape
+import com.bearinmind.launcher314.data.getGlobalIconBgColor
 import com.bearinmind.launcher314.helpers.FontManager
+import com.bearinmind.launcher314.helpers.getIconShape
 import androidx.compose.ui.text.font.FontFamily
 import android.content.pm.ResolveInfo
 import android.graphics.Bitmap
@@ -196,6 +199,8 @@ fun AppDrawerScreen(
     var isPagedMode by remember { mutableStateOf(getDrawerPagedMode(context)) }
     var iconTextSizePercent by remember { mutableStateOf(getIconTextSizePercent(context)) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
+    var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
+    var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
 
     // Compute icon dp from percentage using fixed reference (screenWidth / 4)
     // Uses reference column count of 4 so icon size is consistent across screens regardless of actual column count
@@ -216,6 +221,8 @@ fun AppDrawerScreen(
                 isPagedMode = getDrawerPagedMode(context)
                 iconTextSizePercent = getIconTextSizePercent(context)
                 selectedFontFamily = FontManager.getSelectedFontFamily(context)
+                globalIconShape = getGlobalIconShape(context)
+                globalIconBgColor = getGlobalIconBgColor(context)
                 // Refresh app list (picks up uninstalls, new installs, etc.)
                 appRefreshTrigger++
             }
@@ -440,6 +447,9 @@ fun AppDrawerScreen(
             iconSize = iconSize,
             labelFontSize = appLabelFontSize,
             labelFontFamily = selectedFontFamily,
+            iconClipShape = getIconShape(globalIconShape),
+            iconBgColor = globalIconBgColor,
+            globalIconShapeName = globalIconShape,
             drawerGridRows = drawerGridRows,
             isPagedMode = isPagedMode,
             currentSortOption = currentSortOption,

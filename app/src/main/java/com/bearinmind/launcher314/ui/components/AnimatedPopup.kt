@@ -44,8 +44,10 @@ private class ArrowPopupPositionProvider(
         val clampedX = x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
 
         // Vertical: prefer below the anchor, fall back to above
-        val belowY = anchorBounds.bottom
-        val aboveY = anchorBounds.top - popupContentSize.height
+        // Pull popup closer to the icon by overlapping slightly
+        val closerPx = 48
+        val belowY = anchorBounds.bottom - closerPx
+        val aboveY = anchorBounds.top - popupContentSize.height + closerPx
 
         val isAbove: Boolean
         val y: Int

@@ -22,6 +22,8 @@ private const val KEY_SELECTED_FONT = "selected_font_id"
 private const val KEY_IMPORTED_FONTS = "imported_font_paths"
 private const val KEY_SELECTED_ICON_PACK = "selected_icon_pack"
 private const val DEFAULT_SELECTED_ICON_PACK = ""  // Empty = system icons
+private const val KEY_GLOBAL_ICON_SHAPE = "global_icon_shape"
+private const val KEY_GLOBAL_ICON_BG_COLOR = "global_icon_bg_color"
 
 private const val DEFAULT_GRID_SIZE = 4
 private const val DEFAULT_ICON_SIZE = 48
@@ -254,6 +256,39 @@ fun getIconTextSizePercent(context: Context): Int {
 fun setIconTextSizePercent(context: Context, percent: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_ICON_TEXT_SIZE_PERCENT, percent).apply()
+}
+
+// ============================================================================
+// GLOBAL ICON SHAPE (EXP method applied to all icons)
+// ============================================================================
+
+fun getGlobalIconShape(context: Context): String? {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val value = prefs.getString(KEY_GLOBAL_ICON_SHAPE, null)
+    return if (value.isNullOrEmpty()) null else value
+}
+
+fun setGlobalIconShape(context: Context, shape: String?) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    if (shape == null) {
+        prefs.edit().remove(KEY_GLOBAL_ICON_SHAPE).apply()
+    } else {
+        prefs.edit().putString(KEY_GLOBAL_ICON_SHAPE, shape).apply()
+    }
+}
+
+fun getGlobalIconBgColor(context: Context): Int? {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return if (prefs.contains(KEY_GLOBAL_ICON_BG_COLOR)) prefs.getInt(KEY_GLOBAL_ICON_BG_COLOR, 0) else null
+}
+
+fun setGlobalIconBgColor(context: Context, color: Int?) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    if (color == null) {
+        prefs.edit().remove(KEY_GLOBAL_ICON_BG_COLOR).apply()
+    } else {
+        prefs.edit().putInt(KEY_GLOBAL_ICON_BG_COLOR, color).apply()
+    }
 }
 
 // ============================================================================

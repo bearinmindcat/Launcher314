@@ -32,11 +32,18 @@ import com.bearinmind.launcher314.data.setSelectedFont
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FontsScreen(
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onFontSelected: ((String?) -> Unit)? = null,
+    initialFontId: String? = null
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
-    var selectedFontId by remember { mutableStateOf(getSelectedFont(context)) }
+    var selectedFontId by remember {
+        mutableStateOf(
+            if (onFontSelected != null) (initialFontId ?: "default")
+            else getSelectedFont(context)
+        )
+    }
     var importedFonts by remember { mutableStateOf(FontManager.getImportedFonts(context)) }
     var showDeleteDialog by remember { mutableStateOf<FontManager.FontItem?>(null) }
 
@@ -194,8 +201,12 @@ fun FontsScreen(
                             fontItem = defaultItem,
                             isSelected = selectedFontId == "default",
                             onSelect = {
-                                selectedFontId = "default"
-                                setSelectedFont(context, "default")
+                                if (onFontSelected != null) {
+                                    onFontSelected(null)
+                                } else {
+                                    selectedFontId = "default"
+                                    setSelectedFont(context, "default")
+                                }
                             }
                         )
                         Divider(color = Color.White.copy(alpha = 0.1f))
@@ -209,8 +220,12 @@ fun FontsScreen(
                             fontItem = fontItem,
                             isSelected = selectedFontId == fontItem.id,
                             onSelect = {
-                                selectedFontId = fontItem.id
-                                setSelectedFont(context, fontItem.id)
+                                if (onFontSelected != null) {
+                                    onFontSelected(fontItem.id)
+                                } else {
+                                    selectedFontId = fontItem.id
+                                    setSelectedFont(context, fontItem.id)
+                                }
                             },
                             onDelete = {
                                 showDeleteDialog = fontItem
@@ -227,8 +242,12 @@ fun FontsScreen(
                             fontItem = fontItem,
                             isSelected = selectedFontId == fontItem.id,
                             onSelect = {
-                                selectedFontId = fontItem.id
-                                setSelectedFont(context, fontItem.id)
+                                if (onFontSelected != null) {
+                                    onFontSelected(fontItem.id)
+                                } else {
+                                    selectedFontId = fontItem.id
+                                    setSelectedFont(context, fontItem.id)
+                                }
                             }
                         )
                         Divider(color = Color.White.copy(alpha = 0.1f))

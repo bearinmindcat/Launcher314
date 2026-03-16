@@ -94,6 +94,9 @@ internal fun MainDrawerContent(
     iconSize: Int,
     labelFontSize: androidx.compose.ui.unit.TextUnit = 12.sp,
     labelFontFamily: FontFamily? = null,
+    iconClipShape: androidx.compose.ui.graphics.Shape? = null,
+    iconBgColor: Int? = null,
+    globalIconShapeName: String? = null,
     drawerGridRows: Int,
     isPagedMode: Boolean,
     currentSortOption: SortOption,
@@ -724,6 +727,9 @@ internal fun MainDrawerContent(
                                                     iconSize = iconSize,
                                                     labelFontSize = labelFontSize,
                                                     labelFontFamily = labelFontFamily,
+                                                    iconClipShape = iconClipShape,
+                                                    iconBgColor = iconBgColor,
+                                                    globalIconShapeName = globalIconShapeName,
                                                     onClick = {
                                                         if (selectionModeActive) {
                                                             selectedAppPackages = if (cellItem.packageName in selectedAppPackages) {
@@ -918,6 +924,9 @@ internal fun MainDrawerContent(
                                 iconSize = iconSize,
                                 labelFontSize = labelFontSize,
                                 labelFontFamily = labelFontFamily,
+                                iconClipShape = iconClipShape,
+                                iconBgColor = iconBgColor,
+                                globalIconShapeName = globalIconShapeName,
                                 onClick = {
                                     if (selectionModeActive) {
                                         selectedAppPackages = if (app.packageName in selectedAppPackages) {

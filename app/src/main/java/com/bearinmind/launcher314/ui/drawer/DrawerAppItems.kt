@@ -41,6 +41,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.res.painterResource
@@ -916,8 +918,12 @@ internal fun SelectableAppItem(
     onBulkAddToHome: () -> Unit = {},
     onDragStarted: (() -> Unit)? = null,
     onDragMoved: ((Offset) -> Unit)? = null,
-    onDragEnded: (() -> Unit)? = null
+    onDragEnded: (() -> Unit)? = null,
+    iconClipShape: androidx.compose.ui.graphics.Shape? = null,
+    iconBgColor: Int? = null,
+    globalIconShapeName: String? = null
 ) {
+    val drawerItemContext = LocalContext.current
     val hapticFeedback = rememberHapticFeedback()
     var showContextMenu by remember { mutableStateOf(false) }
     var showBulkMenu by remember { mutableStateOf(false) }
@@ -1067,16 +1073,24 @@ internal fun SelectableAppItem(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Icon with selection circle overlay
+            // When bg color is set, use pre-generated icon with user color as bg layer
+            val drawerBgColorIconPath = if (iconBgColor != null && globalIconShapeName != null) {
+                try { getOrGenerateBgColorShapedIcon(drawerItemContext, app.packageName, globalIconShapeName, iconBgColor) }
+                catch (_: Exception) { null }
+            } else null
+            val drawerIsBgColorIcon = drawerBgColorIconPath != null
+            val drawerDisplayIconPath = drawerBgColorIconPath ?: app.iconPath
             Box(
                 modifier = Modifier.size(iconSize.dp),
                 contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
-                    model = File(app.iconPath),
+                    model = File(drawerDisplayIconPath),
                     contentDescription = null,
-                    contentScale = ContentScale.Fit,
+                    contentScale = if (drawerIsBgColorIcon) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                     modifier = Modifier
                         .size(iconSize.dp)
+                        .then(if (!drawerIsBgColorIcon && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
@@ -1086,12 +1100,13 @@ internal fun SelectableAppItem(
                 // Dark overlay (press + flash) — uses icon silhouette to match exact shape
                 if (overlayAlpha > 0f) {
                     AsyncImage(
-                        model = File(app.iconPath),
+                        model = File(drawerDisplayIconPath),
                         contentDescription = null,
-                        contentScale = ContentScale.Fit,
+                        contentScale = if (drawerIsBgColorIcon) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                         colorFilter = ColorFilter.tint(Color.Black, BlendMode.SrcIn),
                         modifier = Modifier
                             .size(iconSize.dp)
+                            .then(if (!drawerIsBgColorIcon && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
                             .graphicsLayer {
                                 scaleX = scale
                                 scaleY = scale

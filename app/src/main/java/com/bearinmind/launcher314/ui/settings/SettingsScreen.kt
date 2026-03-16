@@ -58,6 +58,19 @@ import com.bearinmind.launcher314.data.getSelectedFont
 import com.bearinmind.launcher314.data.getSettingsSelectedTab
 import com.bearinmind.launcher314.data.setSettingsSelectedTab
 import com.bearinmind.launcher314.data.getDrawerIconSizePercent
+import com.bearinmind.launcher314.data.getGlobalIconShape
+import com.bearinmind.launcher314.data.getGlobalIconBgColor
+import com.bearinmind.launcher314.data.setGlobalIconBgColor
+import com.bearinmind.launcher314.data.setGlobalIconShape
+import com.bearinmind.launcher314.helpers.clearGlobalShapedIcons
+import com.bearinmind.launcher314.helpers.clearBgColorShapedIcons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Clear
+import com.bearinmind.launcher314.helpers.IconShapes
+import com.bearinmind.launcher314.helpers.getIconShape
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontFamily
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +108,8 @@ fun SettingsScreen(
 
     // Icon size state (shared between home screen and app drawer previews)
     var sharedIconSizePercent by remember { mutableFloatStateOf(getDrawerIconSizePercent(context).toFloat()) }
+    var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
+    var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
 
     // Accessibility service state - reflects actual system state
     var isAccessibilityServiceEnabled by remember {
@@ -227,7 +242,9 @@ fun SettingsScreen(
                         scrollbarIntensityOverride = scrollbarIntensity.roundToInt(),
                         iconTextSizeOverride = iconTextSizePercent.roundToInt(),
                         sharedIconSize = sharedIconSizePercent,
-                        onSharedIconSizeChanged = { sharedIconSizePercent = it }
+                        onSharedIconSizeChanged = { sharedIconSizePercent = it },
+                        iconShapeOverride = globalIconShape,
+                        iconBgColorOverride = globalIconBgColor
                     )
                 }
 
@@ -242,7 +259,9 @@ fun SettingsScreen(
                         },
                         iconTextSizeOverride = iconTextSizePercent.roundToInt(),
                         sharedIconSize = sharedIconSizePercent,
-                        onSharedIconSizeChanged = { sharedIconSizePercent = it }
+                        onSharedIconSizeChanged = { sharedIconSizePercent = it },
+                        iconShapeOverride = globalIconShape,
+                        iconBgColorOverride = globalIconBgColor
                     )
                 }
 
@@ -256,7 +275,20 @@ fun SettingsScreen(
                         textSizePercent = iconTextSizePercent,
                         onTextSizeChange = { iconTextSizePercent = it },
                         onFontsClick = onFontsClick,
-                        onIconPacksClick = onIconPacksClick
+                        onIconPacksClick = onIconPacksClick,
+                        globalIconShape = globalIconShape,
+                        onGlobalIconShapeChanged = { shape ->
+                            globalIconShape = shape
+                            setGlobalIconShape(context, shape)
+                            clearGlobalShapedIcons(context)
+                            clearBgColorShapedIcons(context)
+                        },
+                        globalIconBgColor = globalIconBgColor,
+                        onGlobalIconBgColorChanged = { color ->
+                            globalIconBgColor = color
+                            setGlobalIconBgColor(context, color)
+                            clearBgColorShapedIcons(context)
+                        }
                     )
                 }
 
@@ -343,7 +375,7 @@ fun SettingsScreen(
             SettingsSection(title = "Development Information") {
                 SettingsClickableItem(
                     title = "Version",
-                    subtitle = "v0.0.1-beta",
+                    subtitle = "v0.0.3-beta",
                     onClick = { }
                 )
                 SettingsClickableItem(
@@ -535,12 +567,17 @@ fun SettingsToggleItem(
  * Card with text size slider for icon labels.
  * Same layout pattern as ScrollbarPersonalizationCard.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun IconTextPersonalizationCard(
     textSizePercent: Float,
     onTextSizeChange: (Float) -> Unit,
     onFontsClick: () -> Unit = {},
-    onIconPacksClick: () -> Unit = {}
+    onIconPacksClick: () -> Unit = {},
+    globalIconShape: String? = null,
+    onGlobalIconShapeChanged: (String?) -> Unit = {},
+    globalIconBgColor: Int? = null,
+    onGlobalIconBgColorChanged: (Int?) -> Unit = {}
 ) {
     val context = LocalContext.current
     // Re-read on every recomposition so it updates when returning from FontsScreen/IconPacksScreen
@@ -651,6 +688,139 @@ fun IconTextPersonalizationCard(
                 .padding(start = 16.dp, end = 76.dp, top = 4.dp),
             textAlign = TextAlign.Center
         )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Global Icon Shape — always visible row of shape options
+        val aospShapes = listOf(IconShapes.CIRCLE, IconShapes.ROUNDED_SQUARE, IconShapes.SQUIRCLE, IconShapes.TEARDROP)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 76.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // "Default" (no shape) option
+            val isDefault = globalIconShape == null
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .then(
+                        if (isDefault) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                        else Modifier
+                    )
+                    .clickable { onGlobalIconShapeChanged(null) },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Clear,
+                    contentDescription = "No shape",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+
+            aospShapes.forEach { shapeName ->
+                val isSelected = globalIconShape == shapeName
+                val clipShape = getIconShape(shapeName)
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .then(
+                            if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                            else Modifier
+                        )
+                        .clickable { onGlobalIconShapeChanged(shapeName) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .then(
+                                if (clipShape != null) Modifier.clip(clipShape)
+                                else Modifier
+                            )
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                    )
+                }
+            }
+        }
+
+        // "Icon Shape" label
+        Text(
+            text = "Icon Shape",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 76.dp, top = 4.dp),
+            textAlign = TextAlign.Center
+        )
+
+        // Icon background color — only visible when a shape is selected
+        if (globalIconShape != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            val iconBgColors = listOf(
+                null to "—",
+                0xFFFFFFFF.toInt() to "White",
+                0xFFEF9A9A.toInt() to "Red",
+                0xFFA5D6A7.toInt() to "Green",
+                0xFF90CAF9.toInt() to "Blue",
+                0xFFFFF59D.toInt() to "Yellow",
+                0xFFFFCC80.toInt() to "Orange",
+                0xFFCE93D8.toInt() to "Purple",
+                0xFF9FA8DA.toInt() to "Indigo"
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 76.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                iconBgColors.forEach { (color, label) ->
+                    val isSelected = globalIconBgColor == color
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .then(
+                                if (color != null) Modifier.background(Color(color))
+                                else Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                            )
+                            .then(
+                                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                                else Modifier
+                            )
+                            .clickable { onGlobalIconBgColorChanged(color) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (color == null) {
+                            Icon(
+                                imageVector = Icons.Outlined.Clear,
+                                contentDescription = "No background color",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = "Icon Background Color",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 76.dp, top = 4.dp),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 

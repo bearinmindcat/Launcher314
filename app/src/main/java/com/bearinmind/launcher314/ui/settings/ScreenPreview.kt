@@ -4,6 +4,14 @@ package com.bearinmind.launcher314.ui.settings
 
 import android.content.Context
 import com.bearinmind.launcher314.helpers.IconPackManager
+import com.bearinmind.launcher314.helpers.getIconShape
+import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
+import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.ColorDrawable
+import com.bearinmind.launcher314.helpers.parseBlendMode
+import com.bearinmind.launcher314.data.AppCustomization
+import com.bearinmind.launcher314.data.AppCustomizations
+import com.bearinmind.launcher314.data.loadAppCustomizations
 import com.bearinmind.launcher314.data.getHomeGridSize
 import com.bearinmind.launcher314.data.setHomeGridSize
 import com.bearinmind.launcher314.data.getHomeGridRows
@@ -33,6 +41,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
@@ -74,7 +83,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.pointer.pointerInput
@@ -174,7 +185,9 @@ fun AppDrawerPreviewSection(
     scrollbarIntensityOverride: Int? = null,
     iconTextSizeOverride: Int? = null,
     sharedIconSize: Float? = null,
-    onSharedIconSizeChanged: (Float) -> Unit = {}
+    onSharedIconSizeChanged: (Float) -> Unit = {},
+    iconShapeOverride: String? = null,
+    iconBgColorOverride: Int? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -203,6 +216,13 @@ fun AppDrawerPreviewSection(
     val scrollbarColor = scrollbarColorOverride ?: remember { getScrollbarColor(context) }
     val scrollbarIntensity = scrollbarIntensityOverride ?: remember { getScrollbarIntensity(context) }
 
+    val drawerPreviewScope = rememberCoroutineScope()
+
+    // Load apps and folders for preview
+    var previewApps by remember { mutableStateOf<List<PreviewAppInfo>>(emptyList()) }
+    var previewFolders by remember { mutableStateOf<List<PreviewFolder>>(emptyList()) }
+    var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
+
     // Refresh from SharedPreferences when screen becomes RESUMED
     // This works with Compose Navigation because NavBackStackEntry has its own lifecycle
     DisposableEffect(lifecycleOwner) {
@@ -215,6 +235,9 @@ fun AppDrawerPreviewSection(
                 drawerGridRows = getDrawerGridRows(context).toFloat()
                 isPagedMode = getDrawerPagedMode(context)
                 selectedFontFamily = FontManager.getSelectedFontFamily(context)
+                drawerPreviewScope.launch(Dispatchers.IO) {
+                    appCustomizations = loadAppCustomizations(context)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -223,14 +246,11 @@ fun AppDrawerPreviewSection(
         }
     }
 
-    // Load apps and folders for preview
-    var previewApps by remember { mutableStateOf<List<PreviewAppInfo>>(emptyList()) }
-    var previewFolders by remember { mutableStateOf<List<PreviewFolder>>(emptyList()) }
-
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             previewApps = loadPreviewApps(context)
             previewFolders = loadPreviewFolders(context)
+            appCustomizations = loadAppCustomizations(context)
         }
     }
 
@@ -358,7 +378,10 @@ fun AppDrawerPreviewSection(
                     isPagedMode = isPagedMode,
                     iconTextSizePercent = iconTextSizeOverride ?: getIconTextSizePercent(LocalContext.current),
                     labelFontFamily = selectedFontFamily,
-                    onPlayClick = onPreviewDrawer
+                    onPlayClick = onPreviewDrawer,
+                    iconShapeOverride = iconShapeOverride,
+                    iconBgColorOverride = iconBgColorOverride,
+                    appCustomizations = appCustomizations
                 )
             }
 
@@ -591,7 +614,10 @@ private fun RealAppDrawerPreview(
     isPagedMode: Boolean = false,
     iconTextSizePercent: Int = 100,
     labelFontFamily: FontFamily? = null,
-    onPlayClick: () -> Unit = {}
+    onPlayClick: () -> Unit = {},
+    iconShapeOverride: String? = null,
+    iconBgColorOverride: Int? = null,
+    appCustomizations: AppCustomizations = AppCustomizations()
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp.dp
@@ -813,7 +839,11 @@ private fun RealAppDrawerPreview(
                                                     app = item.app,
                                                     iconSize = baseIconSize,
                                                     fontSize = baseFontSize,
-                                                    fontFamily = labelFontFamily
+                                                    fontFamily = labelFontFamily,
+                                                    iconClipShape = getIconShape(iconShapeOverride),
+                                                    iconBgColor = iconBgColorOverride,
+                                                    customization = appCustomizations.customizations[item.app.packageName],
+                                                    iconShapeName = iconShapeOverride
                                                 )
                                             }
                                         }
@@ -894,7 +924,11 @@ private fun RealAppDrawerPreview(
                                     app = item.app,
                                     iconSize = baseIconSize,
                                     fontSize = baseFontSize,
-                                    fontFamily = labelFontFamily
+                                    fontFamily = labelFontFamily,
+                                    iconClipShape = getIconShape(iconShapeOverride),
+                                    iconBgColor = iconBgColorOverride,
+                                    customization = appCustomizations.customizations[item.app.packageName],
+                                    iconShapeName = iconShapeOverride
                                 )
                             }
                         }
@@ -1093,9 +1127,38 @@ private fun ScaledPreviewAppItem(
     fontSize: androidx.compose.ui.unit.TextUnit,
     fontFamily: FontFamily? = null,
     showPlusMarker: Boolean = false,
-    scaleFactor: Float = 0.4f
+    scaleFactor: Float = 0.4f,
+    iconClipShape: Shape? = null,
+    iconBgColor: Int? = null,
+    customization: AppCustomization? = null,
+    iconShapeName: String? = null
 ) {
     val markerHalfSize = 6.dp * scaleFactor
+    val displayName = customization?.customLabel ?: app.name
+    val hideLabel = customization?.hideLabel == true
+    val customIconFile = customization?.customIconPath?.let { File(it) }?.takeIf { it.exists() }
+    val perAppShape = getIconShape(customization?.iconShapeExpV2 ?: customization?.iconShapeExp ?: customization?.iconShape)
+    val effectiveClipShape = perAppShape ?: iconClipShape
+    val tintFilter = customization?.iconTintColor?.let { tintColor ->
+        if (customization.iconTintBackgroundOnly) null
+        else {
+            val intensity = (customization.iconTintIntensity ?: 100) / 100f
+            ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(customization.iconTintBlendMode))
+        }
+    }
+
+    val scaledPreviewContext = LocalContext.current
+    val iconLayers = remember(app.packageName) {
+        try {
+            val drawable = scaledPreviewContext.packageManager.getApplicationIcon(app.packageName)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
+                Triple(drawable.foreground, drawable.background, drawable as android.graphics.drawable.Drawable)
+            } else Triple(null, null, drawable as android.graphics.drawable.Drawable?)
+        } catch (e: Exception) { Triple(null, null, null) }
+    }
+    val fgDrawable = iconLayers.first
+    val bgDrawable = iconLayers.second
+    val fullDrawable = iconLayers.third
 
     Box(
         modifier = Modifier.fillMaxWidth()
@@ -1104,27 +1167,104 @@ private fun ScaledPreviewAppItem(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
-            AsyncImage(
-                model = File(app.iconPath),
-                contentDescription = app.name,
-                modifier = Modifier
-                    .size(iconSize)
-                    .clip(RoundedCornerShape(4.dp)),
-                contentScale = ContentScale.Fit
-            )
+            Box(contentAlignment = Alignment.Center) {
+                when {
+                    customIconFile != null -> {
+                        AsyncImage(
+                            model = customIconFile,
+                            contentDescription = displayName,
+                            modifier = Modifier
+                                .size(iconSize)
+                                .clip(effectiveClipShape ?: RoundedCornerShape(4.dp)),
+                            contentScale = if (effectiveClipShape != null) ContentScale.Crop else ContentScale.Fit,
+                            colorFilter = tintFilter
+                        )
+                    }
+                    effectiveClipShape != null && iconBgColor != null -> {
+                        // Shape + explicit bg color: solid bg + icon at 2/3
+                        Box(
+                            modifier = Modifier
+                                .size(iconSize)
+                                .clip(effectiveClipShape)
+                                .background(Color(iconBgColor))
+                        )
+                        val overlayDrawable = fgDrawable ?: fullDrawable
+                        if (overlayDrawable != null) {
+                            Image(
+                                painter = rememberDrawablePainter(drawable = overlayDrawable),
+                                contentDescription = displayName,
+                                modifier = Modifier.size(iconSize * 2f / 3f),
+                                contentScale = ContentScale.Crop,
+                                colorFilter = tintFilter
+                            )
+                        }
+                    }
+                    effectiveClipShape != null && bgDrawable != null && fgDrawable != null -> {
+                        // Shape + adaptive (no bg color): icon's own bg clipped + fg at 2/3
+                        val nativeBgColor = if (bgDrawable is ColorDrawable) bgDrawable.color else null
+                        if (nativeBgColor != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(iconSize)
+                                    .clip(effectiveClipShape)
+                                    .background(Color(nativeBgColor))
+                            )
+                        } else {
+                            Image(
+                                painter = rememberDrawablePainter(drawable = bgDrawable),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(iconSize)
+                                    .clip(effectiveClipShape),
+                                contentScale = ContentScale.FillBounds
+                            )
+                        }
+                        Image(
+                            painter = rememberDrawablePainter(drawable = fgDrawable),
+                            contentDescription = displayName,
+                            modifier = Modifier.size(iconSize * 2f / 3f),
+                            contentScale = ContentScale.Crop,
+                            colorFilter = tintFilter
+                        )
+                    }
+                    effectiveClipShape != null -> {
+                        // Shape + non-adaptive: clip full icon
+                        AsyncImage(
+                            model = File(app.iconPath),
+                            contentDescription = displayName,
+                            modifier = Modifier
+                                .size(iconSize)
+                                .clip(effectiveClipShape),
+                            contentScale = ContentScale.Crop,
+                            colorFilter = tintFilter
+                        )
+                    }
+                    else -> {
+                        AsyncImage(
+                            model = File(app.iconPath),
+                            contentDescription = displayName,
+                            modifier = Modifier.size(iconSize),
+                            contentScale = ContentScale.Fit,
+                            colorFilter = tintFilter
+                        )
+                    }
+                }
+            }
 
-            Spacer(modifier = Modifier.height(1.dp))
+            if (!hideLabel) {
+                Spacer(modifier = Modifier.height(1.dp))
 
-            Text(
-                text = app.name,
-                fontSize = fontSize,
-                fontFamily = fontFamily ?: FontFamily.Default,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
+                Text(
+                    text = displayName,
+                    fontSize = fontSize,
+                    fontFamily = fontFamily ?: FontFamily.Default,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
         // "+" marker at bottom-right corner (always visible in preview)
@@ -1262,7 +1402,8 @@ fun getWallpaperPermission(): String {
 @Serializable
 data class HomeScreenAppData(
     val packageName: String,
-    val position: Int
+    val position: Int,
+    val page: Int = 0
 )
 
 @Serializable
@@ -1360,7 +1501,9 @@ fun HomeScreenPreviewSection(
     onPreviewLauncher: () -> Unit = {},
     iconTextSizeOverride: Int? = null,
     sharedIconSize: Float? = null,
-    onSharedIconSizeChanged: (Float) -> Unit = {}
+    onSharedIconSizeChanged: (Float) -> Unit = {},
+    iconShapeOverride: String? = null,
+    iconBgColorOverride: Int? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1387,6 +1530,7 @@ fun HomeScreenPreviewSection(
     var allApps by remember { mutableStateOf<List<PreviewAppInfo>>(emptyList()) }
     var homeFolders by remember { mutableStateOf<List<HomeFolderData>>(emptyList()) }
     var placedWidgets by remember { mutableStateOf<List<PlacedWidget>>(emptyList()) }
+    var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
 
     // Widget bitmaps - kept outside key(iconSizePercent) so they persist across icon size changes
     val widgetBitmaps = remember { mutableStateMapOf<Int, android.graphics.Bitmap>() }
@@ -1425,6 +1569,9 @@ fun HomeScreenPreviewSection(
                 dockColumns = getDockColumns(context).toFloat()
                 iconSizePercent = getHomeIconSizePercent(context).toFloat()
                 selectedFontFamily = FontManager.getSelectedFontFamily(context)
+                coroutineScope.launch(Dispatchers.IO) {
+                    appCustomizations = loadAppCustomizations(context)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -1441,6 +1588,7 @@ fun HomeScreenPreviewSection(
             allApps = loadPreviewApps(context)
             homeFolders = loadHomeFolders(context)
             placedWidgets = WidgetManager.loadPlacedWidgets(context)
+            appCustomizations = loadAppCustomizations(context)
         }
     }
 
@@ -1514,7 +1662,10 @@ fun HomeScreenPreviewSection(
                         widgetBitmaps = widgetBitmaps,
                         labelFontFamily = selectedFontFamily,
                         wallpaperDrawable = wallpaperDrawable,
-                        onPlayClick = onPreviewLauncher
+                        onPlayClick = onPreviewLauncher,
+                        iconShapeOverride = iconShapeOverride,
+                        iconBgColorOverride = iconBgColorOverride,
+                        appCustomizations = appCustomizations
                     )
             }
 
@@ -1688,7 +1839,10 @@ private fun HomeScreenPreview(
     widgetBitmaps: MutableMap<Int, android.graphics.Bitmap> = mutableMapOf(),
     labelFontFamily: FontFamily? = null,
     wallpaperDrawable: Drawable? = null,
-    onPlayClick: () -> Unit = {}
+    onPlayClick: () -> Unit = {},
+    iconShapeOverride: String? = null,
+    iconBgColorOverride: Int? = null,
+    appCustomizations: AppCustomizations = AppCustomizations()
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp.dp
@@ -1759,7 +1913,7 @@ private fun HomeScreenPreview(
         }
 
         // Place apps (page 0 only for preview)
-        homeScreenApps.forEach { homeApp ->
+        homeScreenApps.filter { it.page == 0 }.forEach { homeApp ->
             if (homeApp.position < totalCells && cells[homeApp.position] == null) {
                 allApps.find { it.packageName == homeApp.packageName }?.let { appInfo ->
                     cells[homeApp.position] = HomePreviewCell.App(appInfo)
@@ -1877,7 +2031,7 @@ private fun HomeScreenPreview(
                         alpha = base.alpha
                     )
                 }
-                val previewTriangleSize = (previewDotWidthDp + 2).dp * scaleFactor
+                val previewTriangleSize = previewDotWidthDp.dp * scaleFactor * 2f / 1.732f * 1.1f
 
                 Box(
                     modifier = Modifier
@@ -1906,6 +2060,30 @@ private fun HomeScreenPreview(
                                 ) {
                                     when (cell) {
                                         is HomePreviewCell.App -> {
+                                            val cust = appCustomizations.customizations[cell.app.packageName]
+                                            val displayName = cust?.customLabel ?: cell.app.name
+                                            val hideLabel = cust?.hideLabel == true
+                                            val customIconFile = cust?.customIconPath?.let { File(it) }?.takeIf { it.exists() }
+                                            val perAppShape = getIconShape(cust?.iconShapeExpV2 ?: cust?.iconShapeExp ?: cust?.iconShape)
+                                            val cellClipShape = perAppShape ?: getIconShape(iconShapeOverride)
+                                            val perAppTintFilter = cust?.iconTintColor?.let { tintColor ->
+                                                if (cust.iconTintBackgroundOnly) null
+                                                else {
+                                                    val intensity = (cust.iconTintIntensity ?: 100) / 100f
+                                                    ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(cust.iconTintBlendMode))
+                                                }
+                                            }
+                                            val gridPreviewContext = LocalContext.current
+                                            val gridIconLayers = remember(cell.app.packageName) {
+                                                try {
+                                                    val drawable = gridPreviewContext.packageManager.getApplicationIcon(cell.app.packageName)
+                                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
+                                                        Triple(drawable.foreground, drawable.background, drawable as android.graphics.drawable.Drawable)
+                                                    } else Triple(null, null, drawable as android.graphics.drawable.Drawable?)
+                                                } catch (e: Exception) { Triple(null, null, null) }
+                                            }
+                                            val gridFgDrawable = gridIconLayers.first
+                                            val gridBgDrawable = gridIconLayers.second
                                             Column(
                                                 horizontalAlignment = Alignment.CenterHorizontally,
                                                 modifier = Modifier
@@ -1914,32 +2092,106 @@ private fun HomeScreenPreview(
                                                     .graphicsLayer { clip = false }
                                                     .padding(markerHalfSize)
                                             ) {
-                                                AsyncImage(
-                                                    model = File(cell.app.iconPath),
-                                                    contentDescription = cell.app.name,
-                                                    modifier = Modifier
-                                                        .requiredSize(baseIconSize)
-                                                        .clip(RoundedCornerShape(4.dp)),
-                                                    contentScale = ContentScale.Fit
-                                                )
-                                                Spacer(modifier = Modifier.height(iconTextSpacer))
-                                                Text(
-                                                    text = cell.app.name,
-                                                    fontSize = baseFontSize,
-                                                    fontFamily = labelFontFamily,
-                                                    color = Color.White,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    textAlign = TextAlign.Center,
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    style = LocalTextStyle.current.copy(
-                                                        shadow = Shadow(
-                                                            color = Color.Black,
-                                                            offset = Offset(1f, 1f),
-                                                            blurRadius = 2f
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    when {
+                                                        customIconFile != null -> {
+                                                            AsyncImage(
+                                                                model = customIconFile,
+                                                                contentDescription = displayName,
+                                                                modifier = Modifier
+                                                                    .requiredSize(baseIconSize)
+                                                                    .clip(cellClipShape ?: RoundedCornerShape(4.dp)),
+                                                                contentScale = if (cellClipShape != null) ContentScale.Crop else ContentScale.Fit,
+                                                                colorFilter = perAppTintFilter
+                                                            )
+                                                        }
+                                                        cellClipShape != null && iconBgColorOverride != null -> {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .requiredSize(baseIconSize)
+                                                                    .clip(cellClipShape)
+                                                                    .background(Color(iconBgColorOverride))
+                                                            )
+                                                            val gridOverlay = gridFgDrawable ?: gridIconLayers.third
+                                                            if (gridOverlay != null) {
+                                                                Image(
+                                                                    painter = rememberDrawablePainter(drawable = gridOverlay),
+                                                                    contentDescription = displayName,
+                                                                    modifier = Modifier.requiredSize(baseIconSize * 2f / 3f),
+                                                                    contentScale = ContentScale.Crop,
+                                                                    colorFilter = perAppTintFilter
+                                                                )
+                                                            }
+                                                        }
+                                                        cellClipShape != null && gridBgDrawable != null && gridFgDrawable != null -> {
+                                                            val gridNativeBgColor = if (gridBgDrawable is ColorDrawable) gridBgDrawable.color else null
+                                                            if (gridNativeBgColor != null) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .requiredSize(baseIconSize)
+                                                                        .clip(cellClipShape)
+                                                                        .background(Color(gridNativeBgColor))
+                                                                )
+                                                            } else {
+                                                                Image(
+                                                                    painter = rememberDrawablePainter(drawable = gridBgDrawable),
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier
+                                                                        .requiredSize(baseIconSize)
+                                                                        .clip(cellClipShape),
+                                                                    contentScale = ContentScale.FillBounds
+                                                                )
+                                                            }
+                                                            Image(
+                                                                painter = rememberDrawablePainter(drawable = gridFgDrawable),
+                                                                contentDescription = displayName,
+                                                                modifier = Modifier.requiredSize(baseIconSize * 2f / 3f),
+                                                                contentScale = ContentScale.Crop,
+                                                                colorFilter = perAppTintFilter
+                                                            )
+                                                        }
+                                                        cellClipShape != null -> {
+                                                            AsyncImage(
+                                                                model = File(cell.app.iconPath),
+                                                                contentDescription = displayName,
+                                                                modifier = Modifier
+                                                                    .requiredSize(baseIconSize)
+                                                                    .clip(cellClipShape),
+                                                                contentScale = ContentScale.Crop,
+                                                                colorFilter = perAppTintFilter
+                                                            )
+                                                        }
+                                                        else -> {
+                                                            AsyncImage(
+                                                                model = File(cell.app.iconPath),
+                                                                contentDescription = displayName,
+                                                                modifier = Modifier.requiredSize(baseIconSize),
+                                                                contentScale = ContentScale.Fit,
+                                                                colorFilter = perAppTintFilter
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                if (!hideLabel) {
+                                                    Spacer(modifier = Modifier.height(iconTextSpacer))
+                                                    Text(
+                                                        text = displayName,
+                                                        fontSize = baseFontSize,
+                                                        fontFamily = labelFontFamily,
+                                                        color = Color.White,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        textAlign = TextAlign.Center,
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        style = LocalTextStyle.current.copy(
+                                                            shadow = Shadow(
+                                                                color = Color.Black,
+                                                                offset = Offset(1f, 1f),
+                                                                blurRadius = 2f
+                                                            )
                                                         )
                                                     )
-                                                )
+                                                }
                                             }
                                         }
                                         is HomePreviewCell.Folder -> {
@@ -2174,6 +2426,7 @@ private fun HomeScreenPreview(
                 } // end grid area Box
 
                     // Page indicator dots (like the actual launcher, using scrollbar personalization)
+                    val previewTotalPages = maxOf(1, (homeScreenApps.maxOfOrNull { it.page } ?: 0) + 1)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2181,16 +2434,18 @@ private fun HomeScreenPreview(
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
-                            horizontalArrangement = Arrangement.Center,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp * scaleFactor, Alignment.CenterHorizontally),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Home page: rounded triangle
+                            // Home page: equilateral rounded triangle, full-width base = dot diameter
                             Canvas(modifier = Modifier.size(previewTriangleSize)) {
                                 val w = size.width
                                 val h = size.height
-                                val top = Offset(w / 2f, 0f)
-                                val bl = Offset(0f, h)
-                                val br = Offset(w, h)
+                                val triH = w * 0.866f
+                                val topY = (h - triH) / 2f - h * 0.05f
+                                val top = Offset(w / 2f, topY)
+                                val bl = Offset(0f, topY + triH)
+                                val br = Offset(w, topY + triH)
                                 val r = 0.38f
                                 fun lerp(a: Offset, b: Offset, t: Float) =
                                     Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
@@ -2212,6 +2467,15 @@ private fun HomeScreenPreview(
                                 }
                                 drawPath(path, previewDotColor.copy(alpha = 0.9f))
                             }
+                            // Extra page dots
+                            repeat(previewTotalPages - 1) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(previewDotWidthDp.dp * scaleFactor)
+                                        .clip(CircleShape)
+                                        .background(previewDotColor.copy(alpha = 0.5f))
+                                )
+                            }
                         }
                     }
 
@@ -2230,14 +2494,108 @@ private fun HomeScreenPreview(
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (app != null) {
-                                    AsyncImage(
-                                        model = File(app.iconPath),
-                                        contentDescription = app.name,
-                                        modifier = Modifier
-                                            .requiredSize(dockIconSize)
-                                            .clip(RoundedCornerShape(4.dp)),
-                                        contentScale = ContentScale.Fit
-                                    )
+                                    val dockCust = appCustomizations.customizations[app.packageName]
+                                    val dockCustomIconFile = dockCust?.customIconPath?.let { File(it) }?.takeIf { it.exists() }
+                                    val dockPerAppShape = getIconShape(dockCust?.iconShapeExpV2 ?: dockCust?.iconShapeExp ?: dockCust?.iconShape)
+                                    val dockClipShape = dockPerAppShape ?: getIconShape(iconShapeOverride)
+                                    val dockTintFilter = dockCust?.iconTintColor?.let { tintColor ->
+                                        if (dockCust.iconTintBackgroundOnly) null
+                                        else {
+                                            val intensity = (dockCust.iconTintIntensity ?: 100) / 100f
+                                            ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(dockCust.iconTintBlendMode))
+                                        }
+                                    }
+                                    val dockPreviewContext = LocalContext.current
+                                    val dockIconLayers = remember(app.packageName) {
+                                        try {
+                                            val drawable = dockPreviewContext.packageManager.getApplicationIcon(app.packageName)
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
+                                                Triple(drawable.foreground, drawable.background, drawable as android.graphics.drawable.Drawable)
+                                            } else Triple(null, null, drawable as android.graphics.drawable.Drawable?)
+                                        } catch (e: Exception) { Triple(null, null, null) }
+                                    }
+                                    val dockFgDrawable = dockIconLayers.first
+                                    val dockBgDrawable = dockIconLayers.second
+                                    Box(contentAlignment = Alignment.Center) {
+                                        when {
+                                            dockCustomIconFile != null -> {
+                                                AsyncImage(
+                                                    model = dockCustomIconFile,
+                                                    contentDescription = app.name,
+                                                    modifier = Modifier
+                                                        .requiredSize(dockIconSize)
+                                                        .clip(dockClipShape ?: RoundedCornerShape(4.dp)),
+                                                    contentScale = if (dockClipShape != null) ContentScale.Crop else ContentScale.Fit,
+                                                    colorFilter = dockTintFilter
+                                                )
+                                            }
+                                            dockClipShape != null && iconBgColorOverride != null -> {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .requiredSize(dockIconSize)
+                                                        .clip(dockClipShape)
+                                                        .background(Color(iconBgColorOverride))
+                                                )
+                                                val dockOverlay = dockFgDrawable ?: dockIconLayers.third
+                                                if (dockOverlay != null) {
+                                                    Image(
+                                                        painter = rememberDrawablePainter(drawable = dockOverlay),
+                                                        contentDescription = app.name,
+                                                        modifier = Modifier.requiredSize(dockIconSize * 2f / 3f),
+                                                        contentScale = ContentScale.Crop,
+                                                        colorFilter = dockTintFilter
+                                                    )
+                                                }
+                                            }
+                                            dockClipShape != null && dockBgDrawable != null && dockFgDrawable != null -> {
+                                                val dockNativeBgColor = if (dockBgDrawable is ColorDrawable) dockBgDrawable.color else null
+                                                if (dockNativeBgColor != null) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .requiredSize(dockIconSize)
+                                                            .clip(dockClipShape)
+                                                            .background(Color(dockNativeBgColor))
+                                                    )
+                                                } else {
+                                                    Image(
+                                                        painter = rememberDrawablePainter(drawable = dockBgDrawable),
+                                                        contentDescription = null,
+                                                        modifier = Modifier
+                                                            .requiredSize(dockIconSize)
+                                                            .clip(dockClipShape),
+                                                        contentScale = ContentScale.FillBounds
+                                                    )
+                                                }
+                                                Image(
+                                                    painter = rememberDrawablePainter(drawable = dockFgDrawable),
+                                                    contentDescription = app.name,
+                                                    modifier = Modifier.requiredSize(dockIconSize * 2f / 3f),
+                                                    contentScale = ContentScale.Crop,
+                                                    colorFilter = dockTintFilter
+                                                )
+                                            }
+                                            dockClipShape != null -> {
+                                                AsyncImage(
+                                                    model = File(app.iconPath),
+                                                    contentDescription = app.name,
+                                                    modifier = Modifier
+                                                        .requiredSize(dockIconSize)
+                                                        .clip(dockClipShape),
+                                                    contentScale = ContentScale.Crop,
+                                                    colorFilter = dockTintFilter
+                                                )
+                                            }
+                                            else -> {
+                                                AsyncImage(
+                                                    model = File(app.iconPath),
+                                                    contentDescription = app.name,
+                                                    modifier = Modifier.requiredSize(dockIconSize),
+                                                    contentScale = ContentScale.Fit,
+                                                    colorFilter = dockTintFilter
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

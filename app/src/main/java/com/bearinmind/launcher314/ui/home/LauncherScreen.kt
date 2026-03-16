@@ -73,7 +73,18 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import com.bearinmind.launcher314.helpers.getIconShape
+import com.bearinmind.launcher314.helpers.getShapedExpDir
+import com.bearinmind.launcher314.helpers.getShapedExpV2Dir
+import com.bearinmind.launcher314.helpers.getBgTintedDir
+import com.bearinmind.launcher314.helpers.getShapedBgTintedDir
+import com.bearinmind.launcher314.helpers.getGlobalShapedDir
+import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
+import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
+import com.bearinmind.launcher314.helpers.parseBlendMode
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
+import com.bearinmind.launcher314.data.getGlobalIconShape
+import com.bearinmind.launcher314.data.getGlobalIconBgColor
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +108,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
@@ -106,6 +119,8 @@ import com.bearinmind.launcher314.ui.components.AnimatedPopup
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.bearinmind.launcher314.data.getDockColumns
+import com.bearinmind.launcher314.data.getDrawerPagedMode
+import com.bearinmind.launcher314.data.getGridSize
 import com.bearinmind.launcher314.data.getHomeGridSize
 import com.bearinmind.launcher314.data.getHomeGridRows
 import com.bearinmind.launcher314.data.getHomeIconSizePercent
@@ -164,15 +179,184 @@ import com.bearinmind.launcher314.data.migrateAppToGridItem
 import com.bearinmind.launcher314.data.migrateWidgetToGridItem
 import com.bearinmind.launcher314.data.getOccupiedCells
 import com.bearinmind.launcher314.data.canPlaceGridItem
+import com.bearinmind.launcher314.data.AppCustomization
+import com.bearinmind.launcher314.data.AppCustomizations
 import com.bearinmind.launcher314.data.AppInfo
 import com.bearinmind.launcher314.data.AppFolder
+import com.bearinmind.launcher314.data.loadAppCustomizations
 import com.bearinmind.launcher314.data.loadHomeScreenData
+import com.bearinmind.launcher314.data.setCustomization
+import com.bearinmind.launcher314.data.removeCustomization
 import com.bearinmind.launcher314.data.saveHomeScreenData
 import com.bearinmind.launcher314.data.loadAvailableApps
 import com.bearinmind.launcher314.data.launchApp
 import com.bearinmind.launcher314.data.LauncherUtils
 import com.bearinmind.launcher314.helpers.openWallpaperPicker
 import com.bearinmind.launcher314.helpers.openWidgetPicker
+
+/** Resolve the final icon path considering bg-tint and/or shaped+bg-tint bitmaps. */
+private fun resolveBgTintIconPath(
+    context: Context,
+    packageName: String,
+    hasAnyShape: Boolean,
+    fallbackPath: String
+): String {
+    if (hasAnyShape) {
+        val f = java.io.File(getShapedBgTintedDir(context), "$packageName.png")
+        if (f.exists()) return f.absolutePath
+    }
+    val f = java.io.File(getBgTintedDir(context), "$packageName.png")
+    return if (f.exists()) f.absolutePath else fallbackPath
+}
+
+/** Overlay label composable — respects hideLabel, customLabel, and customization. */
+@Composable
+private fun OverlayLabel(
+    appInfo: HomeAppInfo,
+    gridIconTextSpacer: Dp,
+    gridAppNameFont: TextUnit,
+    selectedFontFamily: FontFamily?,
+    textAlpha: Float
+) {
+    if (appInfo.customization?.hideLabel == true) return
+    val label = appInfo.customization?.customLabel?.takeIf { it.isNotEmpty() } ?: appInfo.name
+    Spacer(modifier = Modifier.height(gridIconTextSpacer))
+    Text(
+        text = label,
+        fontSize = gridAppNameFont,
+        fontFamily = selectedFontFamily ?: FontFamily.Default,
+        color = Color.White,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { alpha = textAlpha },
+        style = MaterialTheme.typography.bodySmall.copy(
+            shadow = androidx.compose.ui.graphics.Shadow(
+                color = Color.Black,
+                offset = Offset(1f, 1f),
+                blurRadius = 3f
+            )
+        )
+    )
+}
+
+/**
+ * Overlay content for a dragged app — renders icon + label matching DraggableGridCell layout exactly.
+ * Extracted to a separate composable to keep LauncherScreen method under JVM 64KB limit.
+ */
+@Composable
+private fun OverlayAppContent(
+    context: android.content.Context,
+    appInfo: HomeAppInfo,
+    iconSizeDp: Int,
+    iconSizePercent: Int,
+    gridIconTextSpacer: Dp,
+    gridAppNameFont: TextUnit,
+    selectedFontFamily: FontFamily?,
+    textAlpha: Float,
+    globalIconShape: String?,
+    showLabel: Boolean,
+    globalIconBgColor: Int? = null
+) {
+    val hasCustomIcon = appInfo.customization?.customIconPath?.let { File(it).exists() } == true
+    val hasShapeExpV2 = appInfo.customization?.iconShapeExpV2 != null
+    val hasShapeExp = appInfo.customization?.iconShapeExp != null
+    val hasPerAppShape = appInfo.customization?.iconShape != null
+    val iconPath = if (hasCustomIcon) {
+        appInfo.customization!!.customIconPath!!
+    } else if (hasShapeExpV2) {
+        File(getShapedExpV2Dir(context), "${appInfo.packageName}.png").let {
+            if (it.exists()) it.absolutePath else appInfo.iconPath
+        }
+    } else if (hasShapeExp) {
+        File(getShapedExpDir(context), "${appInfo.packageName}.png").let {
+            if (it.exists()) it.absolutePath else appInfo.iconPath
+        }
+    } else if (!hasPerAppShape && globalIconShape != null) {
+        File(getGlobalShapedDir(context), "${appInfo.packageName}.png").let {
+            if (it.exists()) it.absolutePath
+            else try { getOrGenerateGlobalShapedIcon(context, appInfo.packageName, globalIconShape) } catch (_: Exception) { appInfo.iconPath }
+        }
+    } else appInfo.iconPath
+    val hasBgTint = appInfo.customization?.iconTintBackgroundOnly == true && appInfo.customization?.iconTintColor != null
+    val hasAnyShape = hasShapeExpV2 || hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+    val finalIconPath = if (hasBgTint && !hasCustomIcon) {
+        resolveBgTintIconPath(context, appInfo.packageName, hasAnyShape, iconPath)
+    } else iconPath
+    val hasAnyExp = hasCustomIcon || hasShapeExpV2 || hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+    val clipShape = if (!hasAnyExp) getIconShape(appInfo.customization?.iconShape) else null
+    val tintFilter = if (hasBgTint) null else appInfo.customization?.iconTintColor?.let { tintColor ->
+        val intensity = (appInfo.customization?.iconTintIntensity ?: 100) / 100f
+        ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(appInfo.customization?.iconTintBlendMode))
+    }
+    // Use actual dp size to match cell layout (not graphicsLayer scale)
+    val perAppSizePercent = appInfo.customization?.iconSizePercent ?: iconSizePercent
+    val perAppIconSizeDp = (iconSizeDp * perAppSizePercent / iconSizePercent.toFloat()).dp
+    val perAppFontSize = appInfo.customization?.iconTextSizePercent?.let { 12.sp * it / 100f } ?: gridAppNameFont
+    val perAppFontFamily = appInfo.customization?.labelFontId?.let { id ->
+        FontManager.bundledFonts.find { it.id == id }?.fontFamily
+            ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+    } ?: selectedFontFamily ?: FontFamily.Default
+    val labelHidden = appInfo.customization?.hideLabel == true
+    val displayLabel = appInfo.customization?.customLabel?.takeIf { it.isNotEmpty() } ?: appInfo.name
+    // When bg color is set, generate icon with user color as bg layer
+    val useBgColorIcon = globalIconBgColor != null && !hasCustomIcon
+    val bgColorEffectiveShape = if (useBgColorIcon) {
+        appInfo.customization?.iconShapeExpV2
+            ?: appInfo.customization?.iconShapeExp
+            ?: appInfo.customization?.iconShape
+            ?: globalIconShape
+    } else null
+    val displayIconPath = if (useBgColorIcon && bgColorEffectiveShape != null) {
+        try { getOrGenerateBgColorShapedIcon(context, appInfo.packageName, bgColorEffectiveShape, globalIconBgColor!!) }
+        catch (_: Exception) { finalIconPath }
+    } else finalIconPath
+    val isBgColorIcon = displayIconPath != finalIconPath
+
+    Column(
+        modifier = Modifier
+            .wrapContentHeight(unbounded = true)
+            .graphicsLayer { clip = false },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            AsyncImage(
+                model = File(displayIconPath),
+                contentDescription = appInfo.name,
+                contentScale = if (isBgColorIcon) ContentScale.Fit else if (clipShape != null) ContentScale.Crop else ContentScale.Fit,
+                colorFilter = tintFilter,
+                modifier = Modifier
+                    .size(perAppIconSizeDp)
+                    .then(if (!isBgColorIcon && clipShape != null) Modifier.clip(clipShape) else Modifier)
+            )
+        }
+        // Always render label (alpha 0 when hidden) to match cell layout
+        if (showLabel) {
+            Spacer(modifier = Modifier.height(gridIconTextSpacer))
+            Text(
+                text = displayLabel,
+                fontSize = perAppFontSize,
+                fontFamily = perAppFontFamily,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = if (labelHidden) 0f else textAlpha },
+                style = MaterialTheme.typography.bodySmall.copy(
+                    shadow = androidx.compose.ui.graphics.Shadow(
+                        color = Color.Black,
+                        offset = Offset(1f, 1f),
+                        blurRadius = 3f
+                    )
+                )
+            )
+        }
+    }
+}
 
 /**
  * LauncherScreen - A home screen with drag and drop app placement
@@ -202,6 +386,8 @@ fun LauncherScreen(
     var iconSizePercent by remember { mutableStateOf(getHomeIconSizePercent(context)) }
     var iconTextSizePercent by remember { mutableStateOf(getIconTextSizePercent(context)) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
+    var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
+    var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
 
     // Dock settings - get from user preferences (needed for proportional sizing below)
     val dockSlots = getDockColumns(context)
@@ -242,6 +428,18 @@ fun LauncherScreen(
     // Uses reference column count of 4 so icon size is consistent across screens regardless of actual column count
     val iconSizeDp = (screenWidthDp / 4f * 0.55f * iconSizePercent / 100f).toInt()
 
+    // Per-app icon size overflow threshold: same universal formula as global settings slider
+    // (min of home screen threshold and drawer threshold), converted to per-app scale
+    val iconRef = screenWidthDp / 4f * 0.55f
+    val gridMarkerPadding = gridCellBasis * 0.073f * 2f
+    val homeOverflowThreshold = ((gridCellWidth - gridMarkerPadding) / iconRef * 100f).coerceIn(50f, 125f)
+    val drawerGridSize = getGridSize(context)
+    val drawerPaged = getDrawerPagedMode(context)
+    val drawerHPad = if (drawerPaged) 16f else 28f
+    val drawerCellWidth = (screenWidthDp - drawerHPad) / drawerGridSize
+    val drawerOverflowThreshold = ((drawerCellWidth - 16f) / iconRef * 100f).coerceIn(50f, 125f)
+    val universalOverflowThreshold = minOf(homeOverflowThreshold, drawerOverflowThreshold)
+
     // Edge scroll zone in pixels (proportional to screen width)
     val edgeScrollZonePx = with(density) { edgeScrollZone.toPx() }
 
@@ -251,6 +449,8 @@ fun LauncherScreen(
     var dockFolders by remember { mutableStateOf<List<DockFolder>>(emptyList()) }
     var homeFolders by remember { mutableStateOf<List<HomeFolder>>(emptyList()) }
     var allAvailableApps by remember { mutableStateOf<List<HomeAppInfo>>(emptyList()) }
+    var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
+    var customizingApp by remember { mutableStateOf<HomeAppInfo?>(null) }
     var placedWidgets by remember { mutableStateOf<List<PlacedWidget>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
@@ -399,9 +599,13 @@ fun LauncherScreen(
             dockFolders = data.dockFolders
             homeFolders = data.folders
             allAvailableApps = loadAvailableApps(context)
+            appCustomizations = loadAppCustomizations(context)
             placedWidgets = WidgetManager.loadPlacedWidgets(context)
             isLoading = false
         }
+        // Refresh global icon shape and background color (may have changed in Settings)
+        globalIconShape = getGlobalIconShape(context)
+        globalIconBgColor = getGlobalIconBgColor(context)
     }
 
     // Refresh settings
@@ -411,6 +615,8 @@ fun LauncherScreen(
         iconSizePercent = getHomeIconSizePercent(context)
         iconTextSizePercent = getIconTextSizePercent(context)
         selectedFontFamily = FontManager.getSelectedFontFamily(context)
+        globalIconShape = getGlobalIconShape(context)
+        globalIconBgColor = getGlobalIconBgColor(context)
     }
 
     // Save functions - state update is immediate, disk I/O is async to avoid jank
@@ -489,7 +695,9 @@ fun LauncherScreen(
                 val currentCell = cells[homeApp.position]
                 if (currentCell is HomeGridCell.Empty) {
                     allAvailableApps.find { it.packageName == homeApp.packageName }?.let { appInfo ->
-                        cells[homeApp.position] = HomeGridCell.App(appInfo, homeApp.position)
+                        val cust = appCustomizations.customizations[homeApp.packageName]
+                        val customizedInfo = if (cust != null) appInfo.copy(customization = cust) else appInfo
+                        cells[homeApp.position] = HomeGridCell.App(customizedInfo, homeApp.position)
                     }
                 }
             }
@@ -497,7 +705,7 @@ fun LauncherScreen(
         return cells.toList()
     }
     // gridCells for the current page (used by drag/drop handlers)
-    val gridCells = remember(homeApps, allAvailableApps, placedWidgets, homeFolders, totalCells, gridColumns, currentPage) {
+    val gridCells = remember(homeApps, allAvailableApps, placedWidgets, homeFolders, totalCells, gridColumns, currentPage, appCustomizations) {
         buildGridCellsForPage(currentPage)
     }
 
@@ -1940,12 +2148,21 @@ fun LauncherScreen(
                                                     openAppInfo(context, cell.appInfo.packageName)
                                                 }
                                             },
+                                            onCustomize = {
+                                                if (cell is HomeGridCell.App) {
+                                                    customizingApp = cell.appInfo
+                                                }
+                                            },
                                             onWidgetRemove = {
                                                 if (cell is HomeGridCell.Widget) {
                                                     WidgetManager.removePlacedWidget(context, cell.placedWidget.appWidgetId)
                                                     placedWidgets = WidgetManager.loadPlacedWidgets(context)
                                                 }
-                                            }
+                                            },
+                                            isCustomizing = cell is HomeGridCell.App && customizingApp?.packageName == cell.appInfo.packageName,
+                                            globalIconSizePercent = iconSizePercent.toFloat(),
+                                            globalIconShape = globalIconShape,
+                                            globalIconBgColor = globalIconBgColor
                                             )
                                         }
                                     }
@@ -2471,8 +2688,8 @@ fun LauncherScreen(
                     alpha = base.alpha
                 )
             }
-            // Triangle is slightly larger than circle dots
-            val triangleSize = navDotSize + 2.dp
+            // Equilateral triangle height = dot diameter + 10% (canvas slightly wider to fit)
+            val triangleSize = navDotSize * 2f / 1.732f * 1.1f
             // Fixed height container so dot size changes don't shift the grid
             Box(
                 modifier = Modifier
@@ -2496,7 +2713,7 @@ fun LauncherScreen(
                             animationSpec = tween(durationMillis = 300),
                             label = "dotProgress"
                         )
-                        // Full slot width = dot size + 8dp horizontal padding
+                        // Full slot width = element size + 8dp horizontal padding
                         val fullWidth = if (page == 0) (triangleSize + 8.dp) else (navDotSize + 8.dp)
 
                         if (dotProgress > 0f || isLastDotAnimating) {
@@ -2507,13 +2724,16 @@ fun LauncherScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (page == 0) {
-                                    // Home page: rounded triangle pointing up
+                                    // Home page: equilateral rounded triangle, full-width base = dot diameter
                                     Canvas(modifier = Modifier.size(triangleSize)) {
                                         val w = size.width
                                         val h = size.height
-                                        val top = Offset(w / 2f, 0f)
-                                        val bl = Offset(0f, h)
-                                        val br = Offset(w, h)
+                                        // Equilateral: base = full width, height = w * √3/2, nudged slightly up
+                                        val triH = w * 0.866f
+                                        val topY = (h - triH) / 2f - h * 0.05f
+                                        val top = Offset(w / 2f, topY)
+                                        val bl = Offset(0f, topY + triH)
+                                        val br = Offset(w, topY + triH)
                                         val r = 0.38f
                                         fun lerp(a: Offset, b: Offset, t: Float) =
                                             Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
@@ -2561,7 +2781,10 @@ fun LauncherScreen(
                 repeat(dockSlots) { slot ->
                     val dockApp = dockApps.find { it.position == slot }
                     val appInfo = dockApp?.let { da ->
-                        allAvailableApps.find { it.packageName == da.packageName }
+                        allAvailableApps.find { it.packageName == da.packageName }?.let { info ->
+                            val cust = appCustomizations.customizations[da.packageName]
+                            if (cust != null) info.copy(customization = cust) else info
+                        }
                     }
                     val dockFolder = dockFolders.find { it.position == slot }
                     val dockFolderPreviewApps = dockFolder?.appPackageNames?.filter { it.isNotEmpty() }?.take(4)?.mapNotNull { pkg ->
@@ -2899,7 +3122,16 @@ fun LauncherScreen(
                                 if (appInfo != null) {
                                     openAppInfo(context, appInfo.packageName)
                                 }
-                            }
+                            },
+                            onCustomize = {
+                                if (appInfo != null) {
+                                    customizingApp = appInfo
+                                }
+                            },
+                            isCustomizing = appInfo != null && customizingApp?.packageName == appInfo.packageName,
+                            globalIconSizePercent = iconSizePercent.toFloat(),
+                            globalIconShape = globalIconShape,
+                            globalIconBgColor = globalIconBgColor
                         )
                     }
                 }
@@ -3023,39 +3255,7 @@ fun LauncherScreen(
                         .padding(gridMarkerHalfSize),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .wrapContentHeight(unbounded = true)
-                            .graphicsLayer { clip = false },
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        AsyncImage(
-                            model = File(folderDragApp.iconPath),
-                            contentDescription = folderDragApp.name,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(iconSizeDp.dp)
-                        )
-                        Spacer(modifier = Modifier.height(gridIconTextSpacer))
-                        Text(
-                            text = folderDragApp.name,
-                            fontSize = gridAppNameFont,
-                            fontFamily = selectedFontFamily ?: FontFamily.Default,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .graphicsLayer { alpha = textAlpha },
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                shadow = androidx.compose.ui.graphics.Shadow(
-                                    color = Color.Black,
-                                    offset = Offset(1f, 1f),
-                                    blurRadius = 3f
-                                )
-                            )
-                        )
-                    }
+                    OverlayAppContent(context, folderDragApp, iconSizeDp, iconSizePercent, gridIconTextSpacer, gridAppNameFont, selectedFontFamily, textAlpha, globalIconShape, showLabel = true, globalIconBgColor = globalIconBgColor)
                 }
             }
         }
@@ -3149,7 +3349,7 @@ fun LauncherScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(folderBoxSize)
-                                        .clip(RoundedCornerShape(folderCornerRadius))
+                                        .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                                         .background(folderBoxBg),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -3230,43 +3430,7 @@ fun LauncherScreen(
                             }
                         } else if (appInfo != null) {
                             // ---- Normal app drag overlay ----
-                            Column(
-                                modifier = Modifier
-                                    .wrapContentHeight(unbounded = true)
-                                    .graphicsLayer { clip = false },
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                AsyncImage(
-                                    model = File(appInfo.iconPath),
-                                    contentDescription = appInfo.name,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .size(iconSizeDp.dp)
-                                )
-                                // Only include text when NOT dropping to dock
-                                if (!isDropAnimating || !dropTargetIsDock) {
-                                    Spacer(modifier = Modifier.height(gridIconTextSpacer))
-                                    Text(
-                                        text = appInfo.name,
-                                        fontSize = gridAppNameFont,
-                                        fontFamily = selectedFontFamily ?: FontFamily.Default,
-                                        color = Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .graphicsLayer { alpha = textAlpha },
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            shadow = androidx.compose.ui.graphics.Shadow(
-                                                color = Color.Black,
-                                                offset = Offset(1f, 1f),
-                                                blurRadius = 3f
-                                            )
-                                        )
-                                    )
-                                }
-                            }
+                            OverlayAppContent(context, appInfo, iconSizeDp, iconSizePercent, gridIconTextSpacer, gridAppNameFont, selectedFontFamily, textAlpha, globalIconShape, showLabel = !isDropAnimating || !dropTargetIsDock, globalIconBgColor = globalIconBgColor)
                         }
                     }
                 }
@@ -3355,7 +3519,7 @@ fun LauncherScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(folderBoxSize)
-                                        .clip(RoundedCornerShape(folderCornerRadius))
+                                        .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                                         .background(folderBoxBg),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -3435,44 +3599,7 @@ fun LauncherScreen(
                             }
                         } else if (appInfo != null) {
                             // ---- Normal dock app drag overlay ----
-                            Column(
-                                modifier = Modifier
-                                    .wrapContentHeight(unbounded = true)
-                                    .graphicsLayer { clip = false },
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                AsyncImage(
-                                    model = File(appInfo.iconPath),
-                                    contentDescription = appInfo.name,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .size(iconSizeDp.dp)
-                                )
-                                // Only include text when NOT dropping to dock
-                                // (DockSlot has no text - including it causes layout mismatch → two-step)
-                                if (!isDropAnimating || !dropTargetIsDock) {
-                                    Spacer(modifier = Modifier.height(gridIconTextSpacer))
-                                    Text(
-                                        text = appInfo.name,
-                                        fontSize = gridAppNameFont,
-                                        fontFamily = selectedFontFamily ?: FontFamily.Default,
-                                        color = Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .graphicsLayer { alpha = textAlpha },
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            shadow = androidx.compose.ui.graphics.Shadow(
-                                                color = Color.Black,
-                                                offset = Offset(1f, 1f),
-                                                blurRadius = 3f
-                                            )
-                                        )
-                                    )
-                                }
-                            }
+                            OverlayAppContent(context, appInfo, iconSizeDp, iconSizePercent, gridIconTextSpacer, gridAppNameFont, selectedFontFamily, textAlpha, globalIconShape, showLabel = !isDropAnimating || !dropTargetIsDock, globalIconBgColor = globalIconBgColor)
                         }
                     }
                 }
@@ -3482,6 +3609,27 @@ fun LauncherScreen(
 
     // ========== Home Screen Folder Content Overlay (drawer-style full screen) ==========
     // Keep a reference to the last opened folder so content persists during close animation
+    // ========== APP CUSTOMIZE DIALOG ==========
+    customizingApp?.let { app ->
+        AppCustomizeDialog(
+            context = context,
+            appInfo = app,
+            currentCustomization = appCustomizations.customizations[app.packageName],
+            globalIconSizePercent = iconSizePercent.toFloat().toInt(),
+            globalIconTextSizePercent = iconTextSizePercent,
+            iconSizeOverflowThreshold = universalOverflowThreshold,
+            onSave = { newCustomization ->
+                appCustomizations = setCustomization(context, appCustomizations, app.packageName, newCustomization)
+                customizingApp = null
+            },
+            onReset = {
+                appCustomizations = removeCustomization(context, appCustomizations, app.packageName)
+                customizingApp = null
+            },
+            onDismiss = { customizingApp = null }
+        )
+    }
+
     var lastOpenedFolder by remember { mutableStateOf<HomeFolder?>(null) }
     // Store folder cell origin in pixels (top-left x, top-left y, width, height)
     var folderCellOrigin by remember { mutableStateOf(Offset.Zero) }
@@ -4133,7 +4281,15 @@ fun LauncherScreen(
                                         },
                                         onAppInfo = {
                                             if (cellApp != null) openAppInfo(context, cellApp.packageName)
-                                        }
+                                        },
+                                        onCustomize = {
+                                            if (cellApp != null) {
+                                                customizingApp = cellApp
+                                            }
+                                        },
+                                        isCustomizing = cellApp != null && customizingApp?.packageName == cellApp.packageName,
+                                        globalIconSizePercent = iconSizePercent.toFloat(),
+                                        globalIconShape = globalIconShape
                                     )
                                 }
                             }
@@ -4193,39 +4349,7 @@ fun LauncherScreen(
                             .padding(gridMarkerHalfSize),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .wrapContentHeight(unbounded = true)
-                                .graphicsLayer { clip = false },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            AsyncImage(
-                                model = File(draggedApp.iconPath),
-                                contentDescription = draggedApp.name,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(iconSizeDp.dp)
-                            )
-                            Spacer(modifier = Modifier.height(gridIconTextSpacer))
-                            Text(
-                                text = draggedApp.name,
-                                fontSize = gridAppNameFont,
-                                fontFamily = selectedFontFamily ?: FontFamily.Default,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .graphicsLayer { alpha = overlayTextAlpha },
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    shadow = androidx.compose.ui.graphics.Shadow(
-                                        color = Color.Black,
-                                        offset = Offset(1f, 1f),
-                                        blurRadius = 3f
-                                    )
-                                )
-                            )
-                        }
+                        OverlayAppContent(context, draggedApp, iconSizeDp, iconSizePercent, gridIconTextSpacer, gridAppNameFont, selectedFontFamily, overlayTextAlpha, globalIconShape, showLabel = true, globalIconBgColor = globalIconBgColor)
                     }
                 }
             }

@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -12,7 +13,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material.icons.Icons
+import com.bearinmind.launcher314.helpers.getIconShape
+import com.bearinmind.launcher314.helpers.getShapedExpDir
+import com.bearinmind.launcher314.helpers.getShapedExpV2Dir
+import com.bearinmind.launcher314.helpers.FontManager
+import com.bearinmind.launcher314.helpers.getBgTintedDir
+import com.bearinmind.launcher314.helpers.getShapedBgTintedDir
+import com.bearinmind.launcher314.helpers.getGlobalShapedDir
+import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
+import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
+import com.bearinmind.launcher314.helpers.parseBlendMode
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
@@ -41,6 +53,7 @@ import com.bearinmind.launcher314.ui.components.GridCellHoverIndicator
 import com.bearinmind.launcher314.ui.components.DockSlotHoverIndicator
 import com.bearinmind.launcher314.ui.components.rememberHoverAlpha
 import com.bearinmind.launcher314.ui.components.HoverIndicatorColor
+import com.bearinmind.launcher314.data.AppCustomization
 import com.bearinmind.launcher314.data.HomeAppInfo
 import com.bearinmind.launcher314.data.HomeGridCell
 import com.bearinmind.launcher314.data.DockFolder
@@ -102,7 +115,12 @@ fun DraggableGridCell(
     onRemove: () -> Unit,
     onUninstall: () -> Unit,
     onAppInfo: () -> Unit,
+    onCustomize: () -> Unit = {},
     onWidgetRemove: () -> Unit = {},
+    isCustomizing: Boolean = false, // When true, keep icon scaled up while customize dialog is open
+    globalIconSizePercent: Float = 100f, // Global icon size for absolute per-app scale
+    globalIconShape: String? = null, // Global icon shape (EXP method) applied when no per-app shape
+    globalIconBgColor: Int? = null, // Global icon background color (drawn behind icon within shape)
     removeLabel: String = "Remove from home",
     folderPreviewDraggedIconPath: String? = null, // When non-null, animates this cell into a folder preview
     isReceivingDrop: Boolean = false // When true, plays a pulse scale animation on the folder cell
@@ -220,7 +238,7 @@ fun DraggableGridCell(
             is HomeGridCell.App -> {
                 // Animate icon scale when context menu is shown or when dragging (like app drawer)
                 // Use snap() when ending drag to prevent double animation stutter
-                val isScaledUp = showContextMenu || isDragging
+                val isScaledUp = showContextMenu || isDragging || isCustomizing
                 val animatedIconScale by animateFloatAsState(
                     targetValue = if (isScaledUp) 1.265f else 1f,
                     animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
@@ -231,9 +249,9 @@ fun DraggableGridCell(
                 val iconScale = if (isScaledUp) animatedIconScale else 1f
 
                 // Hide label only for THIS cell when it's being dragged or has context menu open
-                val hideLabel = showContextMenu || isDragging
+                val hideLabel = showContextMenu || isDragging || isCustomizing
                 val labelAlpha by animateFloatAsState(
-                    targetValue = if (showContextMenu) 0f else 1f,
+                    targetValue = if (showContextMenu || isCustomizing) 0f else 1f,
                     animationSpec = tween(durationMillis = 150),
                     label = "labelAlpha"
                 )
@@ -408,19 +426,75 @@ fun DraggableGridCell(
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            val hasCustomIcon = cell.appInfo.customization?.customIconPath?.let { File(it).exists() } == true
+                            val hasShapeExpV2 = cell.appInfo.customization?.iconShapeExpV2 != null
+                            val hasShapeExp = cell.appInfo.customization?.iconShapeExp != null
+                            val hasPerAppShape = cell.appInfo.customization?.iconShape != null
+                            val gridContext = LocalContext.current
+                            val iconModelPath = if (hasCustomIcon) {
+                                cell.appInfo.customization!!.customIconPath!!
+                            } else if (hasShapeExpV2) {
+                                File(getShapedExpV2Dir(gridContext), "${cell.appInfo.packageName}.png").let {
+                                    if (it.exists()) it.absolutePath else cell.appInfo.iconPath
+                                }
+                            } else if (hasShapeExp) {
+                                File(getShapedExpDir(gridContext), "${cell.appInfo.packageName}.png").let {
+                                    if (it.exists()) it.absolutePath else cell.appInfo.iconPath
+                                }
+                            } else if (!hasPerAppShape && globalIconShape != null) {
+                                // Global shape fallback (EXP method)
+                                File(getGlobalShapedDir(gridContext), "${cell.appInfo.packageName}.png").let {
+                                    if (it.exists()) it.absolutePath
+                                    else try { getOrGenerateGlobalShapedIcon(gridContext, cell.appInfo.packageName, globalIconShape!!) } catch (_: Exception) { cell.appInfo.iconPath }
+                                }
+                            } else cell.appInfo.iconPath
+                            // Check for background-only tinted icon
+                            val hasBgTint = cell.appInfo.customization?.iconTintBackgroundOnly == true && cell.appInfo.customization?.iconTintColor != null
+                            val hasAnyShape = hasShapeExpV2 || hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+                            val finalIconModelPath = if (hasBgTint && !hasCustomIcon) {
+                                if (hasAnyShape) {
+                                    // Use combined shaped+bg-tinted bitmap
+                                    File(getShapedBgTintedDir(gridContext), "${cell.appInfo.packageName}.png").let {
+                                        if (it.exists()) it.absolutePath else iconModelPath
+                                    }
+                                } else {
+                                    File(getBgTintedDir(gridContext), "${cell.appInfo.packageName}.png").let {
+                                        if (it.exists()) it.absolutePath else iconModelPath
+                                    }
+                                }
+                            } else iconModelPath
+                            val hasAnyExpShape = hasCustomIcon || hasShapeExpV2 || hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+                            val iconClipShape = if (!hasAnyExpShape) getIconShape(cell.appInfo.customization?.iconShape) else null
+                            val customTintFilter = if (hasBgTint) null else cell.appInfo.customization?.iconTintColor?.let { tintColor ->
+                                val intensity = (cell.appInfo.customization?.iconTintIntensity ?: 100) / 100f
+                                ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(cell.appInfo.customization?.iconTintBlendMode))
+                            }
+                            val perAppSizePercent = cell.appInfo.customization?.iconSizePercent ?: globalIconSizePercent.toInt()
+                            val perAppIconSizeDp = (iconSize * perAppSizePercent / globalIconSizePercent.toFloat()).dp
+                            // When bg color is set, generate icon with user color as bg layer
+                            val useBgColorIcon = globalIconBgColor != null && !hasCustomIcon
+                            val bgColorEffectiveShape = if (useBgColorIcon) {
+                                cell.appInfo.customization?.iconShapeExpV2
+                                    ?: cell.appInfo.customization?.iconShapeExp
+                                    ?: cell.appInfo.customization?.iconShape
+                                    ?: globalIconShape
+                            } else null
+                            val displayIconPath = if (useBgColorIcon && bgColorEffectiveShape != null) {
+                                try { getOrGenerateBgColorShapedIcon(gridContext, cell.appInfo.packageName, bgColorEffectiveShape, globalIconBgColor!!) }
+                                catch (_: Exception) { finalIconModelPath }
+                            } else finalIconModelPath
+                            val isBgColorIcon = displayIconPath != finalIconModelPath
                             Box(contentAlignment = Alignment.Center) {
                                 AsyncImage(
-                                    model = File(cell.appInfo.iconPath),
+                                    model = File(displayIconPath),
                                     contentDescription = cell.appInfo.name,
-                                    contentScale = ContentScale.Fit,
-                                    // Apply red tint when:
-                                    // 1. This app is being dragged over an invalid target
-                                    // 2. Something is being dragged over this app (invalid drop target)
+                                    contentScale = if (isBgColorIcon) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                                     colorFilter = if ((isDragging && !isHoverTargetValid) || (isHovered && !isValidDropTarget)) {
                                         ColorFilter.tint(Color(0xFFFF6B6B).copy(alpha = 0.6f), androidx.compose.ui.graphics.BlendMode.SrcAtop)
-                                    } else null,
+                                    } else customTintFilter,
                                     modifier = Modifier
-                                        .size(iconSize.dp)
+                                        .size(perAppIconSizeDp)
+                                        .then(if (!isBgColorIcon && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
                                         .graphicsLayer {
                                             scaleX = iconScale
                                             scaleY = iconScale
@@ -431,12 +505,13 @@ fun DraggableGridCell(
                                 // Dark overlay (press + flash) — uses icon silhouette to match exact shape
                                 if (overlayAlpha > 0f) {
                                     AsyncImage(
-                                        model = File(cell.appInfo.iconPath),
+                                        model = File(finalIconModelPath),
                                         contentDescription = null,
-                                        contentScale = ContentScale.Fit,
+                                        contentScale = if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                                         colorFilter = ColorFilter.tint(Color.Black, androidx.compose.ui.graphics.BlendMode.SrcIn),
                                         modifier = Modifier
-                                            .size(iconSize.dp)
+                                            .size(perAppIconSizeDp)
+                                            .then(if (iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
                                             .graphicsLayer {
                                                 scaleX = iconScale
                                                 scaleY = iconScale
@@ -446,12 +521,29 @@ fun DraggableGridCell(
                                 }
                             }
 
+                            // Label: respect per-app customization (hide or rename)
+                            // Always render to keep icon position stable; fade alpha when hidden
+                            val customization = cell.appInfo.customization
+                            val labelHidden = customization?.hideLabel == true
+                            val hideLabelAlpha by animateFloatAsState(
+                                targetValue = if (labelHidden) 0f else 1f,
+                                animationSpec = tween(durationMillis = 250),
+                                label = "hideLabelAlpha"
+                            )
+                            val displayLabel = customization?.customLabel?.takeIf { it.isNotEmpty() }
+                                ?: cell.appInfo.name
+
                             Spacer(modifier = Modifier.height(iconTextSpacer))
 
+                            val perAppFontSize = customization?.iconTextSizePercent?.let { 12.sp * it / 100f } ?: appNameFontSize
+                            val perAppFontFamily = customization?.labelFontId?.let { id ->
+                                FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                                    ?: FontManager.getImportedFonts(gridContext).find { it.id == id }?.fontFamily
+                            } ?: appNameFontFamily ?: FontFamily.Default
                             Text(
-                                text = cell.appInfo.name,
-                                fontSize = appNameFontSize,
-                                fontFamily = appNameFontFamily ?: FontFamily.Default,
+                                text = displayLabel,
+                                fontSize = perAppFontSize,
+                                fontFamily = perAppFontFamily,
                                 color = if ((isDragging && !isHoverTargetValid) || (isHovered && !isValidDropTarget))
                                     Color(0xFFFF6B6B) else Color.White,
                                 maxLines = 1,
@@ -459,7 +551,7 @@ fun DraggableGridCell(
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .graphicsLayer { alpha = if (isDragging) 0f else labelAlpha },
+                                    .graphicsLayer { alpha = if (isDragging) 0f else labelAlpha * hideLabelAlpha },
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     shadow = androidx.compose.ui.graphics.Shadow(
                                         color = Color.Black,
@@ -490,7 +582,7 @@ fun DraggableGridCell(
                                 Box(
                                     modifier = Modifier
                                         .size(folderBoxSize)
-                                        .clip(RoundedCornerShape(folderCornerRadius))
+                                        .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                                         .background(Color(0xFF1A1A1A)),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -602,6 +694,15 @@ fun DraggableGridCell(
                                             onAppInfo()
                                         },
                                         leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) }
+                                    )
+
+                                    DropdownMenuItem(
+                                        text = { Text("Customize") },
+                                        onClick = {
+                                            showContextMenu = false
+                                            onCustomize()
+                                        },
+                                        leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                                     )
                         }
                 }
@@ -791,7 +892,7 @@ fun DraggableGridCell(
                                         scaleY = combinedScale
                                         clip = false
                                     }
-                                    .clip(RoundedCornerShape(folderCornerRadius))
+                                    .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                                     .background(Color(0xFF1A1A1A)),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -1138,6 +1239,11 @@ fun DockSlot(
     onRemove: () -> Unit,
     onUninstall: () -> Unit,
     onAppInfo: () -> Unit,
+    onCustomize: () -> Unit = {},
+    isCustomizing: Boolean = false, // When true, keep icon scaled up while customize dialog is open
+    globalIconSizePercent: Float = 100f, // Global icon size for absolute per-app scale
+    globalIconShape: String? = null, // Global icon shape (EXP method) applied when no per-app shape
+    globalIconBgColor: Int? = null, // Global icon background color (drawn behind icon within shape)
     onRenameDockFolder: (() -> Unit)? = null
 ) {
     val hapticFeedback = rememberHapticFeedback()
@@ -1163,7 +1269,7 @@ fun DockSlot(
 
     // Animate icon scale when context menu is shown or when dragging (like app drawer)
     // Use snap() when ending drag to prevent double animation stutter
-    val isDockScaledUp = showContextMenu || isDragging
+    val isDockScaledUp = showContextMenu || isDragging || isCustomizing
     val animatedDockScale by animateFloatAsState(
         targetValue = if (isDockScaledUp) 1.265f else 1f,
         animationSpec = if (isDockScaledUp) tween(durationMillis = 150) else snap(),
@@ -1283,19 +1389,73 @@ fun DockSlot(
                     },
                 contentAlignment = Alignment.Center
             ) {
+                val dockHasCustomIcon = appInfo?.customization?.customIconPath?.let { File(it).exists() } == true
+                val dockHasShapeExpV2 = appInfo?.customization?.iconShapeExpV2 != null
+                val dockHasShapeExp = appInfo?.customization?.iconShapeExp != null
+                val dockHasPerAppShape = appInfo?.customization?.iconShape != null
+                val dockContext = LocalContext.current
+                val dockIconModelPath = if (dockHasCustomIcon && appInfo != null) {
+                    appInfo.customization!!.customIconPath!!
+                } else if (dockHasShapeExpV2 && appInfo != null) {
+                    File(getShapedExpV2Dir(dockContext), "${appInfo.packageName}.png").let {
+                        if (it.exists()) it.absolutePath else appInfo.iconPath
+                    }
+                } else if (dockHasShapeExp && appInfo != null) {
+                    File(getShapedExpDir(dockContext), "${appInfo.packageName}.png").let {
+                        if (it.exists()) it.absolutePath else appInfo.iconPath
+                    }
+                } else if (!dockHasPerAppShape && globalIconShape != null && appInfo != null) {
+                    File(getGlobalShapedDir(dockContext), "${appInfo.packageName}.png").let {
+                        if (it.exists()) it.absolutePath
+                        else try { getOrGenerateGlobalShapedIcon(dockContext, appInfo.packageName, globalIconShape!!) } catch (_: Exception) { appInfo.iconPath }
+                    }
+                } else appInfo?.iconPath ?: ""
+                // Check for background-only tinted icon
+                val dockHasBgTint = appInfo?.customization?.iconTintBackgroundOnly == true && appInfo?.customization?.iconTintColor != null
+                val dockHasAnyShape = dockHasShapeExpV2 || dockHasShapeExp || (!dockHasPerAppShape && globalIconShape != null)
+                val dockFinalIconModelPath = if (dockHasBgTint && !dockHasCustomIcon && appInfo != null) {
+                    if (dockHasAnyShape) {
+                        File(getShapedBgTintedDir(dockContext), "${appInfo.packageName}.png").let {
+                            if (it.exists()) it.absolutePath else dockIconModelPath
+                        }
+                    } else {
+                        File(getBgTintedDir(dockContext), "${appInfo.packageName}.png").let {
+                            if (it.exists()) it.absolutePath else dockIconModelPath
+                        }
+                    }
+                } else dockIconModelPath
+                val dockHasAnyExpShape = dockHasCustomIcon || dockHasShapeExpV2 || dockHasShapeExp || (!dockHasPerAppShape && globalIconShape != null)
+                val dockIconClipShape = if (!dockHasAnyExpShape) appInfo?.let { getIconShape(it.customization?.iconShape) } else null
+                val dockCustomTintFilter = if (dockHasBgTint) null else appInfo?.customization?.iconTintColor?.let { tintColor ->
+                    val intensity = (appInfo.customization?.iconTintIntensity ?: 100) / 100f
+                    ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(appInfo.customization?.iconTintBlendMode))
+                }
+                val dockPerAppSizePercent = appInfo?.customization?.iconSizePercent ?: globalIconSizePercent.toInt()
+                val dockPerAppIconSizeDp = (iconSize * dockPerAppSizePercent / globalIconSizePercent.toFloat()).dp
+                // When bg color is set, generate icon with user color as bg layer
+                val dockUseBgColorIcon = globalIconBgColor != null && !dockHasCustomIcon && appInfo != null
+                val dockBgColorEffectiveShape = if (dockUseBgColorIcon) {
+                    appInfo?.customization?.iconShapeExpV2
+                        ?: appInfo?.customization?.iconShapeExp
+                        ?: appInfo?.customization?.iconShape
+                        ?: globalIconShape
+                } else null
+                val dockDisplayIconPath = if (dockUseBgColorIcon && dockBgColorEffectiveShape != null && appInfo != null) {
+                    try { getOrGenerateBgColorShapedIcon(dockContext, appInfo.packageName, dockBgColorEffectiveShape, globalIconBgColor!!) }
+                    catch (_: Exception) { dockFinalIconModelPath }
+                } else dockFinalIconModelPath
+                val dockIsBgColorIcon = dockDisplayIconPath != dockFinalIconModelPath
                 Box(contentAlignment = Alignment.Center) {
                     AsyncImage(
-                        model = File(appInfo.iconPath),
+                        model = File(dockDisplayIconPath),
                         contentDescription = appInfo.name,
-                        contentScale = ContentScale.Fit,
-                        // Apply red tint when:
-                        // 1. This dock app is being dragged over an invalid target
-                        // 2. Something is being dragged over this dock slot (invalid drop target)
+                        contentScale = if (dockIsBgColorIcon) ContentScale.Fit else if (dockIconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                         colorFilter = if ((isDragging && !isHoverTargetValid) || (isHovered && !isValidDropTarget)) {
                             ColorFilter.tint(Color(0xFFFF6B6B).copy(alpha = 0.6f), androidx.compose.ui.graphics.BlendMode.SrcAtop)
-                        } else null,
+                        } else dockCustomTintFilter,
                         modifier = Modifier
-                            .size(iconSize.dp)
+                            .size(dockPerAppIconSizeDp)
+                            .then(if (!dockIsBgColorIcon && dockIconClipShape != null) Modifier.clip(dockIconClipShape) else Modifier)
                             .graphicsLayer {
                                 scaleX = iconScale
                                 scaleY = iconScale
@@ -1306,12 +1466,13 @@ fun DockSlot(
                     // Dark overlay (press + flash) — uses icon silhouette
                     if (dockOverlayAlpha > 0f) {
                         AsyncImage(
-                            model = File(appInfo.iconPath),
+                            model = File(dockFinalIconModelPath),
                             contentDescription = null,
-                            contentScale = ContentScale.Fit,
+                            contentScale = if (dockIconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                             colorFilter = ColorFilter.tint(Color.Black, androidx.compose.ui.graphics.BlendMode.SrcIn),
                             modifier = Modifier
-                                .size(iconSize.dp)
+                                .size(dockPerAppIconSizeDp)
+                                .then(if (dockIconClipShape != null) Modifier.clip(dockIconClipShape) else Modifier)
                                 .graphicsLayer {
                                     scaleX = iconScale
                                     scaleY = iconScale
@@ -1369,6 +1530,15 @@ fun DockSlot(
                                     onAppInfo()
                                 },
                                 leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Customize") },
+                                onClick = {
+                                    showContextMenu = false
+                                    onCustomize()
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                             )
                 }
         } else if (folderData != null) {
@@ -1451,7 +1621,7 @@ fun DockSlot(
                 Box(
                     modifier = Modifier
                         .size(folderBoxSize)
-                        .clip(RoundedCornerShape(folderCornerRadius))
+                        .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                         .background(Color(0xFF1A1A1A))
                         .graphicsLayer {
                             scaleX = iconScale
