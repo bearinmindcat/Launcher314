@@ -13,7 +13,6 @@ import com.bearinmind.launcher314.data.saveBitmapToFile
 import java.io.File
 
 private const val ICON_SIZE = 192
-private const val ADAPTIVE_CANVAS = 108 // AdaptiveIconDrawable uses 108x108dp layers
 
 fun getGlobalShapedDir(context: Context): File {
     val dir = File(context.filesDir, "global_shaped_icons")
@@ -58,6 +57,7 @@ private fun generateShapedIcon(context: Context, packageName: String, shapeName:
     canvas.clipPath(shapePath)
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
+        // Draw bg+fg separately to avoid the system's built-in icon mask
         val bg = drawable.background
         val fg = drawable.foreground
         if (bgTintColor != null) {
@@ -115,76 +115,6 @@ fun generateShapedBgTintedIcon(context: Context, packageName: String, shapeName:
     return generateShapedIcon(context, packageName, shapeName, outFile, bgTintColor = tintColor, bgTintAlpha = tintAlpha)
 }
 
-fun getShapedExpV2Dir(context: Context): File {
-    val dir = File(context.filesDir, "shaped_exp_v2_icons")
-    if (!dir.exists()) dir.mkdirs()
-    return dir
-}
-
-fun deleteShapedIconV2(context: Context, packageName: String) {
-    val file = File(getShapedExpV2Dir(context), "$packageName.png")
-    if (file.exists()) file.delete()
-}
-
-/**
- * EXP v2: Generate shaped icon where the foreground content matches normal icon size.
- * The shape background extends larger so the inner icon isn't shrunk.
- * Uses a larger canvas (ICON_SIZE_V2) and draws the foreground at the center at ICON_SIZE scale,
- * so when rendered at normal icon size the foreground matches an unmasked icon.
- */
-fun generateShapedIconV2(context: Context, packageName: String, shapeName: String): String {
-    val drawable = context.packageManager.getApplicationIcon(packageName)
-    // Scale factor: adaptive icons have 108dp canvas with 72dp visible = 1.5x ratio
-    // We make the full bitmap 1.5x larger so the foreground content stays at normal size
-    val scaleFactor = 1.5f
-    val v2Size = (ICON_SIZE * scaleFactor).toInt() // 288px
-    val result = Bitmap.createBitmap(v2Size, v2Size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(result)
-
-    val shapePath = createShapePath(shapeName, v2Size.toFloat())
-    canvas.clipPath(shapePath)
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
-        val bg = drawable.background
-        val fg = drawable.foreground
-
-        // Background fills the full v2 canvas (shape is fully covered)
-        bg?.setBounds(0, 0, v2Size, v2Size)
-        bg?.draw(canvas)
-
-        // Foreground drawn at center, matching ICON_SIZE scale
-        // The adaptive icon's visible content is center 66% of its canvas
-        // At v2Size, the center ICON_SIZE area = the normal render size
-        val fgOffset = (v2Size - ICON_SIZE) / 2
-        fg?.setBounds(fgOffset, fgOffset, fgOffset + ICON_SIZE, fgOffset + ICON_SIZE)
-        fg?.draw(canvas)
-    } else {
-        // Legacy icon: fill shape with dominant color, draw icon at full v2 canvas center
-        val iconBitmap = drawableToBitmap(drawable)
-        val bgColor = extractDominantColor(iconBitmap)
-
-        val bgPaint = Paint().apply {
-            color = bgColor
-            isAntiAlias = true
-            style = Paint.Style.FILL
-        }
-        canvas.drawPath(shapePath, bgPaint)
-
-        // Draw icon at ICON_SIZE (not shrunk) centered in v2Size canvas
-        val iconDrawSize = ICON_SIZE
-        val offset = (v2Size - iconDrawSize) / 2f
-        val scaledBitmap = Bitmap.createScaledBitmap(iconBitmap, iconDrawSize, iconDrawSize, true)
-        canvas.drawBitmap(scaledBitmap, offset, offset, null)
-
-        scaledBitmap.recycle()
-        iconBitmap.recycle()
-    }
-
-    val outFile = File(getShapedExpV2Dir(context), "$packageName.png")
-    saveBitmapToFile(result, outFile)
-    result.recycle()
-    return outFile.absolutePath
-}
 
 private fun createShapePath(shapeName: String, size: Float): Path {
     return when (shapeName) {
@@ -310,16 +240,14 @@ fun getOrGenerateBgColorShapedIcon(context: Context, packageName: String, shapeN
 /**
  * Generate shaped icon with user-chosen solid background color replacing the icon's
  * original background layer. Only the foreground layer of adaptive icons is preserved.
- * Uses V2 sizing (1.5x canvas) so the foreground content isn't shrunk.
+ * Must separate layers manually since the native bg is replaced by user color.
  */
 private fun generateBgColorShapedIcon(context: Context, packageName: String, shapeName: String, bgColor: Int): String {
     val drawable = context.packageManager.getApplicationIcon(packageName)
-    val scaleFactor = 1.5f
-    val v2Size = (ICON_SIZE * scaleFactor).toInt()
-    val result = Bitmap.createBitmap(v2Size, v2Size, Bitmap.Config.ARGB_8888)
+    val result = Bitmap.createBitmap(ICON_SIZE, ICON_SIZE, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(result)
 
-    val shapePath = createShapePath(shapeName, v2Size.toFloat())
+    val shapePath = createShapePath(shapeName, ICON_SIZE.toFloat())
     canvas.clipPath(shapePath)
 
     // Fill the shape with the user's chosen background color
@@ -331,16 +259,16 @@ private fun generateBgColorShapedIcon(context: Context, packageName: String, sha
     canvas.drawPath(shapePath, bgPaint)
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
-        // Draw only the foreground layer (original background replaced by user color)
+        // Draw only the foreground layer (bg replaced by user color)
         val fg = drawable.foreground
-        val fgOffset = (v2Size - ICON_SIZE) / 2
-        fg?.setBounds(fgOffset, fgOffset, fgOffset + ICON_SIZE, fgOffset + ICON_SIZE)
+        fg?.setBounds(0, 0, ICON_SIZE, ICON_SIZE)
         fg?.draw(canvas)
     } else {
-        // Legacy icon: draw icon at normal size centered on colored background
+        // Legacy icon: draw icon centered on colored background
         val iconBitmap = drawableToBitmap(drawable)
-        val iconDrawSize = ICON_SIZE
-        val offset = (v2Size - iconDrawSize) / 2f
+        val iconScale = 0.75f
+        val iconDrawSize = (ICON_SIZE * iconScale).toInt()
+        val offset = (ICON_SIZE - iconDrawSize) / 2f
         val scaledBitmap = Bitmap.createScaledBitmap(iconBitmap, iconDrawSize, iconDrawSize, true)
         canvas.drawBitmap(scaledBitmap, offset, offset, null)
         scaledBitmap.recycle()

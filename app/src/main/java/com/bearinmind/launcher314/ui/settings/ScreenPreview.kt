@@ -1137,7 +1137,7 @@ private fun ScaledPreviewAppItem(
     val displayName = customization?.customLabel ?: app.name
     val hideLabel = customization?.hideLabel == true
     val customIconFile = customization?.customIconPath?.let { File(it) }?.takeIf { it.exists() }
-    val perAppShape = getIconShape(customization?.iconShapeExpV2 ?: customization?.iconShapeExp ?: customization?.iconShape)
+    val perAppShape = getIconShape(customization?.iconShapeExp ?: customization?.iconShape)
     val effectiveClipShape = perAppShape ?: iconClipShape
     val tintFilter = customization?.iconTintColor?.let { tintColor ->
         if (customization.iconTintBackgroundOnly) null
@@ -1181,7 +1181,7 @@ private fun ScaledPreviewAppItem(
                         )
                     }
                     effectiveClipShape != null && iconBgColor != null -> {
-                        // Shape + explicit bg color: solid bg + icon at 2/3
+                        // Shape + explicit bg color: solid bg + fg at full size (AOSP style)
                         Box(
                             modifier = Modifier
                                 .size(iconSize)
@@ -1193,37 +1193,27 @@ private fun ScaledPreviewAppItem(
                             Image(
                                 painter = rememberDrawablePainter(drawable = overlayDrawable),
                                 contentDescription = displayName,
-                                modifier = Modifier.size(iconSize * 2f / 3f),
-                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(iconSize),
+                                contentScale = ContentScale.FillBounds,
                                 colorFilter = tintFilter
                             )
                         }
                     }
                     effectiveClipShape != null && bgDrawable != null && fgDrawable != null -> {
-                        // Shape + adaptive (no bg color): icon's own bg clipped + fg at 2/3
-                        val nativeBgColor = if (bgDrawable is ColorDrawable) bgDrawable.color else null
-                        if (nativeBgColor != null) {
-                            Box(
-                                modifier = Modifier
-                                    .size(iconSize)
-                                    .clip(effectiveClipShape)
-                                    .background(Color(nativeBgColor))
-                            )
-                        } else {
-                            Image(
-                                painter = rememberDrawablePainter(drawable = bgDrawable),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(iconSize)
-                                    .clip(effectiveClipShape),
-                                contentScale = ContentScale.FillBounds
-                            )
-                        }
+                        // Shape + adaptive (no bg color): separate bg+fg to bypass system mask
+                        Image(
+                            painter = rememberDrawablePainter(drawable = bgDrawable),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(iconSize)
+                                .clip(effectiveClipShape),
+                            contentScale = ContentScale.FillBounds
+                        )
                         Image(
                             painter = rememberDrawablePainter(drawable = fgDrawable),
                             contentDescription = displayName,
-                            modifier = Modifier.size(iconSize * 2f / 3f),
-                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(iconSize),
+                            contentScale = ContentScale.FillBounds,
                             colorFilter = tintFilter
                         )
                     }
@@ -2064,7 +2054,7 @@ private fun HomeScreenPreview(
                                             val displayName = cust?.customLabel ?: cell.app.name
                                             val hideLabel = cust?.hideLabel == true
                                             val customIconFile = cust?.customIconPath?.let { File(it) }?.takeIf { it.exists() }
-                                            val perAppShape = getIconShape(cust?.iconShapeExpV2 ?: cust?.iconShapeExp ?: cust?.iconShape)
+                                            val perAppShape = getIconShape(cust?.iconShapeExp ?: cust?.iconShape)
                                             val cellClipShape = perAppShape ?: getIconShape(iconShapeOverride)
                                             val perAppTintFilter = cust?.iconTintColor?.let { tintColor ->
                                                 if (cust.iconTintBackgroundOnly) null
@@ -2106,6 +2096,7 @@ private fun HomeScreenPreview(
                                                             )
                                                         }
                                                         cellClipShape != null && iconBgColorOverride != null -> {
+                                                            // Shape + explicit bg color (AOSP style)
                                                             Box(
                                                                 modifier = Modifier
                                                                     .requiredSize(baseIconSize)
@@ -2117,36 +2108,27 @@ private fun HomeScreenPreview(
                                                                 Image(
                                                                     painter = rememberDrawablePainter(drawable = gridOverlay),
                                                                     contentDescription = displayName,
-                                                                    modifier = Modifier.requiredSize(baseIconSize * 2f / 3f),
-                                                                    contentScale = ContentScale.Crop,
+                                                                    modifier = Modifier.requiredSize(baseIconSize),
+                                                                    contentScale = ContentScale.FillBounds,
                                                                     colorFilter = perAppTintFilter
                                                                 )
                                                             }
                                                         }
                                                         cellClipShape != null && gridBgDrawable != null && gridFgDrawable != null -> {
-                                                            val gridNativeBgColor = if (gridBgDrawable is ColorDrawable) gridBgDrawable.color else null
-                                                            if (gridNativeBgColor != null) {
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .requiredSize(baseIconSize)
-                                                                        .clip(cellClipShape)
-                                                                        .background(Color(gridNativeBgColor))
-                                                                )
-                                                            } else {
-                                                                Image(
-                                                                    painter = rememberDrawablePainter(drawable = gridBgDrawable),
-                                                                    contentDescription = null,
-                                                                    modifier = Modifier
-                                                                        .requiredSize(baseIconSize)
-                                                                        .clip(cellClipShape),
-                                                                    contentScale = ContentScale.FillBounds
-                                                                )
-                                                            }
+                                                            // Shape + adaptive (no bg color): separate bg+fg to bypass system mask
+                                                            Image(
+                                                                painter = rememberDrawablePainter(drawable = gridBgDrawable),
+                                                                contentDescription = null,
+                                                                modifier = Modifier
+                                                                    .requiredSize(baseIconSize)
+                                                                    .clip(cellClipShape),
+                                                                contentScale = ContentScale.FillBounds
+                                                            )
                                                             Image(
                                                                 painter = rememberDrawablePainter(drawable = gridFgDrawable),
                                                                 contentDescription = displayName,
-                                                                modifier = Modifier.requiredSize(baseIconSize * 2f / 3f),
-                                                                contentScale = ContentScale.Crop,
+                                                                modifier = Modifier.requiredSize(baseIconSize),
+                                                                contentScale = ContentScale.FillBounds,
                                                                 colorFilter = perAppTintFilter
                                                             )
                                                         }
@@ -2496,7 +2478,7 @@ private fun HomeScreenPreview(
                                 if (app != null) {
                                     val dockCust = appCustomizations.customizations[app.packageName]
                                     val dockCustomIconFile = dockCust?.customIconPath?.let { File(it) }?.takeIf { it.exists() }
-                                    val dockPerAppShape = getIconShape(dockCust?.iconShapeExpV2 ?: dockCust?.iconShapeExp ?: dockCust?.iconShape)
+                                    val dockPerAppShape = getIconShape(dockCust?.iconShapeExp ?: dockCust?.iconShape)
                                     val dockClipShape = dockPerAppShape ?: getIconShape(iconShapeOverride)
                                     val dockTintFilter = dockCust?.iconTintColor?.let { tintColor ->
                                         if (dockCust.iconTintBackgroundOnly) null
@@ -2530,6 +2512,7 @@ private fun HomeScreenPreview(
                                                 )
                                             }
                                             dockClipShape != null && iconBgColorOverride != null -> {
+                                                // Shape + explicit bg color (AOSP style)
                                                 Box(
                                                     modifier = Modifier
                                                         .requiredSize(dockIconSize)
@@ -2541,36 +2524,27 @@ private fun HomeScreenPreview(
                                                     Image(
                                                         painter = rememberDrawablePainter(drawable = dockOverlay),
                                                         contentDescription = app.name,
-                                                        modifier = Modifier.requiredSize(dockIconSize * 2f / 3f),
-                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier.requiredSize(dockIconSize),
+                                                        contentScale = ContentScale.FillBounds,
                                                         colorFilter = dockTintFilter
                                                     )
                                                 }
                                             }
                                             dockClipShape != null && dockBgDrawable != null && dockFgDrawable != null -> {
-                                                val dockNativeBgColor = if (dockBgDrawable is ColorDrawable) dockBgDrawable.color else null
-                                                if (dockNativeBgColor != null) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .requiredSize(dockIconSize)
-                                                            .clip(dockClipShape)
-                                                            .background(Color(dockNativeBgColor))
-                                                    )
-                                                } else {
-                                                    Image(
-                                                        painter = rememberDrawablePainter(drawable = dockBgDrawable),
-                                                        contentDescription = null,
-                                                        modifier = Modifier
-                                                            .requiredSize(dockIconSize)
-                                                            .clip(dockClipShape),
-                                                        contentScale = ContentScale.FillBounds
-                                                    )
-                                                }
+                                                // Shape + adaptive (no bg color): separate bg+fg to bypass system mask
+                                                Image(
+                                                    painter = rememberDrawablePainter(drawable = dockBgDrawable),
+                                                    contentDescription = null,
+                                                    modifier = Modifier
+                                                        .requiredSize(dockIconSize)
+                                                        .clip(dockClipShape),
+                                                    contentScale = ContentScale.FillBounds
+                                                )
                                                 Image(
                                                     painter = rememberDrawablePainter(drawable = dockFgDrawable),
                                                     contentDescription = app.name,
-                                                    modifier = Modifier.requiredSize(dockIconSize * 2f / 3f),
-                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.requiredSize(dockIconSize),
+                                                    contentScale = ContentScale.FillBounds,
                                                     colorFilter = dockTintFilter
                                                 )
                                             }

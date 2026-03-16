@@ -224,14 +224,16 @@ fun AppCustomizeDialog(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         val customIconFile = customIconPath?.let { File(it) }
+                        val customIconClipShape = selectedShapeExp?.let { getIconShape(it) }
                         if (customIconFile != null && customIconFile.exists()) {
                             AsyncImage(
                                 model = customIconFile,
                                 contentDescription = appInfo.name,
-                                contentScale = ContentScale.Fit,
+                                contentScale = if (customIconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                                 colorFilter = previewTint,
                                 modifier = Modifier
                                     .size(64.dp)
+                                    .then(if (customIconClipShape != null) Modifier.clip(customIconClipShape) else Modifier)
                                     .graphicsLayer {
                                         scaleX = previewSizeScale
                                         scaleY = previewSizeScale

@@ -15,7 +15,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material.icons.Icons
 import com.bearinmind.launcher314.helpers.getIconShape
 import com.bearinmind.launcher314.helpers.getShapedExpDir
-import com.bearinmind.launcher314.helpers.getShapedExpV2Dir
 import com.bearinmind.launcher314.helpers.FontManager
 import com.bearinmind.launcher314.helpers.getBgTintedDir
 import com.bearinmind.launcher314.helpers.getShapedBgTintedDir
@@ -427,16 +426,11 @@ fun DraggableGridCell(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             val hasCustomIcon = cell.appInfo.customization?.customIconPath?.let { File(it).exists() } == true
-                            val hasShapeExpV2 = cell.appInfo.customization?.iconShapeExpV2 != null
                             val hasShapeExp = cell.appInfo.customization?.iconShapeExp != null
                             val hasPerAppShape = cell.appInfo.customization?.iconShape != null
                             val gridContext = LocalContext.current
                             val iconModelPath = if (hasCustomIcon) {
                                 cell.appInfo.customization!!.customIconPath!!
-                            } else if (hasShapeExpV2) {
-                                File(getShapedExpV2Dir(gridContext), "${cell.appInfo.packageName}.png").let {
-                                    if (it.exists()) it.absolutePath else cell.appInfo.iconPath
-                                }
                             } else if (hasShapeExp) {
                                 File(getShapedExpDir(gridContext), "${cell.appInfo.packageName}.png").let {
                                     if (it.exists()) it.absolutePath else cell.appInfo.iconPath
@@ -450,7 +444,7 @@ fun DraggableGridCell(
                             } else cell.appInfo.iconPath
                             // Check for background-only tinted icon
                             val hasBgTint = cell.appInfo.customization?.iconTintBackgroundOnly == true && cell.appInfo.customization?.iconTintColor != null
-                            val hasAnyShape = hasShapeExpV2 || hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+                            val hasAnyShape = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
                             val finalIconModelPath = if (hasBgTint && !hasCustomIcon) {
                                 if (hasAnyShape) {
                                     // Use combined shaped+bg-tinted bitmap
@@ -463,8 +457,10 @@ fun DraggableGridCell(
                                     }
                                 }
                             } else iconModelPath
-                            val hasAnyExpShape = hasCustomIcon || hasShapeExpV2 || hasShapeExp || (!hasPerAppShape && globalIconShape != null)
-                            val iconClipShape = if (!hasAnyExpShape) getIconShape(cell.appInfo.customization?.iconShape) else null
+                            val hasAnyExpShape = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+                            val iconClipShape = if (hasCustomIcon) {
+                                getIconShape(cell.appInfo.customization?.iconShapeExp ?: cell.appInfo.customization?.iconShape ?: globalIconShape)
+                            } else if (!hasAnyExpShape) getIconShape(cell.appInfo.customization?.iconShape) else null
                             val customTintFilter = if (hasBgTint) null else cell.appInfo.customization?.iconTintColor?.let { tintColor ->
                                 val intensity = (cell.appInfo.customization?.iconTintIntensity ?: 100) / 100f
                                 ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(cell.appInfo.customization?.iconTintBlendMode))
@@ -474,8 +470,7 @@ fun DraggableGridCell(
                             // When bg color is set, generate icon with user color as bg layer
                             val useBgColorIcon = globalIconBgColor != null && !hasCustomIcon
                             val bgColorEffectiveShape = if (useBgColorIcon) {
-                                cell.appInfo.customization?.iconShapeExpV2
-                                    ?: cell.appInfo.customization?.iconShapeExp
+                                cell.appInfo.customization?.iconShapeExp
                                     ?: cell.appInfo.customization?.iconShape
                                     ?: globalIconShape
                             } else null
@@ -1390,16 +1385,11 @@ fun DockSlot(
                 contentAlignment = Alignment.Center
             ) {
                 val dockHasCustomIcon = appInfo?.customization?.customIconPath?.let { File(it).exists() } == true
-                val dockHasShapeExpV2 = appInfo?.customization?.iconShapeExpV2 != null
                 val dockHasShapeExp = appInfo?.customization?.iconShapeExp != null
                 val dockHasPerAppShape = appInfo?.customization?.iconShape != null
                 val dockContext = LocalContext.current
                 val dockIconModelPath = if (dockHasCustomIcon && appInfo != null) {
                     appInfo.customization!!.customIconPath!!
-                } else if (dockHasShapeExpV2 && appInfo != null) {
-                    File(getShapedExpV2Dir(dockContext), "${appInfo.packageName}.png").let {
-                        if (it.exists()) it.absolutePath else appInfo.iconPath
-                    }
                 } else if (dockHasShapeExp && appInfo != null) {
                     File(getShapedExpDir(dockContext), "${appInfo.packageName}.png").let {
                         if (it.exists()) it.absolutePath else appInfo.iconPath
@@ -1412,7 +1402,7 @@ fun DockSlot(
                 } else appInfo?.iconPath ?: ""
                 // Check for background-only tinted icon
                 val dockHasBgTint = appInfo?.customization?.iconTintBackgroundOnly == true && appInfo?.customization?.iconTintColor != null
-                val dockHasAnyShape = dockHasShapeExpV2 || dockHasShapeExp || (!dockHasPerAppShape && globalIconShape != null)
+                val dockHasAnyShape = dockHasShapeExp || (!dockHasPerAppShape && globalIconShape != null)
                 val dockFinalIconModelPath = if (dockHasBgTint && !dockHasCustomIcon && appInfo != null) {
                     if (dockHasAnyShape) {
                         File(getShapedBgTintedDir(dockContext), "${appInfo.packageName}.png").let {
@@ -1424,8 +1414,10 @@ fun DockSlot(
                         }
                     }
                 } else dockIconModelPath
-                val dockHasAnyExpShape = dockHasCustomIcon || dockHasShapeExpV2 || dockHasShapeExp || (!dockHasPerAppShape && globalIconShape != null)
-                val dockIconClipShape = if (!dockHasAnyExpShape) appInfo?.let { getIconShape(it.customization?.iconShape) } else null
+                val dockHasAnyExpShape = dockHasShapeExp || (!dockHasPerAppShape && globalIconShape != null)
+                val dockIconClipShape = if (dockHasCustomIcon) {
+                    getIconShape(appInfo?.customization?.iconShapeExp ?: appInfo?.customization?.iconShape ?: globalIconShape)
+                } else if (!dockHasAnyExpShape) appInfo?.let { getIconShape(it.customization?.iconShape) } else null
                 val dockCustomTintFilter = if (dockHasBgTint) null else appInfo?.customization?.iconTintColor?.let { tintColor ->
                     val intensity = (appInfo.customization?.iconTintIntensity ?: 100) / 100f
                     ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(appInfo.customization?.iconTintBlendMode))
@@ -1435,8 +1427,7 @@ fun DockSlot(
                 // When bg color is set, generate icon with user color as bg layer
                 val dockUseBgColorIcon = globalIconBgColor != null && !dockHasCustomIcon && appInfo != null
                 val dockBgColorEffectiveShape = if (dockUseBgColorIcon) {
-                    appInfo?.customization?.iconShapeExpV2
-                        ?: appInfo?.customization?.iconShapeExp
+                    appInfo?.customization?.iconShapeExp
                         ?: appInfo?.customization?.iconShape
                         ?: globalIconShape
                 } else null

@@ -75,7 +75,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.bearinmind.launcher314.helpers.getIconShape
 import com.bearinmind.launcher314.helpers.getShapedExpDir
-import com.bearinmind.launcher314.helpers.getShapedExpV2Dir
 import com.bearinmind.launcher314.helpers.getBgTintedDir
 import com.bearinmind.launcher314.helpers.getShapedBgTintedDir
 import com.bearinmind.launcher314.helpers.getGlobalShapedDir
@@ -261,15 +260,10 @@ private fun OverlayAppContent(
     globalIconBgColor: Int? = null
 ) {
     val hasCustomIcon = appInfo.customization?.customIconPath?.let { File(it).exists() } == true
-    val hasShapeExpV2 = appInfo.customization?.iconShapeExpV2 != null
     val hasShapeExp = appInfo.customization?.iconShapeExp != null
     val hasPerAppShape = appInfo.customization?.iconShape != null
     val iconPath = if (hasCustomIcon) {
         appInfo.customization!!.customIconPath!!
-    } else if (hasShapeExpV2) {
-        File(getShapedExpV2Dir(context), "${appInfo.packageName}.png").let {
-            if (it.exists()) it.absolutePath else appInfo.iconPath
-        }
     } else if (hasShapeExp) {
         File(getShapedExpDir(context), "${appInfo.packageName}.png").let {
             if (it.exists()) it.absolutePath else appInfo.iconPath
@@ -281,12 +275,14 @@ private fun OverlayAppContent(
         }
     } else appInfo.iconPath
     val hasBgTint = appInfo.customization?.iconTintBackgroundOnly == true && appInfo.customization?.iconTintColor != null
-    val hasAnyShape = hasShapeExpV2 || hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+    val hasAnyShape = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
     val finalIconPath = if (hasBgTint && !hasCustomIcon) {
         resolveBgTintIconPath(context, appInfo.packageName, hasAnyShape, iconPath)
     } else iconPath
-    val hasAnyExp = hasCustomIcon || hasShapeExpV2 || hasShapeExp || (!hasPerAppShape && globalIconShape != null)
-    val clipShape = if (!hasAnyExp) getIconShape(appInfo.customization?.iconShape) else null
+    val hasAnyExp = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+    val clipShape = if (hasCustomIcon) {
+        getIconShape(appInfo.customization?.iconShapeExp ?: appInfo.customization?.iconShape ?: globalIconShape)
+    } else if (!hasAnyExp) getIconShape(appInfo.customization?.iconShape) else null
     val tintFilter = if (hasBgTint) null else appInfo.customization?.iconTintColor?.let { tintColor ->
         val intensity = (appInfo.customization?.iconTintIntensity ?: 100) / 100f
         ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(appInfo.customization?.iconTintBlendMode))
@@ -304,8 +300,7 @@ private fun OverlayAppContent(
     // When bg color is set, generate icon with user color as bg layer
     val useBgColorIcon = globalIconBgColor != null && !hasCustomIcon
     val bgColorEffectiveShape = if (useBgColorIcon) {
-        appInfo.customization?.iconShapeExpV2
-            ?: appInfo.customization?.iconShapeExp
+        appInfo.customization?.iconShapeExp
             ?: appInfo.customization?.iconShape
             ?: globalIconShape
     } else null
