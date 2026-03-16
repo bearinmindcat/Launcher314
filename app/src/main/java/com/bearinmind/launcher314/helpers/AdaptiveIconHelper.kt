@@ -266,20 +266,17 @@ private fun generateBgColorShapedIcon(context: Context, packageName: String, sha
     canvas.drawPath(shapePath, bgPaint)
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
-        // Draw only the foreground layer (bg replaced by user color)
+        // Draw only the foreground layer at 1.5x (bg replaced by user color)
         val fg = drawable.foreground
-        fg?.setBounds(0, 0, ICON_SIZE, ICON_SIZE)
+        val layerSize = (ICON_SIZE * 1.5f).toInt()
+        val offset = (ICON_SIZE - layerSize) / 2
+        fg?.setBounds(offset, offset, offset + layerSize, offset + layerSize)
         fg?.draw(canvas)
     } else {
         // Legacy icon: draw icon centered on colored background
-        val iconBitmap = drawableToBitmap(drawable)
-        val iconScale = 0.75f
-        val iconDrawSize = (ICON_SIZE * iconScale).toInt()
-        val offset = (ICON_SIZE - iconDrawSize) / 2f
-        val scaledBitmap = Bitmap.createScaledBitmap(iconBitmap, iconDrawSize, iconDrawSize, true)
-        canvas.drawBitmap(scaledBitmap, offset, offset, null)
-        scaledBitmap.recycle()
-        iconBitmap.recycle()
+        val padding = (ICON_SIZE * 0.125f).toInt()
+        drawable.setBounds(padding, padding, ICON_SIZE - padding, ICON_SIZE - padding)
+        drawable.draw(canvas)
     }
 
     val outFile = File(getBgColorShapedDir(context), "$packageName.png")
