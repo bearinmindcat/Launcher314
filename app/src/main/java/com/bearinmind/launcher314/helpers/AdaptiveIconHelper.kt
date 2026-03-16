@@ -67,27 +67,34 @@ private fun generateShapedIcon(context: Context, packageName: String, shapeName:
                 android.graphics.PorterDuff.Mode.SRC_ATOP
             )
         }
-        bg?.setBounds(0, 0, ICON_SIZE, ICON_SIZE)
-        fg?.setBounds(0, 0, ICON_SIZE, ICON_SIZE)
+        // Expand both layers to 1.5x (replicates AdaptiveIconDrawable's internal
+        // layer expansion). Adaptive icon layers are 108dp but only the inner 72dp
+        // (66.7%) is visible. At 1.5x, the fg content fills our canvas correctly.
+        val layerSize = (ICON_SIZE * 1.5f).toInt()
+        val offset = (ICON_SIZE - layerSize) / 2
+        bg?.setBounds(offset, offset, offset + layerSize, offset + layerSize)
+        fg?.setBounds(offset, offset, offset + layerSize, offset + layerSize)
         bg?.draw(canvas)
         fg?.draw(canvas)
         bg?.colorFilter = null
     } else {
+        // Non-adaptive icon: extract bg color, fill shape, draw icon centered
         val iconBitmap = drawableToBitmap(drawable)
         val bgColor = extractDominantColor(iconBitmap)
+        iconBitmap.recycle()
+
         val bgPaint = Paint().apply {
             color = bgColor
             isAntiAlias = true
             style = Paint.Style.FILL
         }
         canvas.drawPath(shapePath, bgPaint)
-        val iconScale = 0.75f
-        val iconDrawSize = (ICON_SIZE * iconScale).toInt()
-        val offset = (ICON_SIZE - iconDrawSize) / 2f
-        val scaledBitmap = Bitmap.createScaledBitmap(iconBitmap, iconDrawSize, iconDrawSize, true)
-        canvas.drawBitmap(scaledBitmap, offset, offset, null)
-        scaledBitmap.recycle()
-        iconBitmap.recycle()
+
+        // Draw the icon directly at 75% size, centered — setBounds normalizes
+        // any icon to exact pixel bounds regardless of native size
+        val padding = (ICON_SIZE * 0.125f).toInt()
+        drawable.setBounds(padding, padding, ICON_SIZE - padding, ICON_SIZE - padding)
+        drawable.draw(canvas)
     }
 
     saveBitmapToFile(result, outFile)
@@ -332,25 +339,25 @@ fun generateBgTintedIcon(context: Context, packageName: String, tintColor: Int, 
 }
 
 private fun extractDominantColor(bitmap: Bitmap): Int {
-    // Sample pixels from multiple points to find the most common non-transparent color
-    val width = bitmap.width
-    val height = bitmap.height
+    val w = bitmap.width
+    val h = bitmap.height
     val colorCounts = mutableMapOf<Int, Int>()
 
-    // Sample a grid of points
-    val step = maxOf(width / 8, 1)
-    for (x in 0 until width step step) {
-        for (y in 0 until height step step) {
+    // Count all fully opaque pixels only (alpha == 255)
+    // This skips Samsung's anti-aliased squircle mask border entirely
+    val step = maxOf(w / 32, 1)
+    for (x in 0 until w step step) {
+        for (y in 0 until h step step) {
             val pixel = bitmap.getPixel(x, y)
-            val alpha = (pixel shr 24) and 0xFF
-            if (alpha > 128) { // Only count mostly-opaque pixels
-                // Quantize to reduce noise (group similar colors)
+            if (((pixel shr 24) and 0xFF) == 0xFF) {
+                // Quantize to reduce noise — group similar colors together
                 val quantized = (pixel and 0xFFF0F0F0.toInt()) or 0xFF000000.toInt()
                 colorCounts[quantized] = (colorCounts[quantized] ?: 0) + 1
             }
         }
     }
 
-    // Return the most common color, or a neutral gray if no opaque pixels found
+    // Most common fully-opaque color = background (covers more area than any foreground color)
     return colorCounts.maxByOrNull { it.value }?.key ?: 0xFF424242.toInt()
 }
+
