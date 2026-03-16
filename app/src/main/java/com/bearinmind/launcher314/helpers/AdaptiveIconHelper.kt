@@ -239,7 +239,8 @@ fun clearBgColorShapedIcons(context: Context) {
 
 fun getOrGenerateBgColorShapedIcon(context: Context, packageName: String, shapeName: String, bgColor: Int): String {
     val dir = getBgColorShapedDir(context)
-    val file = File(dir, "$packageName.png")
+    val colorHex = Integer.toHexString(bgColor)
+    val file = File(dir, "${packageName}_${shapeName}_${colorHex}.png")
     if (file.exists()) return file.absolutePath
     return generateBgColorShapedIcon(context, packageName, shapeName, bgColor)
 }
@@ -279,7 +280,8 @@ private fun generateBgColorShapedIcon(context: Context, packageName: String, sha
         drawable.draw(canvas)
     }
 
-    val outFile = File(getBgColorShapedDir(context), "$packageName.png")
+    val colorHex = Integer.toHexString(bgColor)
+    val outFile = File(getBgColorShapedDir(context), "${packageName}_${shapeName}_${colorHex}.png")
     saveBitmapToFile(result, outFile)
     result.recycle()
     return outFile.absolutePath
