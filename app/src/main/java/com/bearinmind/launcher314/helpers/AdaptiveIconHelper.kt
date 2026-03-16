@@ -267,12 +267,42 @@ private fun generateBgColorShapedIcon(context: Context, packageName: String, sha
     canvas.drawPath(shapePath, bgPaint)
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
-        // Draw only the foreground layer at 1.5x (bg replaced by user color)
         val fg = drawable.foreground
-        val layerSize = (ICON_SIZE * 1.5f).toInt()
-        val offset = (ICON_SIZE - layerSize) / 2
-        fg?.setBounds(offset, offset, offset + layerSize, offset + layerSize)
-        fg?.draw(canvas)
+        // Check if fg layer is opaque (Samsung-wrapped legacy icon)
+        // Test edge midpoints — inside Samsung's squircle but outside proper adaptive content
+        var fgIsOpaque = false
+        if (fg != null) {
+            val testBmp = Bitmap.createBitmap(ICON_SIZE, ICON_SIZE, Bitmap.Config.ARGB_8888)
+            val testCanvas = Canvas(testBmp)
+            val testSize = (ICON_SIZE * 1.5f).toInt()
+            val testOffset = (ICON_SIZE - testSize) / 2
+            fg.setBounds(testOffset, testOffset, testOffset + testSize, testOffset + testSize)
+            fg.draw(testCanvas)
+            // Check edge midpoints: top-center, left-center, right-center, bottom-center
+            val mid = ICON_SIZE / 2
+            val edge = (ICON_SIZE * 0.05f).toInt() // ~5% from edge
+            val edgePixels = listOf(
+                testBmp.getPixel(mid, edge),           // top center
+                testBmp.getPixel(edge, mid),            // left center
+                testBmp.getPixel(ICON_SIZE - edge - 1, mid),  // right center
+                testBmp.getPixel(mid, ICON_SIZE - edge - 1)   // bottom center
+            )
+            // If any edge midpoint is opaque, fg covers the whole area — Samsung-wrapped
+            fgIsOpaque = edgePixels.any { ((it shr 24) and 0xFF) > 128 }
+            testBmp.recycle()
+        }
+        if (fgIsOpaque) {
+            // Samsung-wrapped legacy icon: draw full icon smaller on colored bg
+            val padding = (ICON_SIZE * 0.125f).toInt()
+            drawable.setBounds(padding, padding, ICON_SIZE - padding, ICON_SIZE - padding)
+            drawable.draw(canvas)
+        } else {
+            // Proper adaptive: draw fg at 1.5x (bg replaced by user color)
+            val layerSize = (ICON_SIZE * 1.5f).toInt()
+            val offset = (ICON_SIZE - layerSize) / 2
+            fg?.setBounds(offset, offset, offset + layerSize, offset + layerSize)
+            fg?.draw(canvas)
+        }
     } else {
         // Legacy icon: draw icon centered on colored background
         val padding = (ICON_SIZE * 0.125f).toInt()
