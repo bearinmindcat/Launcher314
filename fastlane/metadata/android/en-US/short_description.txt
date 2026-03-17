@@ -1,1 +1,1 @@
-Just a simple one screen android launcher people can use
+Launcher with deep customization on a single screen
