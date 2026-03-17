@@ -46,6 +46,8 @@ import com.bearinmind.launcher314.ui.settings.FontsScreen
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -119,26 +121,49 @@ fun AppCustomizeDialog(
     var selectedFontId by remember { mutableStateOf(currentCustomization?.labelFontId) }
     var showFontScreen by remember { mutableStateOf(false) }
 
+    // Version counter to bust Coil cache when the same file path is overwritten
+    var customIconVersion by remember { mutableStateOf(0) }
+
     // Image picker launcher
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
             try {
+                // Read EXIF orientation
+                val exifStream = context.contentResolver.openInputStream(uri)
+                val rotation = if (exifStream != null) {
+                    val exif = ExifInterface(exifStream)
+                    when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                        else -> 0f
+                    }.also { exifStream.close() }
+                } else 0f
+
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val original = BitmapFactory.decodeStream(inputStream)
                 inputStream?.close()
                 if (original != null) {
+                    // Apply EXIF rotation
+                    val rotated = if (rotation != 0f) {
+                        val matrix = Matrix().apply { postRotate(rotation) }
+                        Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+                    } else original
+
                     // Center-crop to square, scale to 192x192
-                    val size = minOf(original.width, original.height)
-                    val x = (original.width - size) / 2
-                    val y = (original.height - size) / 2
-                    val cropped = Bitmap.createBitmap(original, x, y, size, size)
+                    val size = minOf(rotated.width, rotated.height)
+                    val x = (rotated.width - size) / 2
+                    val y = (rotated.height - size) / 2
+                    val cropped = Bitmap.createBitmap(rotated, x, y, size, size)
                     val scaled = Bitmap.createScaledBitmap(cropped, 192, 192, true)
                     val outFile = File(getCustomIconsDir(context), "${appInfo.packageName}.png")
                     saveBitmapToFile(scaled, outFile)
                     customIconPath = outFile.absolutePath
-                    if (cropped !== original) cropped.recycle()
+                    customIconVersion++
+                    if (cropped !== rotated) cropped.recycle()
+                    if (rotated !== original) rotated.recycle()
                     scaled.recycle()
                     original.recycle()
                 }
@@ -238,8 +263,12 @@ fun AppCustomizeDialog(
                         val customIconFile = customIconPath?.let { File(it) }
                         val customIconClipShape = selectedShapeExp?.let { getIconShape(it) }
                         if (customIconFile != null && customIconFile.exists()) {
-                            AsyncImage(
-                                model = customIconFile,
+                            // Use version key to force reload when same file path is overwritten
+                            val iconBitmap = remember(customIconPath, customIconVersion) {
+                                BitmapFactory.decodeFile(customIconFile.absolutePath)?.asImageBitmap()
+                            }
+                            if (iconBitmap != null) androidx.compose.foundation.Image(
+                                bitmap = iconBitmap,
                                 contentDescription = appInfo.name,
                                 contentScale = if (customIconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                                 colorFilter = previewTint,

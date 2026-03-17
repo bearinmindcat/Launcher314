@@ -55,6 +55,7 @@ dependencies {
 
 
     implementation("androidx.compose.material:material-icons-extended:1.5.4")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
 
 
