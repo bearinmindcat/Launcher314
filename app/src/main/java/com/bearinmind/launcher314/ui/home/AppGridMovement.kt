@@ -1,6 +1,7 @@
 package com.bearinmind.launcher314.ui.home
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -16,8 +17,8 @@ import androidx.compose.material.icons.Icons
 import com.bearinmind.launcher314.helpers.getIconShape
 import com.bearinmind.launcher314.helpers.getShapedExpDir
 import com.bearinmind.launcher314.helpers.FontManager
-import com.bearinmind.launcher314.helpers.getBgTintedDir
-import com.bearinmind.launcher314.helpers.getShapedBgTintedDir
+import com.bearinmind.launcher314.helpers.generateBgTintedIcon
+import com.bearinmind.launcher314.helpers.generateShapedBgTintedIcon
 import com.bearinmind.launcher314.helpers.getGlobalShapedDir
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
@@ -125,6 +126,12 @@ fun DraggableGridCell(
     isReceivingDrop: Boolean = false // When true, plays a pulse scale animation on the folder cell
 ) {
     val hapticFeedback = rememberHapticFeedback()
+    // Use rememberUpdatedState so pointerInput always calls the latest callbacks
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val currentOnDrag by rememberUpdatedState(onDrag)
+    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
+    val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
     var showContextMenu by remember { mutableStateOf(false) }
     var cellPosition by remember { mutableStateOf(Offset.Zero) }
     var cellIntSize by remember { mutableStateOf(IntSize.Zero) }
@@ -331,7 +338,7 @@ fun DraggableGridCell(
                                                     dragStarted = true
                                                     showContextMenu = false
                                                     lastDragPosition = change.position
-                                                    onDragStart()
+                                                    currentOnDragStart()
                                                 }
 
                                                 // CRITICAL: Only process drag if this handler is the actual drag owner
@@ -445,17 +452,17 @@ fun DraggableGridCell(
                             // Check for background-only tinted icon
                             val hasBgTint = cell.appInfo.customization?.iconTintBackgroundOnly == true && cell.appInfo.customization?.iconTintColor != null
                             val hasAnyShape = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+                            val gridEffectiveShape = cell.appInfo.customization?.iconShapeExp ?: cell.appInfo.customization?.iconShape ?: globalIconShape
                             val finalIconModelPath = if (hasBgTint && !hasCustomIcon) {
-                                if (hasAnyShape) {
-                                    // Use combined shaped+bg-tinted bitmap
-                                    File(getShapedBgTintedDir(gridContext), "${cell.appInfo.packageName}.png").let {
-                                        if (it.exists()) it.absolutePath else iconModelPath
+                                val tintColor = cell.appInfo.customization?.iconTintColor?.toInt() ?: 0
+                                val tintAlpha = (cell.appInfo.customization?.iconTintIntensity ?: 100) / 100f
+                                try {
+                                    if (hasAnyShape && gridEffectiveShape != null) {
+                                        generateShapedBgTintedIcon(gridContext, cell.appInfo.packageName, gridEffectiveShape, tintColor, tintAlpha)
+                                    } else {
+                                        generateBgTintedIcon(gridContext, cell.appInfo.packageName, tintColor, tintAlpha)
                                     }
-                                } else {
-                                    File(getBgTintedDir(gridContext), "${cell.appInfo.packageName}.png").let {
-                                        if (it.exists()) it.absolutePath else iconModelPath
-                                    }
-                                }
+                                } catch (_: Exception) { iconModelPath }
                             } else iconModelPath
                             val hasAnyExpShape = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
                             val iconClipShape = if (hasCustomIcon) {
@@ -777,7 +784,7 @@ fun DraggableGridCell(
                                                     dragStarted = true
                                                     showContextMenu = false
                                                     lastDragPosition = change.position
-                                                    onDragStart()
+                                                    currentOnDragStart()
                                                 }
 
                                                 if (dragStarted && checkIsDragOwner()) {
@@ -1403,16 +1410,17 @@ fun DockSlot(
                 // Check for background-only tinted icon
                 val dockHasBgTint = appInfo?.customization?.iconTintBackgroundOnly == true && appInfo?.customization?.iconTintColor != null
                 val dockHasAnyShape = dockHasShapeExp || (!dockHasPerAppShape && globalIconShape != null)
+                val dockEffectiveShape = appInfo?.customization?.iconShapeExp ?: appInfo?.customization?.iconShape ?: globalIconShape
                 val dockFinalIconModelPath = if (dockHasBgTint && !dockHasCustomIcon && appInfo != null) {
-                    if (dockHasAnyShape) {
-                        File(getShapedBgTintedDir(dockContext), "${appInfo.packageName}.png").let {
-                            if (it.exists()) it.absolutePath else dockIconModelPath
+                    val tintColor = appInfo.customization?.iconTintColor?.toInt() ?: 0
+                    val tintAlpha = (appInfo.customization?.iconTintIntensity ?: 100) / 100f
+                    try {
+                        if (dockHasAnyShape && dockEffectiveShape != null) {
+                            generateShapedBgTintedIcon(dockContext, appInfo.packageName, dockEffectiveShape, tintColor, tintAlpha)
+                        } else {
+                            generateBgTintedIcon(dockContext, appInfo.packageName, tintColor, tintAlpha)
                         }
-                    } else {
-                        File(getBgTintedDir(dockContext), "${appInfo.packageName}.png").let {
-                            if (it.exists()) it.absolutePath else dockIconModelPath
-                        }
-                    }
+                    } catch (_: Exception) { dockIconModelPath }
                 } else dockIconModelPath
                 val dockHasAnyExpShape = dockHasShapeExp || (!dockHasPerAppShape && globalIconShape != null)
                 val dockIconClipShape = if (dockHasCustomIcon) {

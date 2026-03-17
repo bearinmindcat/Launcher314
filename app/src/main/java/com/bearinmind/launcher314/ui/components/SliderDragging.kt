@@ -747,6 +747,17 @@ object SliderConfigs {
         labelSuffix = "%"
     )
 
+    val iconColorIntensity = HorizontalSliderConfig(
+        minValue = 0f,
+        maxValue = 100f,
+        tickValues = listOf(0, 25, 50, 75, 100),
+        labeledTickValues = listOf(0, 25, 50, 75, 100),
+        snapTickValues = (0..100 step 5).toList(),
+        showMinorTicks = true,
+        label = "",
+        labelSuffix = "%"
+    )
+
     val tintIntensity = HorizontalSliderConfig(
         minValue = 0f,
         maxValue = 100f,

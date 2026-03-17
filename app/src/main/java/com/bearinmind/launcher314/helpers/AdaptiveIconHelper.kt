@@ -6,13 +6,28 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.BitmapFactory
 import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import com.bearinmind.launcher314.data.drawableToBitmap
 import com.bearinmind.launcher314.data.saveBitmapToFile
 import java.io.File
 
 private const val ICON_SIZE = 192
+
+/**
+ * Resolve the icon drawable for a package, using icon pack if selected.
+ * Falls back to system icon if no icon pack is active or no icon pack icon exists.
+ */
+private fun resolveIconDrawable(context: Context, packageName: String): android.graphics.drawable.Drawable {
+    val iconPackPath = IconPackManager.resolveIconPath(context, packageName, "")
+    if (iconPackPath.isNotEmpty()) {
+        val bmp = BitmapFactory.decodeFile(iconPackPath)
+        if (bmp != null) return BitmapDrawable(context.resources, bmp)
+    }
+    return context.packageManager.getApplicationIcon(packageName)
+}
 
 fun getGlobalShapedDir(context: Context): File {
     val dir = File(context.filesDir, "global_shaped_icons")
@@ -49,7 +64,7 @@ fun generateShapedIcon(context: Context, packageName: String, shapeName: String)
 }
 
 private fun generateShapedIcon(context: Context, packageName: String, shapeName: String, outFile: File, bgTintColor: Int? = null, bgTintAlpha: Float = 1f): String {
-    val drawable = context.packageManager.getApplicationIcon(packageName)
+    val drawable = resolveIconDrawable(context, packageName)
     val result = Bitmap.createBitmap(ICON_SIZE, ICON_SIZE, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(result)
 
@@ -118,7 +133,10 @@ fun deleteShapedBgTintedIcon(context: Context, packageName: String) {
  * Applies tint to the bg layer of AdaptiveIconDrawable, then clips to shape.
  */
 fun generateShapedBgTintedIcon(context: Context, packageName: String, shapeName: String, tintColor: Int, tintAlpha: Float): String {
-    val outFile = File(getShapedBgTintedDir(context), "$packageName.png")
+    val colorHex = Integer.toHexString(tintColor)
+    val alphaInt = (tintAlpha * 100).toInt()
+    val outFile = File(getShapedBgTintedDir(context), "${packageName}_${shapeName}_${colorHex}_${alphaInt}.png")
+    if (outFile.exists()) return outFile.absolutePath
     return generateShapedIcon(context, packageName, shapeName, outFile, bgTintColor = tintColor, bgTintAlpha = tintAlpha)
 }
 
@@ -210,7 +228,7 @@ fun getOrGenerateForegroundIcon(context: Context, packageName: String): String? 
     val file = File(dir, "$packageName.png")
     if (file.exists()) return file.absolutePath
 
-    val drawable = context.packageManager.getApplicationIcon(packageName)
+    val drawable = resolveIconDrawable(context, packageName)
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || drawable !is AdaptiveIconDrawable) {
         return null
     }
@@ -238,11 +256,13 @@ fun clearBgColorShapedIcons(context: Context) {
 }
 
 fun getOrGenerateBgColorShapedIcon(context: Context, packageName: String, shapeName: String, bgColor: Int): String {
+    val prefs = context.getSharedPreferences("app_drawer_settings", Context.MODE_PRIVATE)
+    val intensity = prefs.getInt("global_icon_bg_intensity", 100)
     val dir = getBgColorShapedDir(context)
     val colorHex = Integer.toHexString(bgColor)
-    val file = File(dir, "${packageName}_${shapeName}_${colorHex}.png")
+    val file = File(dir, "${packageName}_${shapeName}_${colorHex}_${intensity}.png")
     if (file.exists()) return file.absolutePath
-    return generateBgColorShapedIcon(context, packageName, shapeName, bgColor)
+    return generateBgColorShapedIcon(context, packageName, shapeName, bgColor, intensity)
 }
 
 /**
@@ -250,17 +270,19 @@ fun getOrGenerateBgColorShapedIcon(context: Context, packageName: String, shapeN
  * original background layer. Only the foreground layer of adaptive icons is preserved.
  * Must separate layers manually since the native bg is replaced by user color.
  */
-private fun generateBgColorShapedIcon(context: Context, packageName: String, shapeName: String, bgColor: Int): String {
-    val drawable = context.packageManager.getApplicationIcon(packageName)
+private fun generateBgColorShapedIcon(context: Context, packageName: String, shapeName: String, bgColor: Int, intensity: Int = 100): String {
+    val drawable = resolveIconDrawable(context, packageName)
     val result = Bitmap.createBitmap(ICON_SIZE, ICON_SIZE, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(result)
 
     val shapePath = createShapePath(shapeName, ICON_SIZE.toFloat())
     canvas.clipPath(shapePath)
 
-    // Fill the shape with the user's chosen background color
+    // Fill the shape with the user's chosen background color, applying intensity as alpha
+    val alpha = (intensity * 255 / 100).coerceIn(0, 255)
+    val colorWithAlpha = (bgColor and 0x00FFFFFF) or (alpha shl 24)
     val bgPaint = Paint().apply {
-        color = bgColor
+        color = colorWithAlpha
         isAntiAlias = true
         style = Paint.Style.FILL
     }
@@ -311,10 +333,94 @@ private fun generateBgColorShapedIcon(context: Context, packageName: String, sha
     }
 
     val colorHex = Integer.toHexString(bgColor)
-    val outFile = File(getBgColorShapedDir(context), "${packageName}_${shapeName}_${colorHex}.png")
+    val outFile = File(getBgColorShapedDir(context), "${packageName}_${shapeName}_${colorHex}_${intensity}.png")
     saveBitmapToFile(result, outFile)
     result.recycle()
     return outFile.absolutePath
+}
+
+/**
+ * Generate a shaped icon bitmap in-memory (no file I/O) for live previews.
+ * Returns the Bitmap directly so it can be displayed without caching.
+ */
+fun generateShapedIconBitmap(context: Context, packageName: String, shapeName: String, bgColor: Int? = null, intensity: Int = 100): Bitmap {
+    val drawable = resolveIconDrawable(context, packageName)
+    val result = Bitmap.createBitmap(ICON_SIZE, ICON_SIZE, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(result)
+
+    val shapePath = createShapePath(shapeName, ICON_SIZE.toFloat())
+    canvas.clipPath(shapePath)
+
+    if (bgColor != null) {
+        val alpha = (intensity * 255 / 100).coerceIn(0, 255)
+        val colorWithAlpha = (bgColor and 0x00FFFFFF) or (alpha shl 24)
+        val bgPaint = Paint().apply {
+            color = colorWithAlpha
+            isAntiAlias = true
+            style = Paint.Style.FILL
+        }
+        canvas.drawPath(shapePath, bgPaint)
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && drawable is AdaptiveIconDrawable) {
+        if (bgColor != null) {
+            val fg = drawable.foreground
+            var fgIsOpaque = false
+            if (fg != null) {
+                val testBmp = Bitmap.createBitmap(ICON_SIZE, ICON_SIZE, Bitmap.Config.ARGB_8888)
+                val testCanvas = Canvas(testBmp)
+                val testSize = (ICON_SIZE * 1.5f).toInt()
+                val testOffset = (ICON_SIZE - testSize) / 2
+                fg.setBounds(testOffset, testOffset, testOffset + testSize, testOffset + testSize)
+                fg.draw(testCanvas)
+                val mid = ICON_SIZE / 2
+                val edge = (ICON_SIZE * 0.05f).toInt()
+                val edgePixels = listOf(
+                    testBmp.getPixel(mid, edge),
+                    testBmp.getPixel(edge, mid),
+                    testBmp.getPixel(ICON_SIZE - edge - 1, mid),
+                    testBmp.getPixel(mid, ICON_SIZE - edge - 1)
+                )
+                fgIsOpaque = edgePixels.any { ((it shr 24) and 0xFF) > 128 }
+                testBmp.recycle()
+            }
+            if (fgIsOpaque) {
+                val padding = (ICON_SIZE * 0.125f).toInt()
+                drawable.setBounds(padding, padding, ICON_SIZE - padding, ICON_SIZE - padding)
+                drawable.draw(canvas)
+            } else {
+                val layerSize = (ICON_SIZE * 1.5f).toInt()
+                val offset = (ICON_SIZE - layerSize) / 2
+                fg?.setBounds(offset, offset, offset + layerSize, offset + layerSize)
+                fg?.draw(canvas)
+            }
+        } else {
+            val bg = drawable.background
+            val fg = drawable.foreground
+            val layerSize = (ICON_SIZE * 1.5f).toInt()
+            val offset = (ICON_SIZE - layerSize) / 2
+            bg?.setBounds(offset, offset, offset + layerSize, offset + layerSize)
+            bg?.draw(canvas)
+            fg?.setBounds(offset, offset, offset + layerSize, offset + layerSize)
+            fg?.draw(canvas)
+        }
+    } else {
+        val padding = (ICON_SIZE * 0.125f).toInt()
+        if (bgColor == null) {
+            val bmp = drawableToBitmap(drawable)
+            val dominantColor = extractDominantColor(bmp)
+            val bgPaint = Paint().apply {
+                color = dominantColor
+                isAntiAlias = true
+                style = Paint.Style.FILL
+            }
+            canvas.drawPath(shapePath, bgPaint)
+        }
+        drawable.setBounds(padding, padding, ICON_SIZE - padding, ICON_SIZE - padding)
+        drawable.draw(canvas)
+    }
+
+    return result
 }
 
 fun getBgTintedDir(context: Context): File {
@@ -333,7 +439,7 @@ fun deleteBgTintedIcon(context: Context, packageName: String) {
  * The foreground is drawn untinted on top. For non-adaptive icons, falls back to full tint.
  */
 fun generateBgTintedIcon(context: Context, packageName: String, tintColor: Int, tintAlpha: Float): String {
-    val drawable = context.packageManager.getApplicationIcon(packageName)
+    val drawable = resolveIconDrawable(context, packageName)
     val result = Bitmap.createBitmap(ICON_SIZE, ICON_SIZE, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(result)
 
@@ -361,7 +467,9 @@ fun generateBgTintedIcon(context: Context, packageName: String, tintColor: Int, 
         iconBitmap.recycle()
     }
 
-    val outFile = File(getBgTintedDir(context), "$packageName.png")
+    val colorHex = Integer.toHexString(tintColor)
+    val alphaInt = (tintAlpha * 100).toInt()
+    val outFile = File(getBgTintedDir(context), "${packageName}_${colorHex}_${alphaInt}.png")
     saveBitmapToFile(result, outFile)
     result.recycle()
     return outFile.absolutePath

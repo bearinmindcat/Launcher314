@@ -52,6 +52,11 @@ import com.bearinmind.launcher314.data.LauncherUtils
 import com.bearinmind.launcher314.services.NotificationDrawerAction
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
+import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.bearinmind.launcher314.helpers.FontManager
 import com.bearinmind.launcher314.helpers.IconPackManager
 import com.bearinmind.launcher314.data.getSelectedFont
@@ -61,6 +66,11 @@ import com.bearinmind.launcher314.data.getDrawerIconSizePercent
 import com.bearinmind.launcher314.data.getGlobalIconShape
 import com.bearinmind.launcher314.data.getGlobalIconBgColor
 import com.bearinmind.launcher314.data.setGlobalIconBgColor
+import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
+import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
+import com.bearinmind.launcher314.helpers.generateShapedIconBitmap
+import com.bearinmind.launcher314.data.getGlobalIconBgIntensity
+import com.bearinmind.launcher314.data.setGlobalIconBgIntensity
 import com.bearinmind.launcher314.data.setGlobalIconShape
 import com.bearinmind.launcher314.helpers.clearGlobalShapedIcons
 import com.bearinmind.launcher314.helpers.clearBgColorShapedIcons
@@ -110,6 +120,7 @@ fun SettingsScreen(
     var sharedIconSizePercent by remember { mutableFloatStateOf(getDrawerIconSizePercent(context).toFloat()) }
     var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
+    var globalIconBgIntensity by remember { mutableStateOf(getGlobalIconBgIntensity(context)) }
 
     // Accessibility service state - reflects actual system state
     var isAccessibilityServiceEnabled by remember {
@@ -244,7 +255,8 @@ fun SettingsScreen(
                         sharedIconSize = sharedIconSizePercent,
                         onSharedIconSizeChanged = { sharedIconSizePercent = it },
                         iconShapeOverride = globalIconShape,
-                        iconBgColorOverride = globalIconBgColor
+                        iconBgColorOverride = globalIconBgColor,
+                        iconBgIntensityOverride = globalIconBgIntensity
                     )
                 }
 
@@ -261,7 +273,8 @@ fun SettingsScreen(
                         sharedIconSize = sharedIconSizePercent,
                         onSharedIconSizeChanged = { sharedIconSizePercent = it },
                         iconShapeOverride = globalIconShape,
-                        iconBgColorOverride = globalIconBgColor
+                        iconBgColorOverride = globalIconBgColor,
+                        iconBgIntensityOverride = globalIconBgIntensity
                     )
                 }
 
@@ -287,6 +300,12 @@ fun SettingsScreen(
                         onGlobalIconBgColorChanged = { color ->
                             globalIconBgColor = color
                             setGlobalIconBgColor(context, color)
+                            clearBgColorShapedIcons(context)
+                        },
+                        globalIconBgIntensity = globalIconBgIntensity,
+                        onGlobalIconBgIntensityChanged = { intensity ->
+                            globalIconBgIntensity = intensity
+                            setGlobalIconBgIntensity(context, intensity)
                             clearBgColorShapedIcons(context)
                         }
                     )
@@ -577,7 +596,9 @@ fun IconTextPersonalizationCard(
     globalIconShape: String? = null,
     onGlobalIconShapeChanged: (String?) -> Unit = {},
     globalIconBgColor: Int? = null,
-    onGlobalIconBgColorChanged: (Int?) -> Unit = {}
+    onGlobalIconBgColorChanged: (Int?) -> Unit = {},
+    globalIconBgIntensity: Int = 100,
+    onGlobalIconBgIntensityChanged: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     // Re-read on every recomposition so it updates when returning from FontsScreen/IconPacksScreen
@@ -691,136 +712,242 @@ fun IconTextPersonalizationCard(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Global Icon Shape — always visible row of shape options
+        // Icon Shape + Background Color + Intensity — with live icon preview on the right
         val aospShapes = listOf(IconShapes.CIRCLE, IconShapes.ROUNDED_SQUARE, IconShapes.SQUIRCLE, IconShapes.TEARDROP)
+        val iconPreviewContext = LocalContext.current
+        val ownPackageName = iconPreviewContext.packageName
+
+        // Local intensity for smooth dragging without regenerating on every frame
+        var localIntensity by remember(globalIconBgIntensity) { mutableStateOf(globalIconBgIntensity) }
+
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 76.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // "Default" (no shape) option
-            val isDefault = globalIconShape == null
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .then(
-                        if (isDefault) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
-                        else Modifier
-                    )
-                    .clickable { onGlobalIconShapeChanged(null) },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Clear,
-                    contentDescription = "No shape",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-
-            aospShapes.forEach { shapeName ->
-                val isSelected = globalIconShape == shapeName
-                val clipShape = getIconShape(shapeName)
-                Box(
+            // Left side — controls
+            Column(modifier = Modifier.weight(1f)) {
+                // Shape row
+                Row(
                     modifier = Modifier
-                        .size(28.dp)
-                        .then(
-                            if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
-                            else Modifier
-                        )
-                        .clickable { onGlobalIconShapeChanged(shapeName) },
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(start = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(22.dp)
-                            .then(
-                                if (clipShape != null) Modifier.clip(clipShape)
-                                else Modifier
-                            )
-                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                    )
-                }
-            }
-        }
-
-        // "Icon Shape" label
-        Text(
-            text = "Icon Shape",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 76.dp, top = 4.dp),
-            textAlign = TextAlign.Center
-        )
-
-        // Icon background color — only visible when a shape is selected
-        if (globalIconShape != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-
-            val iconBgColors = listOf(
-                null to "—",
-                0xFFFFFFFF.toInt() to "White",
-                0xFFEF9A9A.toInt() to "Red",
-                0xFFA5D6A7.toInt() to "Green",
-                0xFF90CAF9.toInt() to "Blue",
-                0xFFFFF59D.toInt() to "Yellow",
-                0xFFFFCC80.toInt() to "Orange",
-                0xFFCE93D8.toInt() to "Purple",
-                0xFF9FA8DA.toInt() to "Indigo"
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 76.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                iconBgColors.forEach { (color, label) ->
-                    val isSelected = globalIconBgColor == color
+                    val isDefault = globalIconShape == null
                     Box(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
                             .then(
-                                if (color != null) Modifier.background(Color(color))
-                                else Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
-                            )
-                            .then(
-                                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                                if (isDefault) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
                                 else Modifier
                             )
-                            .clickable { onGlobalIconBgColorChanged(color) },
+                            .clickable { onGlobalIconShapeChanged(null) },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (color == null) {
-                            Icon(
-                                imageVector = Icons.Outlined.Clear,
-                                contentDescription = "No background color",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(14.dp)
+                        Icon(
+                            imageVector = Icons.Outlined.Clear,
+                            contentDescription = "No shape",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    aospShapes.forEach { shapeName ->
+                        val isSelected = globalIconShape == shapeName
+                        val clipShape = getIconShape(shapeName)
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .then(
+                                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                                    else Modifier
+                                )
+                                .clickable { onGlobalIconShapeChanged(shapeName) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .then(
+                                        if (clipShape != null) Modifier.clip(clipShape)
+                                        else Modifier
+                                    )
+                                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                             )
                         }
                     }
                 }
-            }
 
-            Text(
-                text = "Icon Background Color",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                Text(
+                    text = "Icon Shape",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = 4.dp),
+                    textAlign = TextAlign.Center
+                )
+
+                // Icon color intensity — always visible, disabled when no shape or no bg color
+                run {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val intensityEnabled = globalIconShape != null && globalIconBgColor != null
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp)
+                    ) {
+                        ThumbDragHorizontalSlider(
+                            currentValue = localIntensity.toFloat(),
+                            config = SliderConfigs.iconColorIntensity,
+                            enabled = intensityEnabled,
+                            onValueChange = { localIntensity = it.toInt() },
+                            onValueChangeFinished = { onGlobalIconBgIntensityChanged(localIntensity) }
+                        )
+                    }
+
+                    Text(
+                        text = "Icon Color Intensity",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (intensityEnabled) 0.7f else 0.3f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, top = 4.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // Background color row — always visible, disabled when no shape
+                run {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val bgColorEnabled = globalIconShape != null
+                    val iconBgColors = listOf(
+                        null to "—",
+                        0xFFFFFFFF.toInt() to "White",
+                        0xFFEF9A9A.toInt() to "Red",
+                        0xFFA5D6A7.toInt() to "Green",
+                        0xFF90CAF9.toInt() to "Blue",
+                        0xFFFFF59D.toInt() to "Yellow",
+                        0xFFFFCC80.toInt() to "Orange",
+                        0xFFCE93D8.toInt() to "Purple",
+                        0xFF9FA8DA.toInt() to "Indigo"
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp)
+                            .then(if (!bgColorEnabled) Modifier.graphicsLayer { alpha = 0.4f } else Modifier),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        iconBgColors.forEach { (color, label) ->
+                            val isSelected = globalIconBgColor == color
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .then(
+                                        if (color != null) Modifier.background(Color(color))
+                                        else Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                                    )
+                                    .then(
+                                        if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                                        else Modifier
+                                    )
+                                    .then(if (bgColorEnabled) Modifier.clickable { onGlobalIconBgColorChanged(color) } else Modifier),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (color == null) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Clear,
+                                        contentDescription = "No background color",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "Icon Background Color",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (bgColorEnabled) 0.7f else 0.3f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, top = 4.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } // end left Column
+
+            // Right side — live icon preview with label
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 76.dp, top = 4.dp),
-                textAlign = TextAlign.Center
-            )
-        }
+                    .width(72.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                val previewBitmap = remember(globalIconShape, globalIconBgColor, localIntensity) {
+                    try {
+                        if (globalIconShape != null) {
+                            generateShapedIconBitmap(
+                                iconPreviewContext, ownPackageName, globalIconShape,
+                                bgColor = globalIconBgColor,
+                                intensity = localIntensity
+                            ).asImageBitmap()
+                        } else null
+                    } catch (_: Exception) { null }
+                }
+                val clipShape = getIconShape(globalIconShape)
+                if (previewBitmap != null) {
+                    Image(
+                        bitmap = previewBitmap,
+                        contentDescription = "Icon preview",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .then(if (clipShape != null) Modifier.clip(clipShape) else Modifier)
+                    )
+                } else {
+                    val rawIconDrawable = remember {
+                        try { iconPreviewContext.packageManager.getApplicationIcon(ownPackageName) } catch (_: Exception) { null }
+                    }
+                    if (rawIconDrawable != null) {
+                        Image(
+                            painter = rememberDrawablePainter(drawable = rawIconDrawable),
+                            contentDescription = "Icon preview",
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(3.dp))
+                val appLabel = remember {
+                    try {
+                        val appInfo = iconPreviewContext.packageManager.getApplicationInfo(ownPackageName, 0)
+                        iconPreviewContext.packageManager.getApplicationLabel(appInfo).toString()
+                    } catch (_: Exception) { "App" }
+                }
+                val previewTextSize = (textSizePercent / 100f * 12f).sp
+                Text(
+                    text = appLabel,
+                    fontSize = previewTextSize,
+                    fontFamily = selectedFontFamily ?: FontFamily.Default,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } // end Row
     }
 }
 

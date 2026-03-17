@@ -187,7 +187,8 @@ fun AppDrawerPreviewSection(
     sharedIconSize: Float? = null,
     onSharedIconSizeChanged: (Float) -> Unit = {},
     iconShapeOverride: String? = null,
-    iconBgColorOverride: Int? = null
+    iconBgColorOverride: Int? = null,
+    iconBgIntensityOverride: Int = 100
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -381,6 +382,7 @@ fun AppDrawerPreviewSection(
                     onPlayClick = onPreviewDrawer,
                     iconShapeOverride = iconShapeOverride,
                     iconBgColorOverride = iconBgColorOverride,
+                    iconBgIntensityOverride = iconBgIntensityOverride,
                     appCustomizations = appCustomizations
                 )
             }
@@ -617,6 +619,7 @@ private fun RealAppDrawerPreview(
     onPlayClick: () -> Unit = {},
     iconShapeOverride: String? = null,
     iconBgColorOverride: Int? = null,
+    iconBgIntensityOverride: Int = 100,
     appCustomizations: AppCustomizations = AppCustomizations()
 ) {
     val configuration = LocalConfiguration.current
@@ -842,6 +845,7 @@ private fun RealAppDrawerPreview(
                                                     fontFamily = labelFontFamily,
                                                     iconClipShape = getIconShape(iconShapeOverride),
                                                     iconBgColor = iconBgColorOverride,
+                                                    iconBgIntensity = iconBgIntensityOverride,
                                                     customization = appCustomizations.customizations[item.app.packageName],
                                                     iconShapeName = iconShapeOverride
                                                 )
@@ -1130,6 +1134,7 @@ private fun ScaledPreviewAppItem(
     scaleFactor: Float = 0.4f,
     iconClipShape: Shape? = null,
     iconBgColor: Int? = null,
+    iconBgIntensity: Int = 100,
     customization: AppCustomization? = null,
     iconShapeName: String? = null
 ) {
@@ -1173,7 +1178,7 @@ private fun ScaledPreviewAppItem(
                         // Use same cached shaped bitmaps as the drawer/home screen
                         val effectiveShapeName = customization?.iconShapeExp ?: customization?.iconShape ?: iconShapeName
                         val shapedIconPath = if (effectiveShapeName != null) {
-                            remember(app.packageName, effectiveShapeName, iconBgColor) {
+                            remember(app.packageName, effectiveShapeName, iconBgColor, iconBgIntensity) {
                                 try {
                                     if (iconBgColor != null) {
                                         getOrGenerateBgColorShapedIcon(scaledPreviewContext, app.packageName, effectiveShapeName, iconBgColor)
@@ -1457,7 +1462,8 @@ fun HomeScreenPreviewSection(
     sharedIconSize: Float? = null,
     onSharedIconSizeChanged: (Float) -> Unit = {},
     iconShapeOverride: String? = null,
-    iconBgColorOverride: Int? = null
+    iconBgColorOverride: Int? = null,
+    iconBgIntensityOverride: Int = 100
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1619,6 +1625,7 @@ fun HomeScreenPreviewSection(
                         onPlayClick = onPreviewLauncher,
                         iconShapeOverride = iconShapeOverride,
                         iconBgColorOverride = iconBgColorOverride,
+                        iconBgIntensityOverride = iconBgIntensityOverride,
                         appCustomizations = appCustomizations
                     )
             }
@@ -1796,6 +1803,7 @@ private fun HomeScreenPreview(
     onPlayClick: () -> Unit = {},
     iconShapeOverride: String? = null,
     iconBgColorOverride: Int? = null,
+    iconBgIntensityOverride: Int = 100,
     appCustomizations: AppCustomizations = AppCustomizations()
 ) {
     val configuration = LocalConfiguration.current
@@ -2053,7 +2061,7 @@ private fun HomeScreenPreview(
                                                             // Use same cached shaped bitmaps as the drawer/home screen
                                                             val cellShapeName = cust?.iconShapeExp ?: cust?.iconShape ?: iconShapeOverride
                                                             val cellShapedPath = if (cellShapeName != null) {
-                                                                remember(cell.app.packageName, cellShapeName, iconBgColorOverride) {
+                                                                remember(cell.app.packageName, cellShapeName, iconBgColorOverride, iconBgIntensityOverride) {
                                                                     try {
                                                                         if (iconBgColorOverride != null) {
                                                                             getOrGenerateBgColorShapedIcon(gridPreviewContext, cell.app.packageName, cellShapeName, iconBgColorOverride)
@@ -2435,7 +2443,7 @@ private fun HomeScreenPreview(
                                                 // Use same cached shaped bitmaps as the drawer/home screen
                                                 val dockShapeName = dockCust?.iconShapeExp ?: dockCust?.iconShape ?: iconShapeOverride
                                                 val dockShapedPath = if (dockShapeName != null) {
-                                                    remember(app.packageName, dockShapeName, iconBgColorOverride) {
+                                                    remember(app.packageName, dockShapeName, iconBgColorOverride, iconBgIntensityOverride) {
                                                         try {
                                                             if (iconBgColorOverride != null) {
                                                                 getOrGenerateBgColorShapedIcon(dockPreviewContext, app.packageName, dockShapeName, iconBgColorOverride)

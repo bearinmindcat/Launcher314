@@ -24,6 +24,7 @@ private const val KEY_SELECTED_ICON_PACK = "selected_icon_pack"
 private const val DEFAULT_SELECTED_ICON_PACK = ""  // Empty = system icons
 private const val KEY_GLOBAL_ICON_SHAPE = "global_icon_shape"
 private const val KEY_GLOBAL_ICON_BG_COLOR = "global_icon_bg_color"
+private const val KEY_GLOBAL_ICON_BG_INTENSITY = "global_icon_bg_intensity"
 
 private const val DEFAULT_GRID_SIZE = 4
 private const val DEFAULT_ICON_SIZE = 48
@@ -289,6 +290,16 @@ fun setGlobalIconBgColor(context: Context, color: Int?) {
     } else {
         prefs.edit().putInt(KEY_GLOBAL_ICON_BG_COLOR, color).apply()
     }
+}
+
+fun getGlobalIconBgIntensity(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_GLOBAL_ICON_BG_INTENSITY, 100)
+}
+
+fun setGlobalIconBgIntensity(context: Context, intensity: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_GLOBAL_ICON_BG_INTENSITY, intensity).apply()
 }
 
 // ============================================================================

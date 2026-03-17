@@ -64,6 +64,8 @@ import com.bearinmind.launcher314.helpers.deleteShapedIcon
 import com.bearinmind.launcher314.helpers.generateBgTintedIcon
 import com.bearinmind.launcher314.helpers.generateShapedBgTintedIcon
 import com.bearinmind.launcher314.helpers.generateShapedIcon
+import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
+import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
 import com.bearinmind.launcher314.helpers.getIconShape
 import com.bearinmind.launcher314.helpers.getShapedExpDir
 import com.bearinmind.launcher314.helpers.parseBlendMode
@@ -92,6 +94,8 @@ fun AppCustomizeDialog(
     globalIconSizePercent: Int = 100,
     globalIconTextSizePercent: Int = 100,
     iconSizeOverflowThreshold: Float = 125f,
+    globalIconShape: String? = null,
+    globalIconBgColor: Int? = null,
     onSave: (AppCustomization) -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit
@@ -169,29 +173,37 @@ fun AppCustomizeDialog(
                 val previewShape: Shape? = null
                 val previewSizeScale = selectedSizePercent / globalIconSizePercent.toFloat()
 
+                // Effective shape: per-app overrides global
+                val effectiveShapeName = selectedShapeExp ?: globalIconShape
+
                 // Generate shaped EXP preview bitmap (plain shape, no tint baked in)
-                val shapeExpPreviewBitmap = remember(selectedShapeExp) {
-                    selectedShapeExp?.let {
+                val shapeExpPreviewBitmap = remember(effectiveShapeName, globalIconBgColor) {
+                    effectiveShapeName?.let {
                         try {
-                            val path = generateShapedIcon(context, appInfo.packageName, it)
-                            BitmapFactory.decodeFile(path)?.asImageBitmap()
+                            if (globalIconBgColor != null) {
+                                val path = getOrGenerateBgColorShapedIcon(context, appInfo.packageName, it, globalIconBgColor)
+                                BitmapFactory.decodeFile(path)?.asImageBitmap()
+                            } else {
+                                val path = getOrGenerateGlobalShapedIcon(context, appInfo.packageName, it)
+                                BitmapFactory.decodeFile(path)?.asImageBitmap()
+                            }
                         } catch (_: Exception) { null }
                     }
                 }
 
                 // Shaped + bg-only tint combined bitmap
-                val shapedBgTintPreviewBitmap = remember(selectedShapeExp, selectedTintColor, tintIntensity, tintBackgroundOnly) {
-                    if (selectedShapeExp != null && tintBackgroundOnly && selectedTintColor != null) {
+                val shapedBgTintPreviewBitmap = remember(effectiveShapeName, selectedTintColor, tintIntensity, tintBackgroundOnly) {
+                    if (effectiveShapeName != null && tintBackgroundOnly && selectedTintColor != null) {
                         try {
-                            val path = generateShapedBgTintedIcon(context, appInfo.packageName, selectedShapeExp!!, selectedTintColor!!.toInt(), tintIntensity / 100f)
+                            val path = generateShapedBgTintedIcon(context, appInfo.packageName, effectiveShapeName, selectedTintColor!!.toInt(), tintIntensity / 100f)
                             BitmapFactory.decodeFile(path)?.asImageBitmap()
                         } catch (_: Exception) { null }
                     } else null
                 }
 
                 // Background-only tint (no shape): generate a bitmap with tinted bg + untinted fg
-                val bgTintPreviewBitmap = remember(selectedTintColor, tintIntensity, tintBackgroundOnly, selectedShapeExp) {
-                    if (tintBackgroundOnly && selectedTintColor != null && selectedShapeExp == null) {
+                val bgTintPreviewBitmap = remember(selectedTintColor, tintIntensity, tintBackgroundOnly, effectiveShapeName) {
+                    if (tintBackgroundOnly && selectedTintColor != null && effectiveShapeName == null) {
                         try {
                             val path = generateBgTintedIcon(context, appInfo.packageName, selectedTintColor!!.toInt(), tintIntensity / 100f)
                             BitmapFactory.decodeFile(path)?.asImageBitmap()

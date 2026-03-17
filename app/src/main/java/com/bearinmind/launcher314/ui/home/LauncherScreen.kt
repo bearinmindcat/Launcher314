@@ -80,6 +80,8 @@ import com.bearinmind.launcher314.helpers.getShapedBgTintedDir
 import com.bearinmind.launcher314.helpers.getGlobalShapedDir
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
+import com.bearinmind.launcher314.helpers.generateShapedBgTintedIcon
+import com.bearinmind.launcher314.helpers.generateBgTintedIcon
 import com.bearinmind.launcher314.helpers.parseBlendMode
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.data.getGlobalIconShape
@@ -198,14 +200,18 @@ private fun resolveBgTintIconPath(
     context: Context,
     packageName: String,
     hasAnyShape: Boolean,
-    fallbackPath: String
+    fallbackPath: String,
+    shapeName: String? = null,
+    tintColor: Int = 0,
+    tintAlpha: Float = 1f
 ): String {
-    if (hasAnyShape) {
-        val f = java.io.File(getShapedBgTintedDir(context), "$packageName.png")
-        if (f.exists()) return f.absolutePath
-    }
-    val f = java.io.File(getBgTintedDir(context), "$packageName.png")
-    return if (f.exists()) f.absolutePath else fallbackPath
+    return try {
+        if (hasAnyShape && shapeName != null) {
+            generateShapedBgTintedIcon(context, packageName, shapeName, tintColor, tintAlpha)
+        } else {
+            generateBgTintedIcon(context, packageName, tintColor, tintAlpha)
+        }
+    } catch (_: Exception) { fallbackPath }
 }
 
 /** Overlay label composable — respects hideLabel, customLabel, and customization. */
@@ -276,8 +282,11 @@ private fun OverlayAppContent(
     } else appInfo.iconPath
     val hasBgTint = appInfo.customization?.iconTintBackgroundOnly == true && appInfo.customization?.iconTintColor != null
     val hasAnyShape = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
+    val effectiveShape = appInfo.customization?.iconShapeExp ?: appInfo.customization?.iconShape ?: globalIconShape
     val finalIconPath = if (hasBgTint && !hasCustomIcon) {
-        resolveBgTintIconPath(context, appInfo.packageName, hasAnyShape, iconPath)
+        val tintColor = appInfo.customization?.iconTintColor?.toInt() ?: 0
+        val tintAlpha = (appInfo.customization?.iconTintIntensity ?: 100) / 100f
+        resolveBgTintIconPath(context, appInfo.packageName, hasAnyShape, iconPath, effectiveShape, tintColor, tintAlpha)
     } else iconPath
     val hasAnyExp = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
     val clipShape = if (hasCustomIcon) {
@@ -3613,6 +3622,8 @@ fun LauncherScreen(
             globalIconSizePercent = iconSizePercent.toFloat().toInt(),
             globalIconTextSizePercent = iconTextSizePercent,
             iconSizeOverflowThreshold = universalOverflowThreshold,
+            globalIconShape = globalIconShape,
+            globalIconBgColor = globalIconBgColor,
             onSave = { newCustomization ->
                 appCustomizations = setCustomization(context, appCustomizations, app.packageName, newCustomization)
                 customizingApp = null

@@ -27,6 +27,8 @@ import coil.compose.AsyncImage
 import com.bearinmind.launcher314.data.getSelectedIconPack
 import com.bearinmind.launcher314.data.setSelectedIconPack
 import com.bearinmind.launcher314.helpers.IconPackManager
+import com.bearinmind.launcher314.helpers.clearGlobalShapedIcons
+import com.bearinmind.launcher314.helpers.clearBgColorShapedIcons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -122,6 +124,8 @@ fun IconPacksScreen(
                                 if (selectedPackId.isNotEmpty()) {
                                     selectedPackId = ""
                                     setSelectedIconPack(context, "")
+                                    clearGlobalShapedIcons(context)
+                                    clearBgColorShapedIcons(context)
                                     scope.launch(Dispatchers.IO) {
                                         IconPackManager.clearIconPackCache(context)
                                     }
@@ -144,6 +148,8 @@ fun IconPacksScreen(
                             if (selectedPackId != pack.packageName) {
                                 selectedPackId = pack.packageName
                                 setSelectedIconPack(context, pack.packageName)
+                                clearGlobalShapedIcons(context)
+                                clearBgColorShapedIcons(context)
                                 isLoading = true
                                 loadingMessage = "Applying ${pack.displayName}..."
                                 scope.launch(Dispatchers.IO) {
