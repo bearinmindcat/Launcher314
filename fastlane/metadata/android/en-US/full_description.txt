@@ -8,6 +8,4 @@ Using this app is pretty straight forward and everything is contained in a few s
 
 Anyways who reads these descriptions anyways. Get in there buddy.
 
-Open Source
-
 This app is free and open source software (FOSS) licensed under the GPL-3.0 License.
