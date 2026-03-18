@@ -55,6 +55,8 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -74,6 +76,7 @@ import com.bearinmind.launcher314.data.getScrollbarHeightPercent
 import com.bearinmind.launcher314.data.getScrollbarIntensity
 import com.bearinmind.launcher314.data.getScrollbarWidthPercent
 import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
+import androidx.compose.ui.focus.onFocusChanged
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
 import com.bearinmind.launcher314.ui.components.LazyGridScrollbar
@@ -87,6 +90,7 @@ import java.io.File
 internal fun MainDrawerContent(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
+    onSearchFocusChanged: (Boolean) -> Unit = {},
     isLoading: Boolean,
     folders: List<AppFolder>,
     filteredApps: List<AppInfo>,
@@ -302,6 +306,19 @@ internal fun MainDrawerContent(
     }
 
     val reverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
+    var isSearchFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+
+    // Detect keyboard dismissal (e.g. back button) and clear focus + search
+    val isKeyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    LaunchedEffect(isKeyboardOpen) {
+        if (!isKeyboardOpen && isSearchFocused) {
+            focusManager.clearFocus()
+            isSearchFocused = false
+            onSearchQueryChange("")
+            onSearchFocusChanged(false)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -414,7 +431,14 @@ internal fun MainDrawerContent(
                 enabled = searchBarAlpha > 0.5f,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .graphicsLayer { alpha = searchBarAlpha },
+                    .graphicsLayer { alpha = searchBarAlpha }
+                    .onFocusChanged { focusState ->
+                        isSearchFocused = focusState.isFocused
+                        onSearchFocusChanged(focusState.isFocused)
+                        if (!focusState.isFocused) {
+                            onSearchQueryChange("")
+                        }
+                    },
                 placeholder = { Text("Search", color = Color.White.copy(alpha = 0.6f)) },
                 leadingIcon = {
                     Icon(
@@ -609,12 +633,20 @@ internal fun MainDrawerContent(
 
             val pagerState = rememberPagerState(pageCount = { pageCount })
 
+            // Scroll to page 0 when search results change (e.g. user types in search bar)
+            LaunchedEffect(allDisplayItems.size) {
+                if (pagerState.currentPage != 0) {
+                    pagerState.scrollToPage(0)
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .then(if (!reverseSearchBar) Modifier.windowInsetsPadding(WindowInsets.navigationBars) else Modifier)
                     .onGloballyPositioned { drawerGridRootPos = it.positionInRoot() }
             ) {
+                // Pager + nav dots always rendered
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -623,6 +655,67 @@ internal fun MainDrawerContent(
                             orientation = Orientation.Vertical
                         )
                 ) {
+                    if (isSearchFocused) {
+                        // Search mode: scrollable vertical grid with same cell height as pager
+                        // Use key to force fresh state each time search is activated
+                        val searchFocusKey = remember { mutableStateOf(0) }
+                        LaunchedEffect(isSearchFocused) { searchFocusKey.value++ }
+                        val searchGridState = rememberLazyGridState(
+                            initialFirstVisibleItemIndex = 0,
+                            initialFirstVisibleItemScrollOffset = 0
+                        )
+                        // Scroll to top after layout with delay to ensure grid is ready
+                        LaunchedEffect(searchFocusKey.value, filteredApps.size) {
+                            kotlinx.coroutines.delay(50)
+                            searchGridState.scrollToItem(0, 0)
+                        }
+                        val sCtx = LocalContext.current
+                        val sWPct = getScrollbarWidthPercent(sCtx)
+                        val sHPct = getScrollbarHeightPercent(sCtx)
+                        val sSW = LocalConfiguration.current.screenWidthDp.toFloat()
+                        val sSH = LocalConfiguration.current.screenHeightDp.toFloat()
+                        val sW = (sSW * 0.02f * sWPct / 100f).toInt()
+                        val sH = (sSH * 0.20f * sHPct / 100f).toInt()
+                        val sColor = getScrollbarColor(sCtx)
+                        val sInt = getScrollbarIntensity(sCtx)
+                        val sAdj = run {
+                            val b = Color(sColor); val f = (sInt / 100f).coerceIn(0f, 1f)
+                            Color(red = b.red * f, green = b.green * f, blue = b.blue * f, alpha = b.alpha)
+                        }
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                            val cellH = if (drawerGridRows > 0) maxHeight / drawerGridRows else 80.dp
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(gridSize),
+                                state = searchGridState,
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
+                            ) {
+                                items(items = filteredApps, key = { it.packageName }) { app ->
+                                    Box(modifier = Modifier.height(cellH), contentAlignment = Alignment.Center) {
+                                        SelectableAppItem(
+                                            app = app, iconSize = iconSize, labelFontSize = labelFontSize,
+                                            labelFontFamily = labelFontFamily, iconClipShape = iconClipShape,
+                                            iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName,
+                                            onClick = { onAppClick(app.packageName) },
+                                            onUninstall = { onUninstallApp(app) },
+                                            onAppInfo = { onAppInfo(app) },
+                                            onAddToHome = { onAddToHome(app) },
+                                            folders = folders,
+                                            onAddToFolder = { folder -> onAddAppToFolder(app, folder) }
+                                        )
+                                    }
+                                }
+                            }
+                            LazyGridScrollbar(
+                                gridState = searchGridState,
+                                modifier = Modifier.align(Alignment.TopEnd).fillMaxHeight()
+                                    .padding(top = 8.dp, bottom = 8.dp, end = 4.dp),
+                                thumbColor = sAdj.copy(alpha = 0.3f),
+                                thumbSelectedColor = sAdj.copy(alpha = 0.9f),
+                                trackColor = Color.Transparent,
+                                thumbWidth = sW.dp, thumbMinHeight = sH.dp, scrollbarPadding = 0.dp,
+                            )
+                        }
+                    } else {
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier
@@ -800,13 +893,18 @@ internal fun MainDrawerContent(
                         }
                     }
                     } // BoxWithConstraints
+                    } // end else (pager)
 
                     // Page indicator dots
                     if (pageCount > 1) {
+                        val dotImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+                        val dotNavBottom = WindowInsets.navigationBars.getBottom(LocalDensity.current)
+                        val dotImeOffset = if (reverseSearchBar && dotImeBottom > dotNavBottom) with(LocalDensity.current) { (dotImeBottom - dotNavBottom).toDp() } else 0.dp
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 8.dp),
+                                .padding(bottom = 8.dp)
+                                .offset(y = -dotImeOffset),
                             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
                         ) {
                             repeat(pageCount) { index ->
@@ -1216,8 +1314,13 @@ internal fun MainDrawerContent(
         } // close shared wrapper Box
 
         if (reverseSearchBar) {
-            searchBarBlock()
-            Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+            val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+            val navBottom = WindowInsets.navigationBars.getBottom(LocalDensity.current)
+            val imeOffset = if (imeBottom > navBottom) with(LocalDensity.current) { (imeBottom - navBottom).toDp() } else 0.dp
+            Column(modifier = Modifier.offset(y = -imeOffset)) {
+                searchBarBlock()
+                Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+            }
         }
     }
 }

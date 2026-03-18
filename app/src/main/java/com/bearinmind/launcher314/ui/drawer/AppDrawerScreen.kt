@@ -178,6 +178,7 @@ import com.bearinmind.launcher314.data.launchApp
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AppDrawerScreen(
+    onSearchActiveChanged: (Boolean) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onAddToHome: (AppInfo) -> Unit = {},
     onAddFolderToHome: (AppFolder) -> Unit = {},
@@ -439,6 +440,18 @@ fun AppDrawerScreen(
         MainDrawerContent(
             searchQuery = searchQuery,
             onSearchQueryChange = { searchQuery = it },
+            onSearchFocusChanged = { focused ->
+                onSearchActiveChanged(focused)
+                // Prevent keyboard from resizing the drawer layout
+                val window = (context as? android.app.Activity)?.window
+                if (focused) {
+                    @Suppress("DEPRECATION")
+                    window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+                } else {
+                    @Suppress("DEPRECATION")
+                    window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+                }
+            },
             isLoading = isLoading,
             folders = displayFolders,
             filteredApps = filteredApps,

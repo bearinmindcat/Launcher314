@@ -80,6 +80,9 @@ fun LauncherWithDrawer(
     var lastSwipeUpY by rememberSaveable { mutableFloatStateOf(screenHeight) }
     val swipeUpY = remember { Animatable(lastSwipeUpY) }
 
+    // Track if search is active in drawer (disables swipe-to-close)
+    var isDrawerSearchActive by remember { mutableStateOf(false) }
+
     // Track if app drawer should be shown
     var showAppDrawer by remember { mutableStateOf(false) }
 
@@ -392,12 +395,13 @@ fun LauncherWithDrawer(
     // NestedScrollConnection to intercept scroll events from app drawer
     // When drawer is partially open, ALL gestures control the drawer (not the list)
     // Only when fully open (swipeUpY == 0) does the list scroll normally
-    val nestedScrollConnection = remember(screenHeight) {
+    val nestedScrollConnection = remember(screenHeight, isDrawerSearchActive) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 // When drawer is partially open (in transition), intercept ALL vertical gestures
                 // This prevents the list from scrolling while drawer is being dragged
-                if (swipeUpY.value > 0) {
+                android.util.Log.d("DrawerScroll", "PRE: swipeY=${swipeUpY.value} search=$isDrawerSearchActive avail=${available.y}")
+                if (swipeUpY.value > 0 && !isDrawerSearchActive) {
                     coroutineScope.launch {
                         val newValue = (swipeUpY.value + available.y).coerceIn(0f, screenHeight)
                         swipeUpY.snapTo(newValue)
@@ -415,7 +419,8 @@ fun LauncherWithDrawer(
             ): Offset {
                 // If drawer is fully open and there's leftover downward scroll
                 // (list at top, can't scroll up more), start closing the drawer
-                if (available.y > 0 && swipeUpY.value == 0f) {
+                // Skip when search is active so user can scroll search results
+                if (available.y > 0 && swipeUpY.value == 0f && !isDrawerSearchActive) {
                     coroutineScope.launch {
                         val newValue = (swipeUpY.value + available.y).coerceIn(0f, screenHeight)
                         swipeUpY.snapTo(newValue)
@@ -611,6 +616,10 @@ fun LauncherWithDrawer(
                     .nestedScroll(nestedScrollConnection)
             ) {
                 AppDrawerScreen(
+                    onSearchActiveChanged = {
+                        android.util.Log.d("DrawerScroll", "searchActive changed to: $it")
+                        isDrawerSearchActive = it
+                    },
                     onSettingsClick = onSettingsClick,
                     onAddToHome = addAppToHome,
                     onAddFolderToHome = addFolderToHome,
