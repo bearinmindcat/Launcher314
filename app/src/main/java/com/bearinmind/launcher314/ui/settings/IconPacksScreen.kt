@@ -69,6 +69,7 @@ fun IconPacksScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
         ) {
             // Search bar (same style as FontsScreen)
             TextField(

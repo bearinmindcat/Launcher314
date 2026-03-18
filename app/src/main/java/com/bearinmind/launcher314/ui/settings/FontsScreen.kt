@@ -122,6 +122,7 @@ fun FontsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
         ) {
             // Search bar (matching WidgetsScreen style)
             TextField(

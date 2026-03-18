@@ -86,6 +86,8 @@ import com.bearinmind.launcher314.helpers.parseBlendMode
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.data.getGlobalIconShape
 import com.bearinmind.launcher314.data.getGlobalIconBgColor
+import com.bearinmind.launcher314.data.getDoubleTapLockEnabled
+import com.bearinmind.launcher314.services.AppDrawerAccessibilityService
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -1837,6 +1839,15 @@ fun LauncherScreen(
                         }
                     )
                 }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        if (getDoubleTapLockEnabled(context)) {
+                            AppDrawerAccessibilityService.lockScreen(context)
+                        }
+                    }
+                )
             }
     ) {
         // Background is transparent - system wallpaper shows through via theme

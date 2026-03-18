@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
@@ -348,10 +349,9 @@ class MainActivity : ComponentActivity() {
         // Initialize widget manager
         WidgetManager.init(this)
 
-        // Make navigation bar fully transparent in launcher mode
-        if (isLauncherMode) {
-            applyTransparentNavigation(this)
-        }
+        // Make navigation bar fully transparent — always enable edge-to-edge
+        // so WindowInsets padding works consistently on all screens
+        applyTransparentNavigation(this)
 
         // Determine start destination
         val startDestination = when {
@@ -555,12 +555,10 @@ fun MainScreen(
             }
         }
     } else {
-        Scaffold { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = startDestination,
-                modifier = Modifier.padding(innerPadding)
-            ) {
+        NavHost(
+            navController = navController,
+            startDestination = startDestination
+        ) {
                 composable("launcher") {
                     LauncherScreen(
                         onOpenAppDrawer = {
@@ -646,6 +644,5 @@ fun MainScreen(
                     )
                 }
             }
-        }
     }
 }

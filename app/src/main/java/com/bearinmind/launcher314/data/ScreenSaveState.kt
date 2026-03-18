@@ -303,6 +303,22 @@ fun setGlobalIconBgIntensity(context: Context, intensity: Int) {
 }
 
 // ============================================================================
+// DOUBLE-TAP TO LOCK SCREEN
+// ============================================================================
+
+private const val KEY_DOUBLE_TAP_LOCK = "double_tap_lock_enabled"
+
+fun getDoubleTapLockEnabled(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_DOUBLE_TAP_LOCK, false)
+}
+
+fun setDoubleTapLockEnabled(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_DOUBLE_TAP_LOCK, enabled).apply()
+}
+
+// ============================================================================
 // FONT SELECTION (shared between home screen and app drawer)
 // ============================================================================
 

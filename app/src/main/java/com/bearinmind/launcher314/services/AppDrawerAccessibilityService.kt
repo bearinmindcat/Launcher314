@@ -27,9 +27,16 @@ class AppDrawerAccessibilityService : AccessibilityService() {
     private var accessibilityButtonCallback: AccessibilityButtonController.AccessibilityButtonCallback? = null
 
     companion object {
+        const val ACTION_LOCK_SCREEN = "com.bearinmind.launcher314.LOCK_SCREEN"
+
         // Shared preferences
         private const val PREFS_NAME = "accessibility_drawer_settings"
         private const val KEY_ENABLED = "accessibility_drawer_enabled"
+
+        fun lockScreen(context: Context) {
+            val intent = Intent(ACTION_LOCK_SCREEN, null, context, AppDrawerAccessibilityService::class.java)
+            context.startService(intent)
+        }
 
         /**
          * Check if accessibility drawer is enabled in app settings
@@ -63,11 +70,51 @@ class AppDrawerAccessibilityService : AccessibilityService() {
          * Open accessibility settings for user to enable the service
          */
         fun openAccessibilitySettings(context: Context) {
+            val serviceComponentName = android.content.ComponentName(
+                context.packageName,
+                AppDrawerAccessibilityService::class.java.name
+            )
+
+            // Try direct service detail page (works on Samsung One UI and AOSP 14+)
+            try {
+                val intent = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    data = android.net.Uri.parse("package:${context.packageName}")
+                }
+                context.startActivity(intent)
+                return
+            } catch (_: Exception) { }
+
+            // Try EXTRA_COMPONENT_NAME approach (some AOSP devices)
+            try {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    putExtra(Intent.EXTRA_COMPONENT_NAME, serviceComponentName)
+                }
+                context.startActivity(intent)
+                return
+            } catch (_: Exception) { }
+
+            // Fallback: general accessibility settings with hint
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
+            android.widget.Toast.makeText(
+                context,
+                "Go to Installed apps → Launcher314",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
         }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_LOCK_SCREEN) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onServiceConnected() {

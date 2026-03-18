@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Launcher314</string>
     <string name="accessibility_service_description">Adds an accessibility button to quickly open the app drawer. Tap the accessibility button (floating icon or nav bar button) to launch the drawer from anywhere.</string>
+    <string name="lock_service_description">Allows Launcher314 to lock the screen when you double-tap on the home screen.</string>
 </resources>

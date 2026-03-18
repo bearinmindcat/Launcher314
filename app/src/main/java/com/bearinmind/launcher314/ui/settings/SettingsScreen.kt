@@ -66,6 +66,8 @@ import com.bearinmind.launcher314.data.getDrawerIconSizePercent
 import com.bearinmind.launcher314.data.getGlobalIconShape
 import com.bearinmind.launcher314.data.getGlobalIconBgColor
 import com.bearinmind.launcher314.data.setGlobalIconBgColor
+import com.bearinmind.launcher314.data.getDoubleTapLockEnabled
+import com.bearinmind.launcher314.data.setDoubleTapLockEnabled
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
 import com.bearinmind.launcher314.helpers.generateShapedIconBitmap
@@ -386,6 +388,7 @@ fun SettingsScreen(
                         LauncherUtils.openDefaultLauncherSettings(context)
                     }
                 )
+
             }
 
             Divider(color = Color.Gray.copy(alpha = 0.2f))
