@@ -505,14 +505,6 @@ fun MainScreen(
                 )
             }
             composable("settings") {
-                // Wrap settings in Scaffold for proper inset handling when coming from launcher
-                Scaffold { innerPadding ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
                         SettingsScreen(
                             onBack = {
                                 navController.popBackStack()
@@ -540,8 +532,6 @@ fun MainScreen(
                                 navController.navigate("icon_packs")
                             }
                         )
-                    }
-                }
             }
             composable("fonts") {
                 FontsScreen(

@@ -163,7 +163,6 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -174,8 +173,7 @@ fun SettingsScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
-                ),
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                )
             )
         }
     ) { paddingValues ->
@@ -389,6 +387,43 @@ fun SettingsScreen(
                     }
                 )
 
+                // Double-tap to lock screen toggle
+                var doubleTapLockEnabled by remember { mutableStateOf(getDoubleTapLockEnabled(context)) }
+                var isServiceEnabled by remember { mutableStateOf(AppDrawerAccessibilityService.isAccessibilityServiceEnabled(context)) }
+
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        kotlinx.coroutines.delay(1000)
+                        val newState = AppDrawerAccessibilityService.isAccessibilityServiceEnabled(context)
+                        if (newState != isServiceEnabled) {
+                            isServiceEnabled = newState
+                            if (newState) {
+                                doubleTapLockEnabled = true
+                                setDoubleTapLockEnabled(context, true)
+                            } else {
+                                doubleTapLockEnabled = false
+                                setDoubleTapLockEnabled(context, false)
+                            }
+                        }
+                    }
+                }
+
+                SettingsToggleItem(
+                    title = "Double-tap to lock screen",
+                    subtitle = if (doubleTapLockEnabled && isServiceEnabled)
+                        "Double-tap anywhere on home screen to lock"
+                    else
+                        "Enable feature in accessibility settings",
+                    checked = doubleTapLockEnabled && isServiceEnabled,
+                    onCheckedChange = {
+                        if (!isServiceEnabled) {
+                            AppDrawerAccessibilityService.openAccessibilitySettings(context)
+                        } else {
+                            doubleTapLockEnabled = !doubleTapLockEnabled
+                            setDoubleTapLockEnabled(context, doubleTapLockEnabled)
+                        }
+                    }
+                )
             }
 
             Divider(color = Color.Gray.copy(alpha = 0.2f))

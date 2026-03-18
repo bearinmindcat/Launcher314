@@ -86,6 +86,7 @@ import com.bearinmind.launcher314.helpers.parseBlendMode
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.data.getGlobalIconShape
 import com.bearinmind.launcher314.data.getGlobalIconBgColor
+import com.bearinmind.launcher314.data.getDockEnabled
 import com.bearinmind.launcher314.data.getDoubleTapLockEnabled
 import com.bearinmind.launcher314.services.AppDrawerAccessibilityService
 import androidx.compose.ui.text.TextRange
@@ -397,6 +398,7 @@ fun LauncherScreen(
 
     // Dock settings - get from user preferences (needed for proportional sizing below)
     val dockSlots = getDockColumns(context)
+    val isDockEnabled = getDockEnabled(context)
 
     // ========== Proportional Sizing ==========
     // Compute cell dimensions and derive all sizes proportionally.
@@ -2786,7 +2788,7 @@ fun LauncherScreen(
             }
 
             // Dock bar at bottom
-            Row(
+            if (isDockEnabled) Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = gridHPadding, vertical = gridVPadding),

@@ -20,6 +20,8 @@ import com.bearinmind.launcher314.data.getHomeIconSizePercent
 import com.bearinmind.launcher314.data.setHomeIconSizePercent
 import com.bearinmind.launcher314.data.getDockColumns
 import com.bearinmind.launcher314.data.setDockColumns
+import com.bearinmind.launcher314.data.getDockEnabled
+import com.bearinmind.launcher314.data.setDockEnabled
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
 import com.bearinmind.launcher314.ui.components.ThumbDragVerticalSlider
 import com.bearinmind.launcher314.ui.components.SliderConfigs
@@ -1473,6 +1475,7 @@ fun HomeScreenPreviewSection(
     var gridColumns by remember { mutableFloatStateOf(getHomeGridSize(context).toFloat()) }
     var gridRows by remember { mutableFloatStateOf(getHomeGridRows(context).toFloat()) }
     var dockColumns by remember { mutableFloatStateOf(getDockColumns(context).toFloat()) }
+    var isDockEnabled by remember { mutableStateOf(getDockEnabled(context)) }
     var iconSizePercent by remember { mutableFloatStateOf(getHomeIconSizePercent(context).toFloat()) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
 
@@ -1611,7 +1614,7 @@ fun HomeScreenPreviewSection(
                     HomeScreenPreview(
                         gridColumns = gridColumns.roundToInt(),
                         gridRows = gridRows.roundToInt(),
-                        dockColumns = dockColumns.roundToInt(),
+                        dockColumns = if (isDockEnabled) dockColumns.roundToInt() else 0,
                         iconSizePercent = iconSizePercent.roundToInt(),
                         iconTextSizePercent = iconTextSizeOverride ?: getIconTextSizePercent(context),
                         homeScreenApps = homeScreenApps,
@@ -1690,22 +1693,51 @@ fun HomeScreenPreviewSection(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Dock Columns slider
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 76.dp)
+        // Dock Columns slider + enable/disable checkbox
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            HomeDockColumnsSlider(
-                currentSize = dockColumns,
-                onSizeChange = { newSize ->
-                    dockColumns = newSize
-                    setDockColumns(context, newSize.roundToInt())
-                },
-                onSizeChangeFinished = {
-                    setDockColumns(context, dockColumns.roundToInt())
-                }
-            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp)
+            ) {
+                HomeDockColumnsSlider(
+                    currentSize = dockColumns,
+                    enabled = isDockEnabled,
+                    onSizeChange = { newSize ->
+                        dockColumns = newSize
+                        setDockColumns(context, newSize.roundToInt())
+                    },
+                    onSizeChangeFinished = {
+                        setDockColumns(context, dockColumns.roundToInt())
+                    }
+                )
+            }
+
+            // Dock enable/disable checkbox
+            Box(
+                modifier = Modifier
+                    .width(72.dp)
+                    .height(48.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Checkbox(
+                    checked = isDockEnabled,
+                    onCheckedChange = { checked ->
+                        isDockEnabled = checked
+                        setDockEnabled(context, checked)
+                    },
+                    modifier = Modifier.offset(x = 10.dp),
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.primary,
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
         }
     }
 }
@@ -1774,12 +1806,14 @@ private fun HomeRowsSlider(
 @Composable
 private fun HomeDockColumnsSlider(
     currentSize: Float,
+    enabled: Boolean = true,
     onSizeChange: (Float) -> Unit,
     onSizeChangeFinished: () -> Unit
 ) {
     ThumbDragHorizontalSlider(
         currentValue = currentSize,
         config = SliderConfigs.dockColumns,
+        enabled = enabled,
         onValueChange = onSizeChange,
         onValueChangeFinished = onSizeChangeFinished
     )
@@ -2400,7 +2434,7 @@ private fun HomeScreenPreview(
                     }
 
                     // Dock row - same weight(1f) as grid rows so dock icons match grid icon size
-                    Row(
+                    if (dockColumns > 0) Row(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
