@@ -324,6 +324,7 @@ internal fun MainDrawerContent(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.statusBars)
+            .then(if (isSearchFocused) Modifier.imePadding() else Modifier)
             .graphicsLayer { clip = false }
     ) {
         // Search bar content — extracted so it can be placed at top or bottom
@@ -682,8 +683,12 @@ internal fun MainDrawerContent(
                             val b = Color(sColor); val f = (sInt / 100f).coerceIn(0f, 1f)
                             Color(red = b.red * f, green = b.green * f, blue = b.blue * f, alpha = b.alpha)
                         }
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                            val cellH = if (drawerGridRows > 0) maxHeight / drawerGridRows else 80.dp
+                        // Use screen height for cell sizing so cells don't squeeze when keyboard is up
+                        val screenH = LocalConfiguration.current.screenHeightDp.dp
+                        val statusBarH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                        val fullGridH = screenH - statusBarH - 80.dp // approx search bar + nav dots + padding
+                        val cellH = if (drawerGridRows > 0) fullGridH / drawerGridRows else 80.dp
+                        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                             LazyVerticalGrid(
                                 columns = GridCells.Fixed(gridSize),
                                 state = searchGridState,
@@ -897,14 +902,10 @@ internal fun MainDrawerContent(
 
                     // Page indicator dots
                     if (pageCount > 1) {
-                        val dotImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-                        val dotNavBottom = WindowInsets.navigationBars.getBottom(LocalDensity.current)
-                        val dotImeOffset = if (reverseSearchBar && dotImeBottom > dotNavBottom) with(LocalDensity.current) { (dotImeBottom - dotNavBottom).toDp() } else 0.dp
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 8.dp)
-                                .offset(y = -dotImeOffset),
+                                .padding(bottom = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
                         ) {
                             repeat(pageCount) { index ->
@@ -1314,13 +1315,8 @@ internal fun MainDrawerContent(
         } // close shared wrapper Box
 
         if (reverseSearchBar) {
-            val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-            val navBottom = WindowInsets.navigationBars.getBottom(LocalDensity.current)
-            val imeOffset = if (imeBottom > navBottom) with(LocalDensity.current) { (imeBottom - navBottom).toDp() } else 0.dp
-            Column(modifier = Modifier.offset(y = -imeOffset)) {
-                searchBarBlock()
-                Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
-            }
+            searchBarBlock()
+            Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
         }
     }
 }
