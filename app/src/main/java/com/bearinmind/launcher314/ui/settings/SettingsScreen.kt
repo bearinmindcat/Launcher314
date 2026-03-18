@@ -68,6 +68,8 @@ import com.bearinmind.launcher314.data.getGlobalIconBgColor
 import com.bearinmind.launcher314.data.setGlobalIconBgColor
 import com.bearinmind.launcher314.data.getDoubleTapLockEnabled
 import com.bearinmind.launcher314.data.setDoubleTapLockEnabled
+import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
+import com.bearinmind.launcher314.data.setReverseDrawerSearchBar
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
 import com.bearinmind.launcher314.helpers.generateShapedIconBitmap
@@ -384,6 +386,18 @@ fun SettingsScreen(
                     checked = isDefaultLauncher,
                     onCheckedChange = {
                         LauncherUtils.openDefaultLauncherSettings(context)
+                    }
+                )
+
+                // Reverse drawer search bar toggle
+                var reverseSearchBar by remember { mutableStateOf(getReverseDrawerSearchBar(context)) }
+                SettingsToggleItem(
+                    title = "Reverse drawer search bar",
+                    subtitle = "Moves drawer search bar to the bottom",
+                    checked = reverseSearchBar,
+                    onCheckedChange = {
+                        reverseSearchBar = !reverseSearchBar
+                        setReverseDrawerSearchBar(context, reverseSearchBar)
                     }
                 )
 

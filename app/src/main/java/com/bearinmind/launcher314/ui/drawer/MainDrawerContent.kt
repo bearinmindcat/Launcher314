@@ -73,6 +73,7 @@ import com.bearinmind.launcher314.data.getScrollbarColor
 import com.bearinmind.launcher314.data.getScrollbarHeightPercent
 import com.bearinmind.launcher314.data.getScrollbarIntensity
 import com.bearinmind.launcher314.data.getScrollbarWidthPercent
+import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
 import com.bearinmind.launcher314.ui.components.LazyGridScrollbar
@@ -300,12 +301,16 @@ internal fun MainDrawerContent(
         }
     }
 
+    val reverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.statusBars)
             .graphicsLayer { clip = false }
     ) {
+        // Search bar content — extracted so it can be placed at top or bottom
+        val searchBarBlock: @Composable () -> Unit = {
         // Search bar and drop zone — stacked with animated alpha.
         // The grey search bar background fades from edges inward, revealing the drawer bg.
         // Combine normal drag and escape drag signals for drop zone visibility
@@ -550,6 +555,9 @@ internal fun MainDrawerContent(
                 )
             )
         }
+        }
+
+        if (!reverseSearchBar) searchBarBlock()
 
         var drawerGridRootPos by remember { mutableStateOf(Offset.Zero) }
 
@@ -604,7 +612,7 @@ internal fun MainDrawerContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .then(if (!reverseSearchBar) Modifier.windowInsetsPadding(WindowInsets.navigationBars) else Modifier)
                     .onGloballyPositioned { drawerGridRootPos = it.positionInRoot() }
             ) {
                 Column(
@@ -1206,5 +1214,10 @@ internal fun MainDrawerContent(
             }
         }
         } // close shared wrapper Box
+
+        if (reverseSearchBar) {
+            searchBarBlock()
+            Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+        }
     }
 }
