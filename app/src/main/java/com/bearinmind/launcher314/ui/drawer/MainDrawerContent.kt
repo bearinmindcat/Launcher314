@@ -76,7 +76,10 @@ import com.bearinmind.launcher314.data.getScrollbarHeightPercent
 import com.bearinmind.launcher314.data.getScrollbarIntensity
 import com.bearinmind.launcher314.data.getScrollbarWidthPercent
 import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import com.bearinmind.launcher314.data.getAutoOpenKeyboard
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
 import com.bearinmind.launcher314.ui.components.LazyGridScrollbar
@@ -91,6 +94,7 @@ internal fun MainDrawerContent(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onSearchFocusChanged: (Boolean) -> Unit = {},
+    isDrawerFullyOpen: Boolean = false,
     isLoading: Boolean,
     folders: List<AppFolder>,
     filteredApps: List<AppInfo>,
@@ -306,8 +310,19 @@ internal fun MainDrawerContent(
     }
 
     val reverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
+    val autoOpenKeyboard = getAutoOpenKeyboard(LocalContext.current)
     var isSearchFocused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val searchFocusRequester = remember { FocusRequester() }
+
+    // Auto-focus search bar only when drawer is fully open
+    LaunchedEffect(isDrawerFullyOpen) {
+        if (isDrawerFullyOpen && autoOpenKeyboard) {
+            kotlinx.coroutines.delay(200)
+            try { searchFocusRequester.requestFocus() } catch (_: Exception) {}
+        }
+    }
+
 
     // Detect keyboard dismissal (e.g. back button) and clear focus + search
     val isKeyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -432,6 +447,7 @@ internal fun MainDrawerContent(
                 enabled = searchBarAlpha > 0.5f,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .focusRequester(searchFocusRequester)
                     .graphicsLayer { alpha = searchBarAlpha }
                     .onFocusChanged { focusState ->
                         isSearchFocused = focusState.isFocused

@@ -617,9 +617,9 @@ fun LauncherWithDrawer(
             ) {
                 AppDrawerScreen(
                     onSearchActiveChanged = {
-                        android.util.Log.d("DrawerScroll", "searchActive changed to: $it")
                         isDrawerSearchActive = it
                     },
+                    isDrawerFullyOpen = swipeUpY.value == 0f && showAppDrawer,
                     onSettingsClick = onSettingsClick,
                     onAddToHome = addAppToHome,
                     onAddFolderToHome = addFolderToHome,

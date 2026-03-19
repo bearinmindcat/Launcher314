@@ -120,21 +120,12 @@ class AppDrawerAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
 
-        // Configure the service to use the accessibility button
+        // Configure the service (no accessibility button — just used for lock screen)
         val info = serviceInfo ?: AccessibilityServiceInfo()
         info.apply {
-            // Request the accessibility button (floating button or nav bar icon)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                flags = flags or AccessibilityServiceInfo.FLAG_REQUEST_ACCESSIBILITY_BUTTON
-            }
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
         }
         serviceInfo = info
-
-        // Register the accessibility button callback (Android 8.0+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            setupAccessibilityButton()
-        }
 
         android.util.Log.d("AccessibilityDrawer", "Service connected - accessibility button enabled")
     }

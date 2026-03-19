@@ -21,6 +21,7 @@ import com.bearinmind.launcher314.data.setHomeIconSizePercent
 import com.bearinmind.launcher314.data.getDockColumns
 import com.bearinmind.launcher314.data.setDockColumns
 import com.bearinmind.launcher314.data.getDockEnabled
+import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
 import com.bearinmind.launcher314.data.setDockEnabled
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
 import com.bearinmind.launcher314.ui.components.ThumbDragVerticalSlider
@@ -671,6 +672,7 @@ private fun RealAppDrawerPreview(
     // 100% = fully transparent (show wallpaper)
     val backgroundAlpha = (100 - transparency) / 100f
     val backgroundColor = Color(0xFF121212).copy(alpha = backgroundAlpha)
+    val isReverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
 
     Column(
         modifier = Modifier
@@ -759,41 +761,46 @@ private fun RealAppDrawerPreview(
                     }
                 }
 
-                // Search bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(searchBarHeight)
-                        .padding(horizontal = basePadding, vertical = 2.dp)
-                        .clip(RoundedCornerShape(searchBarHeight / 2))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .padding(horizontal = basePadding),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                // Search bar composable
+                val previewSearchBar: @Composable () -> Unit = {
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(searchBarHeight)
+                            .padding(horizontal = basePadding, vertical = 2.dp)
+                            .clip(RoundedCornerShape(searchBarHeight / 2))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(horizontal = basePadding),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(basePadding / 2)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(basePadding / 2)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(smallIconSize),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                            Text(
+                                text = "Search",
+                                fontSize = (9.sp * scaleFactor),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
                         Icon(
-                            imageVector = Icons.Outlined.Search,
+                            imageVector = Icons.Outlined.MoreVert,
                             contentDescription = null,
                             modifier = Modifier.size(smallIconSize),
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                         )
-                        Text(
-                            text = "Search",
-                            fontSize = (9.sp * scaleFactor),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
                     }
-                    Icon(
-                        imageVector = Icons.Outlined.MoreVert,
-                        contentDescription = null,
-                        modifier = Modifier.size(smallIconSize),
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
                 }
+
+                // Search bar at top (normal mode)
+                if (!isReverseSearchBar) previewSearchBar()
 
                 // App grid with scrollbar
                 if (items.isEmpty()) {
@@ -941,6 +948,9 @@ private fun RealAppDrawerPreview(
                     }
                 }
 
+                // Search bar at bottom (reverse mode)
+                if (isReverseSearchBar) previewSearchBar()
+
                 // Navigation bar area (transparent background, visible gesture bar)
                 Box(
                     modifier = Modifier
@@ -966,7 +976,10 @@ private fun RealAppDrawerPreview(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .fillMaxHeight()
-                        .padding(top = statusBarHeight + searchBarHeight, bottom = navBarHeight + 2.dp),
+                        .padding(
+                            top = statusBarHeight + if (!isReverseSearchBar) searchBarHeight else 0.dp,
+                            bottom = navBarHeight + if (isReverseSearchBar) searchBarHeight else 0.dp + 2.dp
+                        ),
                     thumbColor = scrollbarComposeColor.copy(alpha = 0.5f),
                     thumbSelectedColor = scrollbarComposeColor.copy(alpha = 0.8f),
                     trackColor = Color.Transparent,  // No track, just thumb

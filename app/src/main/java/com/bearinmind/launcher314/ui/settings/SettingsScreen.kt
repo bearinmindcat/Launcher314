@@ -69,6 +69,8 @@ import com.bearinmind.launcher314.data.setGlobalIconBgColor
 import com.bearinmind.launcher314.data.getDoubleTapLockEnabled
 import com.bearinmind.launcher314.data.setDoubleTapLockEnabled
 import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
+import com.bearinmind.launcher314.data.getAutoOpenKeyboard
+import com.bearinmind.launcher314.data.setAutoOpenKeyboard
 import com.bearinmind.launcher314.data.setReverseDrawerSearchBar
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
@@ -398,6 +400,18 @@ fun SettingsScreen(
                     onCheckedChange = {
                         reverseSearchBar = !reverseSearchBar
                         setReverseDrawerSearchBar(context, reverseSearchBar)
+                    }
+                )
+
+                // Auto open keyboard toggle
+                var autoOpenKeyboard by remember { mutableStateOf(getAutoOpenKeyboard(context)) }
+                SettingsToggleItem(
+                    title = "Auto open keyboard",
+                    subtitle = "Automatically opens keyboard in app drawer",
+                    checked = autoOpenKeyboard,
+                    onCheckedChange = {
+                        autoOpenKeyboard = !autoOpenKeyboard
+                        setAutoOpenKeyboard(context, autoOpenKeyboard)
                     }
                 )
 

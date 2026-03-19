@@ -303,6 +303,22 @@ fun setGlobalIconBgIntensity(context: Context, intensity: Int) {
 }
 
 // ============================================================================
+// AUTO OPEN KEYBOARD
+// ============================================================================
+
+private const val KEY_AUTO_OPEN_KEYBOARD = "auto_open_keyboard"
+
+fun getAutoOpenKeyboard(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_AUTO_OPEN_KEYBOARD, false)
+}
+
+fun setAutoOpenKeyboard(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_AUTO_OPEN_KEYBOARD, enabled).apply()
+}
+
+// ============================================================================
 // REVERSE DRAWER SEARCH BAR
 // ============================================================================
 
