@@ -656,71 +656,15 @@ internal fun MainDrawerContent(
                             orientation = Orientation.Vertical
                         )
                 ) {
-                    if (isSearchFocused) {
-                        // Search mode: scrollable vertical grid with same cell height as pager
-                        // Use key to force fresh state each time search is activated
-                        val searchFocusKey = remember { mutableStateOf(0) }
-                        LaunchedEffect(isSearchFocused) { searchFocusKey.value++ }
-                        val searchGridState = rememberLazyGridState(
-                            initialFirstVisibleItemIndex = 0,
-                            initialFirstVisibleItemScrollOffset = 0
-                        )
-                        // Scroll to top after layout with delay to ensure grid is ready
-                        LaunchedEffect(searchFocusKey.value, filteredApps.size) {
-                            kotlinx.coroutines.delay(50)
-                            searchGridState.scrollToItem(0, 0)
-                        }
-                        val sCtx = LocalContext.current
-                        val sWPct = getScrollbarWidthPercent(sCtx)
-                        val sHPct = getScrollbarHeightPercent(sCtx)
-                        val sSW = LocalConfiguration.current.screenWidthDp.toFloat()
-                        val sSH = LocalConfiguration.current.screenHeightDp.toFloat()
-                        val sW = (sSW * 0.02f * sWPct / 100f).toInt()
-                        val sH = (sSH * 0.20f * sHPct / 100f).toInt()
-                        val sColor = getScrollbarColor(sCtx)
-                        val sInt = getScrollbarIntensity(sCtx)
-                        val sAdj = run {
-                            val b = Color(sColor); val f = (sInt / 100f).coerceIn(0f, 1f)
-                            Color(red = b.red * f, green = b.green * f, blue = b.blue * f, alpha = b.alpha)
-                        }
-                        // Use screen height for cell sizing so cells don't squeeze when keyboard is up
-                        val screenH = LocalConfiguration.current.screenHeightDp.dp
-                        val statusBarH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-                        val fullGridH = screenH - statusBarH - 80.dp // approx search bar + nav dots + padding
-                        val cellH = if (drawerGridRows > 0) fullGridH / drawerGridRows else 80.dp
-                        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(gridSize),
-                                state = searchGridState,
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
-                            ) {
-                                items(items = filteredApps, key = { it.packageName }) { app ->
-                                    Box(modifier = Modifier.height(cellH), contentAlignment = Alignment.Center) {
-                                        SelectableAppItem(
-                                            app = app, iconSize = iconSize, labelFontSize = labelFontSize,
-                                            labelFontFamily = labelFontFamily, iconClipShape = iconClipShape,
-                                            iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName,
-                                            onClick = { onAppClick(app.packageName) },
-                                            onUninstall = { onUninstallApp(app) },
-                                            onAppInfo = { onAppInfo(app) },
-                                            onAddToHome = { onAddToHome(app) },
-                                            folders = folders,
-                                            onAddToFolder = { folder -> onAddAppToFolder(app, folder) }
-                                        )
-                                    }
-                                }
-                            }
-                            LazyGridScrollbar(
-                                gridState = searchGridState,
-                                modifier = Modifier.align(Alignment.TopEnd).fillMaxHeight()
-                                    .padding(top = 8.dp, bottom = 8.dp, end = 4.dp),
-                                thumbColor = sAdj.copy(alpha = 0.3f),
-                                thumbSelectedColor = sAdj.copy(alpha = 0.9f),
-                                trackColor = Color.Transparent,
-                                thumbWidth = sW.dp, thumbMinHeight = sH.dp, scrollbarPadding = 0.dp,
-                            )
-                        }
-                    } else {
+                    // Use screen height for cell sizing so cells don't squeeze when keyboard is up
+                    val screenH = LocalConfiguration.current.screenHeightDp.dp
+                    val statusBarH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                    val navBarH = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                    // search bar (~72dp) + nav dots (~30dp) + nav bar + extra padding
+                    val nonGridH = statusBarH + navBarH + 120.dp
+                    val fullGridH = screenH - nonGridH
+                    val fullCellH = if (drawerGridRows > 0) fullGridH / drawerGridRows else 80.dp
+
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier
@@ -735,21 +679,22 @@ internal fun MainDrawerContent(
                             emptyList()
                         }
 
-                        // Use BoxWithConstraints to get height synchronously (no animation flicker)
                         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val cellHeightDp = if (drawerGridRows > 0) {
-                            maxHeight / drawerGridRows
-                        } else {
-                            80.dp
-                        }
+                        // Capture the normal cell height and reuse when keyboard is up
+                        val normalCellH = if (drawerGridRows > 0) maxHeight / drawerGridRows else 80.dp
+                        val savedCellH = remember { mutableStateOf(normalCellH) }
+                        if (!isSearchFocused) savedCellH.value = normalCellH
+                        val cellHeightDp = if (isSearchFocused) savedCellH.value else normalCellH
+                        val pageGridState = rememberLazyGridState()
 
-                        // Fixed grid for this page using LazyVerticalGrid (for animateItemPlacement)
+                        // Grid for this page — scrollable when search is focused
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(gridSize),
+                            state = pageGridState,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(horizontal = 8.dp),
-                            userScrollEnabled = false
+                            userScrollEnabled = isSearchFocused
                         ) {
                             // Fill with actual items + empty spacer items to fill the grid
                             val totalCells = itemsPerPage
@@ -896,16 +841,40 @@ internal fun MainDrawerContent(
                                 }
                             }
                         }
+                        // Scrollbar — only visible when search is focused and page is scrollable
+                        if (isSearchFocused) {
+                            val sbCtx = LocalContext.current
+                            val sbWPct = getScrollbarWidthPercent(sbCtx)
+                            val sbHPct = getScrollbarHeightPercent(sbCtx)
+                            val sbSW = LocalConfiguration.current.screenWidthDp.toFloat()
+                            val sbSH = LocalConfiguration.current.screenHeightDp.toFloat()
+                            val sbW = (sbSW * 0.02f * sbWPct / 100f).toInt()
+                            val sbH = (sbSH * 0.20f * sbHPct / 100f).toInt()
+                            val sbColor = getScrollbarColor(sbCtx)
+                            val sbInt = getScrollbarIntensity(sbCtx)
+                            val sbAdj = run {
+                                val b = Color(sbColor); val f = (sbInt / 100f).coerceIn(0f, 1f)
+                                Color(red = b.red * f, green = b.green * f, blue = b.blue * f, alpha = b.alpha)
+                            }
+                            LazyGridScrollbar(
+                                gridState = pageGridState,
+                                modifier = Modifier.align(Alignment.TopEnd).fillMaxHeight()
+                                    .padding(top = 8.dp, bottom = 8.dp, end = 4.dp),
+                                thumbColor = sbAdj.copy(alpha = 0.3f),
+                                thumbSelectedColor = sbAdj.copy(alpha = 0.9f),
+                                trackColor = Color.Transparent,
+                                thumbWidth = sbW.dp, thumbMinHeight = sbH.dp, scrollbarPadding = 0.dp,
+                            )
+                        }
                     }
                     } // BoxWithConstraints
-                    } // end else (pager)
 
                     // Page indicator dots
                     if (pageCount > 1) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 8.dp),
+                                .padding(bottom = 8.dp, top = if (isSearchFocused) 12.dp else 0.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
                         ) {
                             repeat(pageCount) { index ->
