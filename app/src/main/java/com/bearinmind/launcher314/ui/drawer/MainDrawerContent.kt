@@ -339,7 +339,7 @@ internal fun MainDrawerContent(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.statusBars)
-            .then(if (isSearchFocused) Modifier.imePadding() else Modifier)
+            .then(if (isKeyboardOpen) Modifier.imePadding() else Modifier)
             .graphicsLayer { clip = false }
     ) {
         // Search bar content — extracted so it can be placed at top or bottom
@@ -672,14 +672,13 @@ internal fun MainDrawerContent(
                             orientation = Orientation.Vertical
                         )
                 ) {
-                    // Use screen height for cell sizing so cells don't squeeze when keyboard is up
+                    // Calculate cell height from screen dimensions (never changes with keyboard)
                     val screenH = LocalConfiguration.current.screenHeightDp.dp
                     val statusBarH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                     val navBarH = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                    // search bar (~72dp) + nav dots (~30dp) + nav bar + extra padding
-                    val nonGridH = statusBarH + navBarH + 120.dp
-                    val fullGridH = screenH - nonGridH
-                    val fullCellH = if (drawerGridRows > 0) fullGridH / drawerGridRows else 80.dp
+                    // Non-grid space: status bar + search bar (~72dp) + nav dots (~30dp) + nav bar + padding (~16dp)
+                    val nonGridSpace = statusBarH + navBarH + 118.dp
+                    val stableCellH = if (drawerGridRows > 0) (screenH - nonGridSpace) / drawerGridRows else 80.dp
 
                     HorizontalPager(
                         state = pagerState,
@@ -695,12 +694,8 @@ internal fun MainDrawerContent(
                             emptyList()
                         }
 
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        // Capture the normal cell height and reuse when keyboard is up
-                        val normalCellH = if (drawerGridRows > 0) maxHeight / drawerGridRows else 80.dp
-                        val savedCellH = remember { mutableStateOf(normalCellH) }
-                        if (!isSearchFocused) savedCellH.value = normalCellH
-                        val cellHeightDp = if (isSearchFocused) savedCellH.value else normalCellH
+                        Box(modifier = Modifier.fillMaxSize()) {
+                        val cellHeightDp = stableCellH
                         val pageGridState = rememberLazyGridState()
 
                         // Grid for this page — scrollable when search is focused
@@ -883,14 +878,14 @@ internal fun MainDrawerContent(
                             )
                         }
                     }
-                    } // BoxWithConstraints
+                    }
 
                     // Page indicator dots
                     if (pageCount > 1) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 8.dp, top = if (isSearchFocused) 12.dp else 0.dp),
+                                .padding(bottom = 8.dp, top = if (isKeyboardOpen) 20.dp else 0.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
                         ) {
                             repeat(pageCount) { index ->
