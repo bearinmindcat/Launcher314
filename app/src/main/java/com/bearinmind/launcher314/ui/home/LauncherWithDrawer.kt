@@ -83,9 +83,18 @@ fun LauncherWithDrawer(
     // Track if search is active in drawer (disables swipe-to-close)
     var isDrawerSearchActive by remember { mutableStateOf(false) }
     var dismissSearchTrigger by remember { mutableStateOf(0) }
+    var searchDismissed by remember { mutableStateOf(false) }
 
     // Track if app drawer should be shown
     var showAppDrawer by remember { mutableStateOf(false) }
+
+    // Reset search active state when drawer closes
+    LaunchedEffect(showAppDrawer) {
+        if (!showAppDrawer) {
+            isDrawerSearchActive = false
+            searchDismissed = false
+        }
+    }
 
     // Track if a folder is open on the home screen (blocks drawer swipe)
     var isFolderOpen by remember { mutableStateOf(false) }
@@ -421,8 +430,9 @@ fun LauncherWithDrawer(
                 // If drawer is fully open and there's leftover downward scroll
                 // (list at top, can't scroll up more), start closing the drawer
                 // Skip when search is active so user can scroll search results
-                if (available.y > 0 && swipeUpY.value == 0f && isDrawerSearchActive) {
+                if (available.y > 0 && swipeUpY.value == 0f && isDrawerSearchActive && !searchDismissed) {
                     // Keyboard is up: dismiss it by triggering focus clear in MainDrawerContent
+                    searchDismissed = true
                     dismissSearchTrigger++
                     return Offset(0f, available.y)
                 }
@@ -625,6 +635,7 @@ fun LauncherWithDrawer(
                     dismissSearchTrigger = dismissSearchTrigger,
                     onSearchActiveChanged = {
                         isDrawerSearchActive = it
+                        if (it) searchDismissed = false
                     },
                     isDrawerFullyOpen = swipeUpY.value == 0f && showAppDrawer,
                     onSettingsClick = onSettingsClick,
