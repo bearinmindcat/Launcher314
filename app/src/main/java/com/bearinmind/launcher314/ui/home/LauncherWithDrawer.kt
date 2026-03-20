@@ -272,7 +272,7 @@ fun LauncherWithDrawer(
     }
 
     // Fixed corner radius for rounded top corners like Fossify Launcher
-    val drawerCornerRadius = 28.dp
+    val drawerCornerRadius = 0.dp
 
     // Action threshold - 100px triggers action
     val actionThreshold = 100f
