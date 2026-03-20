@@ -324,7 +324,7 @@ internal fun MainDrawerContent(
             onSearchQueryChange("")
             // Delay before telling parent search is inactive,
             // so layout fully restores before drawer can be swiped closed
-            kotlinx.coroutines.delay(500)
+            kotlinx.coroutines.delay(800)
             onSearchFocusChanged(false)
         }
     }
@@ -347,7 +347,7 @@ internal fun MainDrawerContent(
             onSearchQueryChange("")
             // Delay before telling parent search is inactive,
             // so layout fully restores before drawer can be swiped closed
-            kotlinx.coroutines.delay(500)
+            kotlinx.coroutines.delay(800)
             onSearchFocusChanged(false)
         }
     }
@@ -468,10 +468,12 @@ internal fun MainDrawerContent(
                     .graphicsLayer { alpha = searchBarAlpha }
                     .onFocusChanged { focusState ->
                         isSearchFocused = focusState.isFocused
-                        onSearchFocusChanged(focusState.isFocused)
-                        if (!focusState.isFocused) {
-                            onSearchQueryChange("")
+                        if (focusState.isFocused) {
+                            onSearchFocusChanged(true)
                         }
+                        // Don't call onSearchFocusChanged(false) here —
+                        // the LaunchedEffect handles it with a delay so the
+                        // drawer doesn't close before layout restores
                     },
                 placeholder = { Text("Search", color = Color.White.copy(alpha = 0.6f)) },
                 leadingIcon = {
