@@ -95,6 +95,7 @@ internal fun MainDrawerContent(
     onSearchQueryChange: (String) -> Unit,
     onSearchFocusChanged: (Boolean) -> Unit = {},
     isDrawerFullyOpen: Boolean = false,
+    dismissSearchTrigger: Int = 0,
     isLoading: Boolean,
     folders: List<AppFolder>,
     filteredApps: List<AppInfo>,
@@ -315,6 +316,19 @@ internal fun MainDrawerContent(
     val focusManager = LocalFocusManager.current
     val searchFocusRequester = remember { FocusRequester() }
 
+    // Dismiss search when triggered by parent (swipe down at top)
+    LaunchedEffect(dismissSearchTrigger) {
+        if (dismissSearchTrigger > 0) {
+            focusManager.clearFocus()
+            isSearchFocused = false
+            onSearchQueryChange("")
+            // Delay before telling parent search is inactive,
+            // so layout fully restores before drawer can be swiped closed
+            kotlinx.coroutines.delay(500)
+            onSearchFocusChanged(false)
+        }
+    }
+
     // Auto-focus search bar only when drawer is fully open
     LaunchedEffect(isDrawerFullyOpen) {
         if (isDrawerFullyOpen && autoOpenKeyboard) {
@@ -331,6 +345,9 @@ internal fun MainDrawerContent(
             focusManager.clearFocus()
             isSearchFocused = false
             onSearchQueryChange("")
+            // Delay before telling parent search is inactive,
+            // so layout fully restores before drawer can be swiped closed
+            kotlinx.coroutines.delay(500)
             onSearchFocusChanged(false)
         }
     }

@@ -179,6 +179,7 @@ import com.bearinmind.launcher314.data.launchApp
 @Composable
 fun AppDrawerScreen(
     onSearchActiveChanged: (Boolean) -> Unit = {},
+    dismissSearchTrigger: Int = 0,
     isDrawerFullyOpen: Boolean = false,
     onSettingsClick: () -> Unit = {},
     onAddToHome: (AppInfo) -> Unit = {},
@@ -442,6 +443,7 @@ fun AppDrawerScreen(
             searchQuery = searchQuery,
             onSearchQueryChange = { searchQuery = it },
             isDrawerFullyOpen = isDrawerFullyOpen,
+            dismissSearchTrigger = dismissSearchTrigger,
             onSearchFocusChanged = { focused ->
                 onSearchActiveChanged(focused)
                 // Prevent keyboard from resizing the drawer layout

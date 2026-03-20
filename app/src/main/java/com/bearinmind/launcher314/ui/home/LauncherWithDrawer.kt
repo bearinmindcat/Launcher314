@@ -82,6 +82,7 @@ fun LauncherWithDrawer(
 
     // Track if search is active in drawer (disables swipe-to-close)
     var isDrawerSearchActive by remember { mutableStateOf(false) }
+    var dismissSearchTrigger by remember { mutableStateOf(0) }
 
     // Track if app drawer should be shown
     var showAppDrawer by remember { mutableStateOf(false) }
@@ -420,6 +421,11 @@ fun LauncherWithDrawer(
                 // If drawer is fully open and there's leftover downward scroll
                 // (list at top, can't scroll up more), start closing the drawer
                 // Skip when search is active so user can scroll search results
+                if (available.y > 0 && swipeUpY.value == 0f && isDrawerSearchActive) {
+                    // Keyboard is up: dismiss it by triggering focus clear in MainDrawerContent
+                    dismissSearchTrigger++
+                    return Offset(0f, available.y)
+                }
                 if (available.y > 0 && swipeUpY.value == 0f && !isDrawerSearchActive) {
                     coroutineScope.launch {
                         val newValue = (swipeUpY.value + available.y).coerceIn(0f, screenHeight)
@@ -616,6 +622,7 @@ fun LauncherWithDrawer(
                     .nestedScroll(nestedScrollConnection)
             ) {
                 AppDrawerScreen(
+                    dismissSearchTrigger = dismissSearchTrigger,
                     onSearchActiveChanged = {
                         isDrawerSearchActive = it
                     },
