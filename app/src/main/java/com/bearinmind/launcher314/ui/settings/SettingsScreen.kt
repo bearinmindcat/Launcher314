@@ -81,6 +81,8 @@ import com.bearinmind.launcher314.data.setGlobalIconShape
 import com.bearinmind.launcher314.helpers.clearGlobalShapedIcons
 import com.bearinmind.launcher314.helpers.clearBgColorShapedIcons
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Clear
 import com.bearinmind.launcher314.helpers.IconShapes
 import com.bearinmind.launcher314.helpers.getIconShape
@@ -465,7 +467,7 @@ fun SettingsScreen(
                 )
                 SettingsClickableItem(
                     title = "Bugs & Feature Requests",
-                    subtitle = "Report bugs or leave features requests on my github, gitlab, or reddit posts :)",
+                    subtitle = "Report bugs or leave feature requests on my github or reddit posts :)",
                     onClick = { }
                 )
                 Row(
@@ -476,7 +478,7 @@ fun SettingsScreen(
                 ) {
                     Button(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/nicholaspark314/launcher314"))
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/bearinmindcat/Launcher314"))
                             try { context.startActivity(intent) } catch (_: Exception) { }
                         },
                         modifier = Modifier.weight(1f),
@@ -490,21 +492,7 @@ fun SettingsScreen(
                     }
                     Button(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://gitlab.com/nicholaspark314/launcher314"))
-                            try { context.startActivity(intent) } catch (_: Exception) { }
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("GitLab")
-                    }
-                    Button(
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://reddit.com"))
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.reddit.com/r/fossdroid/comments/1rlpxux/just_another_launcher_app_i_made_with_easy/"))
                             try { context.startActivity(intent) } catch (_: Exception) { }
                         },
                         modifier = Modifier.weight(1f),
