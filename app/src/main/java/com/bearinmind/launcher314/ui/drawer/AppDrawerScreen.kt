@@ -1,6 +1,7 @@
 package com.bearinmind.launcher314.ui.drawer
 
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.snapshotFlow
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -264,6 +265,11 @@ fun AppDrawerScreen(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var appsToMoveToNewFolder by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var openFolder by remember { mutableStateOf<AppFolder?>(null) }
+
+    // Back button: if folder is open, close folder and return to drawer
+    BackHandler(enabled = openFolder != null) {
+        openFolder = null
+    }
 
     // Trigger to clear selection in MainDrawerContent after folder creation
     var clearSelectionTrigger by remember { mutableIntStateOf(0) }

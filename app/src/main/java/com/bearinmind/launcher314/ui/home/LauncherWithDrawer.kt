@@ -393,11 +393,21 @@ fun LauncherWithDrawer(
         }
     }
 
-    // Back button: drawer open → settings, home screen → do nothing
+    // Back button: drawer open → close drawer, home screen → do nothing
     BackHandler(enabled = true) {
         if (showAppDrawer && swipeUpY.value < screenHeight) {
-            // Drawer is visible — navigate to settings
-            onSettingsClick()
+            // Drawer is visible — close it and return to home screen
+            coroutineScope.launch {
+                swipeUpY.animateTo(
+                    targetValue = screenHeight,
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = 300,
+                        easing = androidx.compose.animation.core.FastOutSlowInEasing
+                    )
+                )
+                showAppDrawer = false
+                homeRefreshTrigger++
+            }
         }
         // else: on home screen — consume back press silently (launcher shouldn't exit)
     }
