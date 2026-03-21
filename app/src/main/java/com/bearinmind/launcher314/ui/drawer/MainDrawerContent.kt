@@ -152,6 +152,8 @@ internal fun MainDrawerContent(
         }
     }
 
+    val reverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
+
     // Track cell positions and sizes for drag overlay positioning (shared across paged/scroll modes)
     // Hoisted here so drag lambdas can access them for folder hover detection
     val drawerCellPositions = remember { mutableStateMapOf<String, Offset>() }
@@ -193,8 +195,14 @@ internal fun MainDrawerContent(
         } else if (drawerDraggedItem != null && dropZoneBounds != Rect.Zero) {
             // Check if drag overlay is over the drop zone
             val overlayPos = drawerDragStartOffset + drawerDragOffset
+            // In reverse mode, use bottom-center of cell for hit testing (dragging down to bottom zone)
+            val hitTestPos = if (reverseSearchBar) {
+                Offset(overlayPos.x + drawerDragCellSize.width / 2f, overlayPos.y + drawerDragCellSize.height)
+            } else {
+                overlayPos
+            }
             val wasHovered = isDropZoneHovered
-            isDropZoneHovered = dropZoneBounds.contains(overlayPos)
+            isDropZoneHovered = dropZoneBounds.contains(hitTestPos)
             // Delayed transition when entering the zone (450ms grace period)
             if (isDropZoneHovered && !wasHovered) {
                 hoveredFolderKey = null // clear folder hover immediately
@@ -310,7 +318,6 @@ internal fun MainDrawerContent(
         }
     }
 
-    val reverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
     val autoOpenKeyboard = getAutoOpenKeyboard(LocalContext.current)
     var isSearchFocused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -388,16 +395,27 @@ internal fun MainDrawerContent(
             label = "dropZoneHover"
         )
         // Single outer Box — one shared grey background, content crossfades on top
+        val dropZoneDensity = LocalDensity.current
+        val dropZoneScreenH = with(dropZoneDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
                 .onGloballyPositioned { coords ->
                     val pos = coords.positionInRoot()
-                    val bounds = Rect(
-                        pos.x, 0f,
-                        pos.x + coords.size.width, pos.y + coords.size.height
-                    )
+                    val bounds = if (reverseSearchBar) {
+                        // Reverse mode: drop zone from top of search bar to bottom of screen
+                        Rect(
+                            pos.x, pos.y,
+                            pos.x + coords.size.width, dropZoneScreenH
+                        )
+                    } else {
+                        // Normal mode: drop zone extends from top of screen to bottom of search bar
+                        Rect(
+                            pos.x, 0f,
+                            pos.x + coords.size.width, pos.y + coords.size.height
+                        )
+                    }
                     dropZoneBounds = bounds
                     escapeHoverState?.dropZoneBoundsRef?.value = bounds
                 }
