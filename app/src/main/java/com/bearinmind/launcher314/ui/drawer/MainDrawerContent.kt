@@ -76,6 +76,8 @@ import com.bearinmind.launcher314.data.getScrollbarHeightPercent
 import com.bearinmind.launcher314.data.getScrollbarIntensity
 import com.bearinmind.launcher314.data.getScrollbarWidthPercent
 import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
+import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
+import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -643,6 +645,7 @@ internal fun MainDrawerContent(
         var drawerWrapperRootPos by remember { mutableStateOf(Offset.Zero) }
         Box(modifier = Modifier
             .weight(1f)
+            .zIndex(if (drawerDraggedItem != null) 1000f else 0f)
             .onGloballyPositioned { drawerWrapperRootPos = it.positionInRoot() }
         ) {
         // Loading or App grid
@@ -1294,16 +1297,32 @@ internal fun MainDrawerContent(
                         )
                     }
                 } else if (dragItem is AppInfo) {
-                    // App overlay: icon + label
+                    // App overlay: icon + label (with shape/bg color applied)
+                    val overlayCtx = LocalContext.current
+                    val overlayIconPath = remember(dragItem.packageName, globalIconShapeName, iconBgColor) {
+                        if (globalIconShapeName != null) {
+                            try {
+                                if (iconBgColor != null) {
+                                    getOrGenerateBgColorShapedIcon(overlayCtx, dragItem.packageName, globalIconShapeName, iconBgColor)
+                                } else {
+                                    getOrGenerateGlobalShapedIcon(overlayCtx, dragItem.packageName, globalIconShapeName)
+                                }
+                            } catch (_: Exception) { null }
+                        } else null
+                    }
+                    val overlayDisplayPath = overlayIconPath ?: dragItem.iconPath
+                    val overlayIsShapedIcon = overlayIconPath != null
                     Column(
                         modifier = Modifier.padding(8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         AsyncImage(
-                            model = File(dragItem.iconPath),
+                            model = File(overlayDisplayPath),
                             contentDescription = null,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(iconSize.dp)
+                            contentScale = if (overlayIsShapedIcon) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
+                            modifier = Modifier
+                                .size(iconSize.dp)
+                                .then(if (!overlayIsShapedIcon && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
