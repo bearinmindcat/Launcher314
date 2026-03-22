@@ -697,6 +697,17 @@ internal fun MainDrawerContent(
                 }
             }
 
+            // Cancel any active drag when pager scrolls (prevents app from "disappearing")
+            LaunchedEffect(pagerState.currentPage) {
+                if (drawerDraggedItem != null && !transferredToHome) {
+                    drawerDraggedItem = null
+                    drawerDragOffset = Offset.Zero
+                    showDropZone = false
+                    isDropZoneHovered = false
+                    hoveredFolderKey = null
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()

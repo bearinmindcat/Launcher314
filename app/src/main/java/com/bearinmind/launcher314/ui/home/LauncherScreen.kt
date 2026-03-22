@@ -862,6 +862,13 @@ fun LauncherScreen(
         if (sourceApp != null && (toCell is HomeGridCell.Empty || toCell == null)) {
             val updatedApps = homeApps.toMutableList()
 
+            // Safety: verify target position isn't already occupied in homeApps
+            val targetOccupied = updatedApps.any { it.position == toIndex && it.page == toPage }
+            if (targetOccupied) {
+                android.util.Log.w("FolderDrop", "handleDrop: target position $toIndex on page $toPage already occupied, aborting move")
+                return
+            }
+
             // Remove app from old position and page
             updatedApps.removeAll { it.position == fromIndex && it.page == fromPage }
 
