@@ -1125,9 +1125,11 @@ internal fun SelectableAppItem(
                 modifier = Modifier
                     .size(iconSize.dp)
                     .onGloballyPositioned { coords ->
+                        // Always use the final target scale so popup doesn't stutter during animation
+                        val targetScale = 1.265f
                         val pos = coords.positionInRoot()
-                        val w = coords.size.width * scale
-                        val h = coords.size.height * scale
+                        val w = coords.size.width * targetScale
+                        val h = coords.size.height * targetScale
                         val offsetX = (coords.size.width - w) / 2f
                         val offsetY = (coords.size.height - h) / 2f
                         drawerIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
@@ -1221,7 +1223,7 @@ internal fun SelectableAppItem(
 
         // Single app context menu dropdown
             AnimatedPopup(
-                visible = showContextMenu,
+                visible = showContextMenu && drawerIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
                 onDismissRequest = { showContextMenu = false },
                 iconBoundsInRoot = drawerIconBoundsInRoot
             ) {

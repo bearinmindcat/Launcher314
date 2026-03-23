@@ -505,9 +505,11 @@ fun DraggableGridCell(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .onGloballyPositioned { coords ->
+                                        // Always use the final target scale (1.265f) so popup doesn't stutter during animation
+                                        val targetScale = 1.265f
                                         val pos = coords.positionInRoot()
-                                        val w = coords.size.width * iconScale
-                                        val h = coords.size.height * iconScale
+                                        val w = coords.size.width * targetScale
+                                        val h = coords.size.height * targetScale
                                         val offsetX = (coords.size.width - w) / 2f
                                         val offsetY = (coords.size.height - h) / 2f
                                         iconBoundsInRoot = androidx.compose.ui.geometry.Rect(
@@ -678,7 +680,7 @@ fun DraggableGridCell(
 
                     // Context menu (shown on long press, like app drawer)
                     AnimatedPopup(
-                            visible = showContextMenu,
+                            visible = showContextMenu && iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
                             onDismissRequest = { showContextMenu = false },
                             iconBoundsInRoot = iconBoundsInRoot
                         ) {
