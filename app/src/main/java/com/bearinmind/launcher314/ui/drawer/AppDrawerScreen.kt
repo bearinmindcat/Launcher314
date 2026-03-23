@@ -2,6 +2,11 @@ package com.bearinmind.launcher314.ui.drawer
 
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import com.bearinmind.launcher314.data.HomeAppInfo
+import com.bearinmind.launcher314.data.loadAppCustomizations
+import com.bearinmind.launcher314.data.setCustomization
+import com.bearinmind.launcher314.data.removeCustomization
+import com.bearinmind.launcher314.ui.home.AppCustomizeDialog
 import androidx.compose.runtime.snapshotFlow
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -205,6 +210,37 @@ fun AppDrawerScreen(
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
     var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
+
+    // Customize dialog state for drawer apps
+    var customizingDrawerApp by remember { mutableStateOf<AppInfo?>(null) }
+    var appCustomizations by remember { mutableStateOf(loadAppCustomizations(context)) }
+
+    customizingDrawerApp?.let { app ->
+        val homeAppInfo = HomeAppInfo(
+            name = app.name,
+            packageName = app.packageName,
+            iconPath = app.iconPath,
+            customization = appCustomizations.customizations[app.packageName]
+        )
+        AppCustomizeDialog(
+            context = context,
+            appInfo = homeAppInfo,
+            currentCustomization = appCustomizations.customizations[app.packageName],
+            globalIconSizePercent = iconSizePercent,
+            globalIconTextSizePercent = iconTextSizePercent,
+            globalIconShape = globalIconShape,
+            globalIconBgColor = globalIconBgColor,
+            onSave = { newCustomization ->
+                appCustomizations = setCustomization(context, appCustomizations, app.packageName, newCustomization)
+                customizingDrawerApp = null
+            },
+            onReset = {
+                appCustomizations = removeCustomization(context, appCustomizations, app.packageName)
+                customizingDrawerApp = null
+            },
+            onDismiss = { customizingDrawerApp = null }
+        )
+    }
 
     // Compute icon dp from percentage using fixed reference (screenWidth / 4)
     // Uses reference column count of 4 so icon size is consistent across screens regardless of actual column count
@@ -552,6 +588,7 @@ fun AppDrawerScreen(
                     }
                 }
             },
+            onCustomizeApp = { app -> customizingDrawerApp = app },
             escapeHoverState = EscapeHoverState(
                 folderId = if (escapeHoveredFolderId != null && folderEscapedApp != null) escapeHoveredFolderId else null,
                 iconPath = if (escapeHoveredFolderId != null && folderEscapedApp != null) folderEscapedApp?.iconPath else null,

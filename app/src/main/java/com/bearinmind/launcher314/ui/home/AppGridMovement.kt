@@ -5,6 +5,15 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -14,6 +23,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.Folder
 import com.bearinmind.launcher314.helpers.getIconShape
 import com.bearinmind.launcher314.helpers.getShapedExpDir
 import com.bearinmind.launcher314.helpers.FontManager
@@ -122,6 +133,9 @@ fun DraggableGridCell(
     globalIconShape: String? = null, // Global icon shape (EXP method) applied when no per-app shape
     globalIconBgColor: Int? = null, // Global icon background color (drawn behind icon within shape)
     removeLabel: String = "Remove from home",
+    homeFolders: List<com.bearinmind.launcher314.data.HomeFolder> = emptyList(),
+    onAddToFolder: (com.bearinmind.launcher314.data.HomeFolder) -> Unit = {},
+    onCreateFolder: () -> Unit = {},
     folderPreviewDraggedIconPath: String? = null, // When non-null, animates this cell into a folder preview
     isReceivingDrop: Boolean = false // When true, plays a pulse scale animation on the folder cell
 ) {
@@ -253,6 +267,7 @@ fun DraggableGridCell(
                 // Force 1f immediately when not in active interaction —
                 // snap() can lag one frame causing a visible pulse of the larger icon
                 val iconScale = if (isScaledUp) animatedIconScale else 1f
+                var iconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
                 // Hide label only for THIS cell when it's being dragged or has context menu open
                 val hideLabel = showContextMenu || isDragging || isCustomizing
@@ -486,7 +501,26 @@ fun DraggableGridCell(
                                 catch (_: Exception) { finalIconModelPath }
                             } else finalIconModelPath
                             val isBgColorIcon = displayIconPath != finalIconModelPath
-                            Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .onGloballyPositioned { coords ->
+                                        val pos = coords.positionInRoot()
+                                        val w = coords.size.width * iconScale
+                                        val h = coords.size.height * iconScale
+                                        val offsetX = (coords.size.width - w) / 2f
+                                        val offsetY = (coords.size.height - h) / 2f
+                                        iconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                                            pos.x + offsetX, pos.y + offsetY,
+                                            pos.x + offsetX + w, pos.y + offsetY + h
+                                        )
+                                    }
+                                    .graphicsLayer {
+                                        scaleX = iconScale
+                                        scaleY = iconScale
+                                        clip = false
+                                    }
+                            ) {
                                 AsyncImage(
                                     model = File(displayIconPath),
                                     contentDescription = cell.appInfo.name,
@@ -497,11 +531,6 @@ fun DraggableGridCell(
                                     modifier = Modifier
                                         .size(perAppIconSizeDp)
                                         .then(if (!isBgColorIcon && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
-                                        .graphicsLayer {
-                                            scaleX = iconScale
-                                            scaleY = iconScale
-                                            clip = false
-                                        }
                                 )
 
                                 // Dark overlay (press + flash) — uses icon silhouette to match exact shape
@@ -515,8 +544,6 @@ fun DraggableGridCell(
                                             .size(perAppIconSizeDp)
                                             .then(if (iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
                                             .graphicsLayer {
-                                                scaleX = iconScale
-                                                scaleY = iconScale
                                                 alpha = overlayAlpha
                                             }
                                     )
@@ -652,7 +679,8 @@ fun DraggableGridCell(
                     // Context menu (shown on long press, like app drawer)
                     AnimatedPopup(
                             visible = showContextMenu,
-                            onDismissRequest = { showContextMenu = false }
+                            onDismissRequest = { showContextMenu = false },
+                            iconBoundsInRoot = iconBoundsInRoot
                         ) {
                                     Box(
                                         modifier = Modifier
@@ -666,11 +694,29 @@ fun DraggableGridCell(
                                             fontWeight = FontWeight.Bold,
                                             lineHeight = 22.sp,
                                             maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(end = 28.dp)
                                         )
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.CenterEnd)
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .clickable {
+                                                    showContextMenu = false
+                                                    onAppInfo()
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Info,
+                                                contentDescription = "App info"
+                                            )
+                                        }
                                     }
                                     Divider()
 
+                                    // 1. Remove from home
                                     DropdownMenuItem(
                                         text = { Text(removeLabel) },
                                         onClick = {
@@ -680,6 +726,16 @@ fun DraggableGridCell(
                                         leadingIcon = { HomeOffIcon() }
                                     )
 
+                                    // 2. Select (placeholder)
+                                    DropdownMenuItem(
+                                        text = { Text("Select") },
+                                        onClick = {
+                                            showContextMenu = false
+                                        },
+                                        leadingIcon = { Icon(Icons.Outlined.Circle, contentDescription = null) }
+                                    )
+
+                                    // 3. Uninstall
                                     DropdownMenuItem(
                                         text = { Text("Uninstall") },
                                         onClick = {
@@ -689,15 +745,7 @@ fun DraggableGridCell(
                                         leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
                                     )
 
-                                    DropdownMenuItem(
-                                        text = { Text("App info") },
-                                        onClick = {
-                                            showContextMenu = false
-                                            onAppInfo()
-                                        },
-                                        leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) }
-                                    )
-
+                                    // 4. Customize
                                     DropdownMenuItem(
                                         text = { Text("Customize") },
                                         onClick = {
@@ -706,6 +754,50 @@ fun DraggableGridCell(
                                         },
                                         leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                                     )
+
+                                    // 5. Folder
+                                    var folderExpanded by remember { mutableStateOf(false) }
+                                    DropdownMenuItem(
+                                        text = { Text("Folder") },
+                                        onClick = { folderExpanded = !folderExpanded },
+                                        leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) }
+                                    )
+                                    AnimatedVisibility(
+                                        visible = folderExpanded,
+                                        enter = expandVertically(tween(250)) + fadeIn(tween(250)),
+                                        exit = shrinkVertically(tween(200)) + fadeOut(tween(200))
+                                    ) {
+                                        Column {
+                                            DropdownMenuItem(
+                                                text = { Text("Create folder") },
+                                                onClick = {
+                                                    showContextMenu = false
+                                                    onCreateFolder()
+                                                },
+                                                leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
+                                                modifier = Modifier.padding(start = 16.dp)
+                                            )
+                                            if (homeFolders.isNotEmpty()) {
+                                                Text(
+                                                    text = "Move to",
+                                                    fontSize = 12.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                                    modifier = Modifier.padding(start = 32.dp, top = 8.dp, bottom = 4.dp)
+                                                )
+                                                homeFolders.forEach { folder ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(folder.name) },
+                                                        onClick = {
+                                                            showContextMenu = false
+                                                            onAddToFolder(folder)
+                                                        },
+                                                        leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                                                        modifier = Modifier.padding(start = 16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                         }
                 }
             }
@@ -1246,7 +1338,10 @@ fun DockSlot(
     globalIconSizePercent: Float = 100f, // Global icon size for absolute per-app scale
     globalIconShape: String? = null, // Global icon shape (EXP method) applied when no per-app shape
     globalIconBgColor: Int? = null, // Global icon background color (drawn behind icon within shape)
-    onRenameDockFolder: (() -> Unit)? = null
+    onRenameDockFolder: (() -> Unit)? = null,
+    homeFolders: List<com.bearinmind.launcher314.data.HomeFolder> = emptyList(),
+    onAddToFolder: (com.bearinmind.launcher314.data.HomeFolder) -> Unit = {},
+    onCreateFolder: () -> Unit = {}
 ) {
     val hapticFeedback = rememberHapticFeedback()
     // Match grid cell coordinate system - use same markerHalfSize for uniform sizing
@@ -1483,9 +1578,11 @@ fun DockSlot(
             }
 
             // Context menu (shown on long press, like app drawer)
+            val dockIconSizePxForPopup = with(LocalDensity.current) { iconSize.dp.toPx().toInt() }
             AnimatedPopup(
                     visible = showContextMenu,
-                    onDismissRequest = { showContextMenu = false }
+                    onDismissRequest = { showContextMenu = false },
+                    iconSizePx = dockIconSizePxForPopup
                 ) {
                             Box(
                                 modifier = Modifier
@@ -1499,11 +1596,29 @@ fun DockSlot(
                                     fontWeight = FontWeight.Bold,
                                     lineHeight = 22.sp,
                                     maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(end = 28.dp)
                                 )
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            showContextMenu = false
+                                            onAppInfo()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Info,
+                                        contentDescription = "App info"
+                                    )
+                                }
                             }
                             Divider()
 
+                            // 1. Remove from home
                             DropdownMenuItem(
                                 text = { Text("Remove from home") },
                                 onClick = {
@@ -1513,6 +1628,16 @@ fun DockSlot(
                                 leadingIcon = { HomeOffIcon() }
                             )
 
+                            // 2. Select (placeholder)
+                            DropdownMenuItem(
+                                text = { Text("Select") },
+                                onClick = {
+                                    showContextMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Circle, contentDescription = null) }
+                            )
+
+                            // 3. Uninstall
                             DropdownMenuItem(
                                 text = { Text("Uninstall") },
                                 onClick = {
@@ -1522,15 +1647,7 @@ fun DockSlot(
                                 leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
                             )
 
-                            DropdownMenuItem(
-                                text = { Text("App info") },
-                                onClick = {
-                                    showContextMenu = false
-                                    onAppInfo()
-                                },
-                                leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) }
-                            )
-
+                            // 4. Customize
                             DropdownMenuItem(
                                 text = { Text("Customize") },
                                 onClick = {
@@ -1539,6 +1656,50 @@ fun DockSlot(
                                 },
                                 leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                             )
+
+                            // 5. Folder
+                            var dockFolderExpanded by remember { mutableStateOf(false) }
+                            DropdownMenuItem(
+                                text = { Text("Folder") },
+                                onClick = { dockFolderExpanded = !dockFolderExpanded },
+                                leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) }
+                            )
+                            AnimatedVisibility(
+                                visible = dockFolderExpanded,
+                                enter = expandVertically(tween(250)) + fadeIn(tween(250)),
+                                exit = shrinkVertically(tween(200)) + fadeOut(tween(200))
+                            ) {
+                                Column {
+                                    DropdownMenuItem(
+                                        text = { Text("Create folder") },
+                                        onClick = {
+                                            showContextMenu = false
+                                            onCreateFolder()
+                                        },
+                                        leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
+                                        modifier = Modifier.padding(start = 16.dp)
+                                    )
+                                    if (homeFolders.isNotEmpty()) {
+                                        Text(
+                                            text = "Move to",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            modifier = Modifier.padding(start = 32.dp, top = 8.dp, bottom = 4.dp)
+                                        )
+                                        homeFolders.forEach { folder ->
+                                            DropdownMenuItem(
+                                                text = { Text(folder.name) },
+                                                onClick = {
+                                                    showContextMenu = false
+                                                    onAddToFolder(folder)
+                                                },
+                                                leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                                                modifier = Modifier.padding(start = 16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                 }
         } else if (folderData != null) {
             // Dock folder content - 2x2 mini icon grid

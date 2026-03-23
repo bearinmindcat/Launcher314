@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 
 /** Positions the popup above or below the anchor and reports placement for the arrow */
 private class ArrowPopupPositionProvider(
+    private val iconBoundsInRoot: androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect.Zero,
     private val onPlacement: (isAbove: Boolean, arrowXPx: Float) -> Unit
 ) : PopupPositionProvider {
     override fun calculatePosition(
@@ -43,11 +44,20 @@ private class ArrowPopupPositionProvider(
         val x = (anchorBounds.left + anchorBounds.right - popupContentSize.width) / 2
         val clampedX = x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
 
-        // Vertical: prefer below the anchor, fall back to above
-        // Pull popup closer to the icon by overlapping slightly
-        val closerPx = 48
-        val belowY = anchorBounds.bottom - closerPx
-        val aboveY = anchorBounds.top - popupContentSize.height + closerPx
+        // Use actual icon bounds if available, otherwise estimate
+        val gap = 6
+        val iconTop: Int
+        val iconBottom: Int
+        if (iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero) {
+            iconTop = iconBoundsInRoot.top.toInt()
+            iconBottom = iconBoundsInRoot.bottom.toInt()
+        } else {
+            // Fallback: estimate icon as top ~55% of cell
+            iconTop = anchorBounds.top
+            iconBottom = anchorBounds.top + (anchorBounds.height * 0.55f).toInt()
+        }
+        val belowY = iconBottom + gap
+        val aboveY = iconTop - popupContentSize.height - gap
 
         val isAbove: Boolean
         val y: Int
@@ -77,6 +87,8 @@ fun AnimatedPopup(
     visible: Boolean,
     onDismissRequest: () -> Unit,
     popupPositionProvider: PopupPositionProvider? = null,
+    iconSizePx: Int = 0,
+    iconBoundsInRoot: androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect.Zero,
     content: @Composable ColumnScope.() -> Unit
 ) {
     var showPopup by remember { mutableStateOf(false) }
@@ -97,8 +109,8 @@ fun AnimatedPopup(
 
     if (showPopup) {
         val useArrow = popupPositionProvider == null
-        val provider = popupPositionProvider ?: remember {
-            ArrowPopupPositionProvider { above, x ->
+        val provider = popupPositionProvider ?: remember(iconBoundsInRoot) {
+            ArrowPopupPositionProvider(iconBoundsInRoot = iconBoundsInRoot) { above, x ->
                 isAbove = above
                 arrowXPx = x
             }

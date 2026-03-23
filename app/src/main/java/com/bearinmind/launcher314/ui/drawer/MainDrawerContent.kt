@@ -134,7 +134,8 @@ internal fun MainDrawerContent(
     clearSelectionTrigger: Int = 0,
     dropAnimatingPackage: String? = null,
     onDropTargetPositioned: (Offset, IntSize) -> Unit = { _, _ -> },
-    escapeHoverState: EscapeHoverState? = null
+    escapeHoverState: EscapeHoverState? = null,
+    onCustomizeApp: (AppInfo) -> Unit = {}
 ) {
     val onDragToHome = homeDragCallbacks.onDragToHome
     val onDragToHomeMove = homeDragCallbacks.onDragToHomeMove
@@ -895,7 +896,8 @@ internal fun MainDrawerContent(
                                                     },
                                                     onDragStarted = if (!selectionModeActive) cellDragStart else null,
                                                     onDragMoved = if (!selectionModeActive) drawerDragMove else null,
-                                                    onDragEnded = if (!selectionModeActive) drawerDragEnd else null
+                                                    onDragEnded = if (!selectionModeActive) drawerDragEnd else null,
+                                                    onCustomize = { onCustomizeApp(cellItem) }
                                                 )
                                             }
                                         }
@@ -1117,7 +1119,8 @@ internal fun MainDrawerContent(
                                 },
                                 onDragStarted = if (!selectionModeActive) cellDragStart else null,
                                 onDragMoved = if (!selectionModeActive) drawerDragMove else null,
-                                onDragEnded = if (!selectionModeActive) drawerDragEnd else null
+                                onDragEnded = if (!selectionModeActive) drawerDragEnd else null,
+                                onCustomize = { onCustomizeApp(app) }
                             )
                         }
                     }

@@ -1,6 +1,8 @@
 package com.bearinmind.launcher314.ui.drawer
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -549,6 +551,7 @@ internal fun FolderAppItem(
         animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
         label = "icon_scale"
     )
+    var drawerIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     // Hide label when scaled up (matches home screen app behavior)
     val labelAlpha by animateFloatAsState(
@@ -680,11 +683,13 @@ internal fun FolderAppItem(
         }
 
         // Single app context menu dropdown
+            val drawerIconSizePx1 = with(LocalDensity.current) { iconSize.dp.toPx().toInt() }
             AnimatedPopup(
                 visible = showContextMenu,
-                onDismissRequest = { showContextMenu = false }
+                onDismissRequest = { showContextMenu = false },
+                iconSizePx = drawerIconSizePx1
             ) {
-                        // App name header
+                        // App name header with app info shortcut
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -697,12 +702,39 @@ internal fun FolderAppItem(
                                 fontWeight = FontWeight.Bold,
                                 lineHeight = 22.sp,
                                 maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(end = 28.dp)
                             )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        showContextMenu = false
+                                        onAppInfo()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Info,
+                                    contentDescription = "App info"
+                                )
+                            }
                         }
                         Divider()
 
-                        // Select option - for multi-select
+                        // 1. Remove from folder
+                        DropdownMenuItem(
+                            text = { Text("Remove from folder") },
+                            onClick = {
+                                showContextMenu = false
+                                onRemove()
+                            },
+                            leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) }
+                        )
+
+                        // 2. Select
                         DropdownMenuItem(
                             text = { Text(if (isSelected) "Deselect" else "Select") },
                             onClick = {
@@ -717,6 +749,7 @@ internal fun FolderAppItem(
                             }
                         )
 
+                        // 3. Uninstall
                         DropdownMenuItem(
                             text = { Text("Uninstall") },
                             onClick = {
@@ -726,16 +759,16 @@ internal fun FolderAppItem(
                             leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
                         )
 
+                        // 4. Customize (placeholder)
                         DropdownMenuItem(
-                            text = { Text("App info") },
+                            text = { Text("Customize") },
                             onClick = {
                                 showContextMenu = false
-                                onAppInfo()
                             },
-                            leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) }
+                            leadingIcon = { Icon(imageVector = Icons.Outlined.Edit, contentDescription = null) }
                         )
 
-                        // Folder section - expandable
+                        // 5. Folder section - expandable
                         DropdownMenuItem(
                             text = { Text("Folder") },
                             onClick = { onFolderMenuExpandedChange(!isFolderMenuExpanded) },
@@ -922,7 +955,8 @@ internal fun SelectableAppItem(
     onDragEnded: (() -> Unit)? = null,
     iconClipShape: androidx.compose.ui.graphics.Shape? = null,
     iconBgColor: Int? = null,
-    globalIconShapeName: String? = null
+    globalIconShapeName: String? = null,
+    onCustomize: () -> Unit = {}
 ) {
     val drawerItemContext = LocalContext.current
     val hapticFeedback = rememberHapticFeedback()
@@ -947,6 +981,7 @@ internal fun SelectableAppItem(
         animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
         label = "icon_scale"
     )
+    var drawerIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     // Hide label when scaled up (matches home screen app behavior)
     val labelAlpha by animateFloatAsState(
@@ -1087,7 +1122,19 @@ internal fun SelectableAppItem(
             val drawerIsShapedIcon = drawerShapedIconPath != null
             val drawerDisplayIconPath = drawerShapedIconPath ?: app.iconPath
             Box(
-                modifier = Modifier.size(iconSize.dp),
+                modifier = Modifier
+                    .size(iconSize.dp)
+                    .onGloballyPositioned { coords ->
+                        val pos = coords.positionInRoot()
+                        val w = coords.size.width * scale
+                        val h = coords.size.height * scale
+                        val offsetX = (coords.size.width - w) / 2f
+                        val offsetY = (coords.size.height - h) / 2f
+                        drawerIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                            pos.x + offsetX, pos.y + offsetY,
+                            pos.x + offsetX + w, pos.y + offsetY + h
+                        )
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
@@ -1175,9 +1222,10 @@ internal fun SelectableAppItem(
         // Single app context menu dropdown
             AnimatedPopup(
                 visible = showContextMenu,
-                onDismissRequest = { showContextMenu = false }
+                onDismissRequest = { showContextMenu = false },
+                iconBoundsInRoot = drawerIconBoundsInRoot
             ) {
-                        // App name header
+                        // App name header with app info shortcut
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1190,12 +1238,39 @@ internal fun SelectableAppItem(
                                 fontWeight = FontWeight.Bold,
                                 lineHeight = 22.sp,
                                 maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(end = 28.dp)
                             )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        showContextMenu = false
+                                        onAppInfo()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Info,
+                                    contentDescription = "App info"
+                                )
+                            }
                         }
                         Divider()
 
-                        // Select option - for multi-select
+                        // 1. Add to home
+                        DropdownMenuItem(
+                            text = { Text("Add to home") },
+                            onClick = {
+                                showContextMenu = false
+                                onAddToHome()
+                            },
+                            leadingIcon = { Icon(Icons.Outlined.Home, contentDescription = null) }
+                        )
+
+                        // 2. Select
                         DropdownMenuItem(
                             text = { Text(if (isSelected) "Deselect" else "Select") },
                             onClick = {
@@ -1210,6 +1285,7 @@ internal fun SelectableAppItem(
                             }
                         )
 
+                        // 3. Uninstall
                         DropdownMenuItem(
                             text = { Text("Uninstall") },
                             onClick = {
@@ -1219,25 +1295,17 @@ internal fun SelectableAppItem(
                             leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
                         )
 
+                        // 4. Customize
                         DropdownMenuItem(
-                            text = { Text("App info") },
+                            text = { Text("Customize") },
                             onClick = {
                                 showContextMenu = false
-                                onAppInfo()
+                                onCustomize()
                             },
-                            leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) }
+                            leadingIcon = { Icon(imageVector = Icons.Outlined.Edit, contentDescription = null) }
                         )
 
-                        DropdownMenuItem(
-                            text = { Text("Add to home") },
-                            onClick = {
-                                showContextMenu = false
-                                onAddToHome()
-                            },
-                            leadingIcon = { Icon(Icons.Outlined.Home, contentDescription = null) }
-                        )
-
-                        // Folder section - expandable (uses global state)
+                        // 5. Folder section - expandable (uses global state)
                         DropdownMenuItem(
                             text = { Text("Folder") },
                             onClick = { onFolderMenuExpandedChange(!isFolderMenuExpanded) },
