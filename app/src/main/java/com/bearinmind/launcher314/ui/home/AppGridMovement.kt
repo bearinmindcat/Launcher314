@@ -10,7 +10,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.foundation.shape.CircleShape
@@ -127,6 +129,9 @@ fun DraggableGridCell(
     onUninstall: () -> Unit,
     onAppInfo: () -> Unit,
     onCustomize: () -> Unit = {},
+    onSelectToggle: () -> Unit = {},
+    isSelected: Boolean = false,
+    selectionModeActive: Boolean = false,
     onWidgetRemove: () -> Unit = {},
     isCustomizing: Boolean = false, // When true, keep icon scaled up while customize dialog is open
     globalIconSizePercent: Float = 100f, // Global icon size for absolute per-app scale
@@ -136,6 +141,8 @@ fun DraggableGridCell(
     homeFolders: List<com.bearinmind.launcher314.data.HomeFolder> = emptyList(),
     onAddToFolder: (com.bearinmind.launcher314.data.HomeFolder) -> Unit = {},
     onCreateFolder: () -> Unit = {},
+    onBulkRemove: () -> Unit = {},
+    selectedCount: Int = 0,
     folderPreviewDraggedIconPath: String? = null, // When non-null, animates this cell into a folder preview
     isReceivingDrop: Boolean = false // When true, plays a pulse scale animation on the folder cell
 ) {
@@ -146,7 +153,10 @@ fun DraggableGridCell(
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnLongPress by rememberUpdatedState(onLongPress)
+    val currentSelectionModeActive by rememberUpdatedState(selectionModeActive)
+    val currentSelectedCount by rememberUpdatedState(selectedCount)
     var showContextMenu by remember { mutableStateOf(false) }
+    var showBulkMenu by remember { mutableStateOf(false) }
     var cellPosition by remember { mutableStateOf(Offset.Zero) }
     var cellIntSize by remember { mutableStateOf(IntSize.Zero) }
 
@@ -246,6 +256,9 @@ fun DraggableGridCell(
                                     val touchPosition = cellPosition + longPress.position
                                     hapticFeedback.performLongPress()
                                     onLongPress(touchPosition)
+                                } else {
+                                    // Tap on empty cell
+                                    onTap()
                                 }
                             }
                         }
@@ -258,7 +271,7 @@ fun DraggableGridCell(
             is HomeGridCell.App -> {
                 // Animate icon scale when context menu is shown or when dragging (like app drawer)
                 // Use snap() when ending drag to prevent double animation stutter
-                val isScaledUp = showContextMenu || isDragging || isCustomizing
+                val isScaledUp = showContextMenu || showBulkMenu || isDragging || isCustomizing || isSelected
                 val animatedIconScale by animateFloatAsState(
                     targetValue = if (isScaledUp) 1.265f else 1f,
                     animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
@@ -269,10 +282,10 @@ fun DraggableGridCell(
                 val iconScale = if (isScaledUp) animatedIconScale else 1f
                 var iconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
-                // Hide label only for THIS cell when it's being dragged or has context menu open
-                val hideLabel = showContextMenu || isDragging || isCustomizing
+                // Hide label when scaled up (context menu, dragging, customizing, or selected)
+                val hideLabel = showContextMenu || isDragging || isCustomizing || isSelected
                 val labelAlpha by animateFloatAsState(
-                    targetValue = if (showContextMenu || isCustomizing) 0f else 1f,
+                    targetValue = if (showContextMenu || isCustomizing || isSelected) 0f else 1f,
                     animationSpec = tween(durationMillis = 150),
                     label = "labelAlpha"
                 )
@@ -333,7 +346,11 @@ fun DraggableGridCell(
 
                                     // Long press triggered - show menu immediately while holding
                                     isLongPressActive = true
-                                    showContextMenu = true
+                                    if (currentSelectionModeActive && currentSelectedCount > 0) {
+                                        showBulkMenu = true
+                                    } else {
+                                        showContextMenu = true
+                                    }
                                     flashOverlay = true
                                     hapticFeedback.performLongPress()
 
@@ -550,6 +567,41 @@ fun DraggableGridCell(
                                             }
                                     )
                                 }
+
+                                // Selection circle overlay — shows on all icons when in selection mode
+                                if (selectionModeActive) {
+                                    val circleSize = (iconSize * 0.42f).dp
+                                    val checkmarkSize = (iconSize * 0.27f).dp
+                                    val circleBorder = (iconSize * 0.018f).dp
+                                    val circleOffset = (iconSize * 0.083f).dp
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = circleOffset, y = -circleOffset)
+                                            .size(circleSize)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primary
+                                                else Color.Black.copy(alpha = 0.35f)
+                                            )
+                                            .border(
+                                                width = circleBorder,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.outline,
+                                                shape = CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Check,
+                                                contentDescription = "Selected",
+                                                modifier = Modifier.size(checkmarkSize),
+                                                tint = MaterialTheme.colorScheme.onPrimary
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             // Label: respect per-app customization (hide or rename)
@@ -728,13 +780,19 @@ fun DraggableGridCell(
                                         leadingIcon = { HomeOffIcon() }
                                     )
 
-                                    // 2. Select (placeholder)
+                                    // 2. Select
                                     DropdownMenuItem(
-                                        text = { Text("Select") },
+                                        text = { Text(if (isSelected) "Deselect" else "Select") },
                                         onClick = {
                                             showContextMenu = false
+                                            onSelectToggle()
                                         },
-                                        leadingIcon = { Icon(Icons.Outlined.Circle, contentDescription = null) }
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (isSelected) Icons.Outlined.Check else Icons.Outlined.Circle,
+                                                contentDescription = null
+                                            )
+                                        }
                                     )
 
                                     // 3. Uninstall
@@ -801,6 +859,80 @@ fun DraggableGridCell(
                                         }
                                     }
                         }
+
+                // Bulk action menu (shown when long-pressing a selected app in selection mode)
+                AnimatedPopup(
+                    visible = showBulkMenu && iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                    onDismissRequest = { showBulkMenu = false },
+                    iconBoundsInRoot = iconBoundsInRoot
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Text(
+                            text = "$selectedCount selected",
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 22.sp
+                        )
+                    }
+                    Divider()
+
+                    DropdownMenuItem(
+                        text = { Text("Remove from home") },
+                        onClick = {
+                            showBulkMenu = false
+                            onBulkRemove()
+                        },
+                        leadingIcon = { HomeOffIcon() }
+                    )
+
+                    var bulkFolderExpanded by remember { mutableStateOf(false) }
+                    DropdownMenuItem(
+                        text = { Text("Folder") },
+                        onClick = { bulkFolderExpanded = !bulkFolderExpanded },
+                        leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) }
+                    )
+                    AnimatedVisibility(
+                        visible = bulkFolderExpanded,
+                        enter = expandVertically(tween(250)) + fadeIn(tween(250)),
+                        exit = shrinkVertically(tween(200)) + fadeOut(tween(200))
+                    ) {
+                        Column {
+                            DropdownMenuItem(
+                                text = { Text("Create folder") },
+                                onClick = {
+                                    showBulkMenu = false
+                                    onCreateFolder()
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
+                                modifier = Modifier.padding(start = 16.dp)
+                            )
+                            if (homeFolders.isNotEmpty()) {
+                                Text(
+                                    text = "Move to",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    modifier = Modifier.padding(start = 32.dp, top = 8.dp, bottom = 4.dp)
+                                )
+                                homeFolders.forEach { folder ->
+                                    DropdownMenuItem(
+                                        text = { Text(folder.name) },
+                                        onClick = {
+                                            showBulkMenu = false
+                                            onAddToFolder(folder)
+                                        },
+                                        leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                                        modifier = Modifier.padding(start = 16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 }
             }
 

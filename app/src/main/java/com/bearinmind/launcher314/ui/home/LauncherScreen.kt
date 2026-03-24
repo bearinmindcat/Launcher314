@@ -89,6 +89,7 @@ import com.bearinmind.launcher314.data.getGlobalIconBgColor
 import com.bearinmind.launcher314.data.getDockEnabled
 import com.bearinmind.launcher314.data.getDoubleTapLockEnabled
 import com.bearinmind.launcher314.services.AppDrawerAccessibilityService
+import com.bearinmind.launcher314.ui.drawer.CreateFolderDialog
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -395,6 +396,12 @@ fun LauncherScreen(
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
     var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
+
+    // Home screen selection state — uses "page_position" keys to uniquely identify cells
+    var selectedHomeCells by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var homeSelectionModeActive by remember { mutableStateOf(false) }
+    var showCreateHomeFolderDialog by remember { mutableStateOf(false) }
+    var pendingFolderCellKey by remember { mutableStateOf("") }
 
     // Dock settings - get from user preferences (needed for proportional sizing below)
     val dockSlots = getDockColumns(context)
@@ -2123,7 +2130,17 @@ fun LauncherScreen(
                                                 }
                                             },
                                             onTap = {
-                                                if (cell is HomeGridCell.App && !isEditMode) {
+                                                if (homeSelectionModeActive) {
+                                                    if (cell is HomeGridCell.App) {
+                                                        val cellKey = "${currentPage}_${index}"
+                                                        selectedHomeCells = if (cellKey in selectedHomeCells) selectedHomeCells - cellKey else selectedHomeCells + cellKey
+                                                        if (selectedHomeCells.isEmpty()) homeSelectionModeActive = false
+                                                    } else {
+                                                        // Tap on empty cell or folder while in selection mode — deselect all
+                                                        selectedHomeCells = emptySet()
+                                                        homeSelectionModeActive = false
+                                                    }
+                                                } else if (cell is HomeGridCell.App && !isEditMode) {
                                                     launchApp(context, cell.appInfo.packageName)
                                                 } else if (cell is HomeGridCell.Folder && !isEditMode) {
                                                     openHomeFolder = cell.folder
@@ -2186,7 +2203,38 @@ fun LauncherScreen(
                                             isCustomizing = cell is HomeGridCell.App && customizingApp?.packageName == cell.appInfo.packageName,
                                             globalIconSizePercent = iconSizePercent.toFloat(),
                                             globalIconShape = globalIconShape,
-                                            globalIconBgColor = globalIconBgColor
+                                            globalIconBgColor = globalIconBgColor,
+                                            isSelected = if (cell is HomeGridCell.App) "${currentPage}_${index}" in selectedHomeCells else false,
+                                            selectionModeActive = homeSelectionModeActive,
+                                            selectedCount = selectedHomeCells.size,
+                                            onSelectToggle = {
+                                                if (cell is HomeGridCell.App) {
+                                                    homeSelectionModeActive = true
+                                                    val cellKey = "${currentPage}_${index}"
+                                                    selectedHomeCells = if (cellKey in selectedHomeCells) selectedHomeCells - cellKey else selectedHomeCells + cellKey
+                                                    if (selectedHomeCells.isEmpty()) homeSelectionModeActive = false
+                                                }
+                                            },
+                                            onBulkRemove = {
+                                                // Remove all selected apps from home screen by their positions
+                                                val updatedApps = homeApps.toMutableList()
+                                                selectedHomeCells.forEach { cellKey ->
+                                                    val parts = cellKey.split("_")
+                                                    if (parts.size == 2) {
+                                                        val page = parts[0].toIntOrNull() ?: return@forEach
+                                                        val pos = parts[1].toIntOrNull() ?: return@forEach
+                                                        updatedApps.removeAll { it.page == page && it.position == pos }
+                                                    }
+                                                }
+                                                homeApps = updatedApps
+                                                saveHomeApps(updatedApps)
+                                                selectedHomeCells = emptySet()
+                                                homeSelectionModeActive = false
+                                            },
+                                            onCreateFolder = {
+                                                pendingFolderCellKey = "${currentPage}_${index}"
+                                                showCreateHomeFolderDialog = true
+                                            }
                                             )
                                         }
                                     }
@@ -3633,6 +3681,46 @@ fun LauncherScreen(
 
     // ========== Home Screen Folder Content Overlay (drawer-style full screen) ==========
     // Keep a reference to the last opened folder so content persists during close animation
+    // ========== CREATE FOLDER DIALOG (from selection mode) ==========
+    if (showCreateHomeFolderDialog) {
+        CreateFolderDialog(
+            onDismiss = { showCreateHomeFolderDialog = false },
+            onCreate = { name ->
+                val parts = pendingFolderCellKey.split("_")
+                val folderPage = parts.getOrNull(0)?.toIntOrNull() ?: currentPage
+                val folderPos = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                val selectedPkgs = mutableListOf<String>()
+                val updatedApps = homeApps.toMutableList()
+                selectedHomeCells.forEach { cellKey ->
+                    val p = cellKey.split("_")
+                    if (p.size == 2) {
+                        val pg = p[0].toIntOrNull() ?: return@forEach
+                        val pos = p[1].toIntOrNull() ?: return@forEach
+                        val app = updatedApps.find { it.page == pg && it.position == pos }
+                        if (app != null) {
+                            selectedPkgs.add(app.packageName)
+                            updatedApps.removeAll { it.page == pg && it.position == pos }
+                        }
+                    }
+                }
+                if (selectedPkgs.isNotEmpty()) {
+                    val newFolder = HomeFolder(
+                        name = name,
+                        position = folderPos,
+                        page = folderPage,
+                        appPackageNames = selectedPkgs
+                    )
+                    homeApps = updatedApps
+                    homeFolders = homeFolders + newFolder
+                    saveHomeScreenData(context, HomeScreenData(apps = updatedApps, dockApps = dockApps, folders = homeFolders, dockFolders = dockFolders))
+                }
+                selectedHomeCells = emptySet()
+                homeSelectionModeActive = false
+                showCreateHomeFolderDialog = false
+            }
+        )
+    }
+
     // ========== APP CUSTOMIZE DIALOG ==========
     customizingApp?.let { app ->
         AppCustomizeDialog(

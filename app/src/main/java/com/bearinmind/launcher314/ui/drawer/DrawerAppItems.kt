@@ -839,8 +839,9 @@ internal fun FolderAppItem(
 
         // Bulk action menu for multiple selected apps
             AnimatedPopup(
-                visible = showBulkMenu,
-                onDismissRequest = { showBulkMenu = false }
+                visible = showBulkMenu && drawerIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                onDismissRequest = { showBulkMenu = false },
+                iconBoundsInRoot = drawerIconBoundsInRoot
             ) {
                         // Header showing selection count
                         Box(
@@ -1415,8 +1416,9 @@ internal fun SelectableAppItem(
 
         // Bulk action menu for multiple selected apps
             AnimatedPopup(
-                visible = showBulkMenu,
-                onDismissRequest = { showBulkMenu = false }
+                visible = showBulkMenu && drawerIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                onDismissRequest = { showBulkMenu = false },
+                iconBoundsInRoot = drawerIconBoundsInRoot
             ) {
                         // Header showing selection count
                         Box(
@@ -1512,7 +1514,7 @@ internal fun SelectableAppItem(
 }
 
 @Composable
-internal fun CreateFolderDialog(
+fun CreateFolderDialog(
     onDismiss: () -> Unit,
     onCreate: (String) -> Unit
 ) {
