@@ -32,6 +32,7 @@ import kotlinx.coroutines.delay
 /** Positions the popup above or below the anchor and reports placement for the arrow */
 private class ArrowPopupPositionProvider(
     private val iconBoundsInRoot: androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect.Zero,
+    private val gapPx: Int = 6,
     private val onPlacement: (isAbove: Boolean, arrowXPx: Float) -> Unit
 ) : PopupPositionProvider {
     override fun calculatePosition(
@@ -45,16 +46,16 @@ private class ArrowPopupPositionProvider(
         val clampedX = x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
 
         // Use actual icon bounds if available, otherwise estimate
-        val gap = 6
+        val gap = gapPx
         val iconTop: Int
         val iconBottom: Int
         if (iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero) {
             iconTop = iconBoundsInRoot.top.toInt()
             iconBottom = iconBoundsInRoot.bottom.toInt()
         } else {
-            // Fallback: estimate icon as top ~55% of cell
+            // Fallback: use full anchor bounds
             iconTop = anchorBounds.top
-            iconBottom = anchorBounds.top + (anchorBounds.height * 0.55f).toInt()
+            iconBottom = anchorBounds.bottom
         }
         val belowY = iconBottom + gap
         val aboveY = iconTop - popupContentSize.height - gap
@@ -89,8 +90,10 @@ fun AnimatedPopup(
     popupPositionProvider: PopupPositionProvider? = null,
     iconSizePx: Int = 0,
     iconBoundsInRoot: androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect.Zero,
+    gapDp: Int = 4,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val density = LocalDensity.current
     var showPopup by remember { mutableStateOf(false) }
     var animateIn by remember { mutableStateOf(false) }
     var isAbove by remember { mutableStateOf(false) }
@@ -109,8 +112,9 @@ fun AnimatedPopup(
 
     if (showPopup) {
         val useArrow = popupPositionProvider == null
-        val provider = popupPositionProvider ?: remember(iconBoundsInRoot) {
-            ArrowPopupPositionProvider(iconBoundsInRoot = iconBoundsInRoot) { above, x ->
+        val gapPx = with(density) { gapDp.dp.roundToPx() }
+        val provider = popupPositionProvider ?: remember(iconBoundsInRoot, gapPx) {
+            ArrowPopupPositionProvider(iconBoundsInRoot = iconBoundsInRoot, gapPx = gapPx) { above, x ->
                 isAbove = above
                 arrowXPx = x
             }

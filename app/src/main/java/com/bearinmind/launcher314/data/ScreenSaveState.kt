@@ -410,3 +410,35 @@ fun setSettingsSelectedTab(context: Context, tab: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_SETTINGS_TAB, tab).apply()
 }
+
+// ============================================================================
+// WIDGET ROUNDED CORNERS
+// ============================================================================
+
+private const val KEY_WIDGET_ROUNDED_CORNERS_ENABLED = "widget_rounded_corners_enabled"
+private const val KEY_WIDGET_CORNER_RADIUS = "widget_corner_radius_percent"
+private const val DEFAULT_WIDGET_ROUNDED_CORNERS_ENABLED = true
+private const val DEFAULT_WIDGET_CORNER_RADIUS_PERCENT = 50  // 50% = 16dp out of 32dp max
+
+fun getWidgetRoundedCornersEnabled(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_WIDGET_ROUNDED_CORNERS_ENABLED, DEFAULT_WIDGET_ROUNDED_CORNERS_ENABLED)
+}
+
+fun setWidgetRoundedCornersEnabled(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_WIDGET_ROUNDED_CORNERS_ENABLED, enabled).apply()
+}
+
+fun getWidgetCornerRadiusPercent(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_WIDGET_CORNER_RADIUS, DEFAULT_WIDGET_CORNER_RADIUS_PERCENT)
+}
+
+fun setWidgetCornerRadiusPercent(context: Context, percent: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_WIDGET_CORNER_RADIUS, percent).apply()
+}
+
+/** Max corner radius in dp (100% maps to this value) */
+const val WIDGET_MAX_CORNER_RADIUS_DP = 32f

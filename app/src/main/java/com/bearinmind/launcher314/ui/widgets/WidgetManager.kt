@@ -226,6 +226,16 @@ object WidgetManager {
     }
 
     /**
+     * Re-apply rounded corner settings to all cached widget views.
+     * Called when the user changes the rounded corners toggle or radius.
+     */
+    fun refreshAllWidgetCorners(context: Context) {
+        for (view in widgetViews.values) {
+            view.applyRoundedCorners(context)
+        }
+    }
+
+    /**
      * Calculate the number of grid cells a widget needs.
      * Based on Fossify Launcher approach:
      * - On Android S+ (API 31), prefer targetCellWidth/targetCellHeight if non-zero

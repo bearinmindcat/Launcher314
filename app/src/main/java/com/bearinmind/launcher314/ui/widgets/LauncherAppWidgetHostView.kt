@@ -2,11 +2,17 @@ package com.bearinmind.launcher314.ui.widgets
 
 import android.appwidget.AppWidgetHostView
 import android.content.Context
+import android.graphics.Outline
 import android.graphics.PointF
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewOutlineProvider
+import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
+import com.bearinmind.launcher314.data.getWidgetRoundedCornersEnabled
+import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import kotlin.math.abs
 
 /**
@@ -21,13 +27,52 @@ import kotlin.math.abs
  */
 class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
 
+    private val density = context.resources.displayMetrics.density
     private val longPressHandler = Handler(Looper.getMainLooper())
     private val actionDownCoords = PointF()
     private val currentCoords = PointF()
     private var actionDownMS = 0L
 
     // Movement threshold (Fossify uses move_gesture_threshold / 4 ≈ 5dp)
-    private val moveGestureThreshold = (context.resources.displayMetrics.density * 5).toInt()
+    private val moveGestureThreshold = (density * 5).toInt()
+
+    /** Current corner radius in dp. Change this and call invalidateOutline() to update. */
+    private var cornerRadiusDp: Float = 0f
+
+    init {
+        applyRoundedCorners(context)
+    }
+
+    /**
+     * Read the user's rounded-corner preference and apply (or remove) clipping.
+     */
+    fun applyRoundedCorners(ctx: Context) {
+        val enabled = getWidgetRoundedCornersEnabled(ctx)
+        val percent = if (enabled) getWidgetCornerRadiusPercent(ctx) else 0
+        val radiusDp = percent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
+        cornerRadiusDp = radiusDp
+
+        if (radiusDp > 0f) {
+            clipToOutline = true
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) {
+                    val radiusPx = cornerRadiusDp * density
+                    outline.setRoundRect(0, 0, view.width, view.height, radiusPx)
+                }
+            }
+        } else {
+            clipToOutline = false
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+        }
+        invalidateOutline()
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        if (cornerRadiusDp > 0f) {
+            invalidateOutline()
+        }
+    }
 
     /** True if long-press was detected and fired */
     var hasLongPressed = false

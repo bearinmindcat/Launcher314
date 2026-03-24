@@ -524,7 +524,8 @@ internal fun MainDrawerContent(
                             // Combined dropdown menu
                                 AnimatedPopup(
                                     visible = showMenu,
-                                    onDismissRequest = { showMenu = false }
+                                    onDismissRequest = { showMenu = false },
+                                    gapDp = 4
                                 ) {
                                             // Sorting section header with direction toggle
                                             Box(

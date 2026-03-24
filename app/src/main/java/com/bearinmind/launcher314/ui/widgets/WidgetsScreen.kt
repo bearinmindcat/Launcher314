@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,8 +47,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.bearinmind.launcher314.data.getWidgetRoundedCornersEnabled
+import com.bearinmind.launcher314.data.setWidgetRoundedCornersEnabled
+import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
+import com.bearinmind.launcher314.data.setWidgetCornerRadiusPercent
+import androidx.compose.ui.graphics.graphicsLayer
+import com.bearinmind.launcher314.ui.components.AnimatedPopup
+import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
+import com.bearinmind.launcher314.ui.components.SliderConfigs
 
 /**
  * Data class representing a widget for display
@@ -89,6 +99,11 @@ fun WidgetsScreen(
     var appGroups by remember { mutableStateOf<List<AppWidgetGroup>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
+
+    // Settings popup state
+    var showMenu by remember { mutableStateOf(false) }
+    var widgetRoundedCornersEnabled by remember { mutableStateOf(getWidgetRoundedCornersEnabled(context)) }
+    var widgetCornerRadius by remember { mutableFloatStateOf(getWidgetCornerRadiusPercent(context).toFloat()) }
 
     // Track expanded state for each app group
     var expandedApps by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -270,12 +285,73 @@ fun WidgetsScreen(
                     )
                 },
                 trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                imageVector = Icons.Filled.Clear,
-                                contentDescription = "Clear search"
-                            )
+                    Row {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Clear,
+                                    contentDescription = "Clear search"
+                                )
+                            }
+                        }
+                        // 3-dot menu button
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.MoreVert,
+                                    contentDescription = "Menu"
+                                )
+                            }
+                            AnimatedPopup(
+                                visible = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                gapDp = 4
+                            ) {
+                                // Rounded corners toggle
+                                DropdownMenuItem(
+                                    text = { Text("Rounded corners") },
+                                    onClick = {
+                                        widgetRoundedCornersEnabled = !widgetRoundedCornersEnabled
+                                        setWidgetRoundedCornersEnabled(context, widgetRoundedCornersEnabled)
+                                        WidgetManager.refreshAllWidgetCorners(context)
+                                    },
+                                    trailingIcon = {
+                                        Switch(
+                                            checked = widgetRoundedCornersEnabled,
+                                            onCheckedChange = {
+                                                widgetRoundedCornersEnabled = it
+                                                setWidgetRoundedCornersEnabled(context, it)
+                                                WidgetManager.refreshAllWidgetCorners(context)
+                                            },
+                                            modifier = Modifier
+                                                .height(20.dp)
+                                                .graphicsLayer(scaleX = 0.75f, scaleY = 0.75f)
+                                        )
+                                    }
+                                )
+
+                                // Corner radius slider (only when enabled)
+                                if (widgetRoundedCornersEnabled) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 24.dp)
+                                            .padding(bottom = 4.dp)
+                                    ) {
+                                        ThumbDragHorizontalSlider(
+                                            currentValue = widgetCornerRadius,
+                                            config = SliderConfigs.cornerRoundness,
+                                            onValueChange = { newVal ->
+                                                widgetCornerRadius = newVal
+                                                setWidgetCornerRadiusPercent(context, newVal.roundToInt())
+                                            },
+                                            onValueChangeFinished = {
+                                                WidgetManager.refreshAllWidgetCorners(context)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 },
