@@ -29,6 +29,28 @@ private fun resolveIconDrawable(context: Context, packageName: String): android.
     return context.packageManager.getApplicationIcon(packageName)
 }
 
+/**
+ * Clear all cached icon files for a specific package across all cache directories.
+ * Called when an app is installed, updated, or its icon changes.
+ */
+fun clearCachedIconsForPackage(context: Context, packageName: String) {
+    val cacheDirs = listOf(
+        File(context.cacheDir, "app_icons"),
+        File(context.cacheDir, "icon_pack_cache"),
+        File(context.filesDir, "global_shaped_icons"),
+        File(context.filesDir, "bg_color_shaped_icons"),
+        File(context.filesDir, "shaped_exp_icons"),
+        File(context.filesDir, "shaped_bg_tinted_icons"),
+        File(context.filesDir, "bg_tinted_icons"),
+        File(context.filesDir, "foreground_icons")
+    )
+    cacheDirs.forEach { dir ->
+        if (dir.exists()) {
+            dir.listFiles()?.filter { it.name.startsWith(packageName) }?.forEach { it.delete() }
+        }
+    }
+}
+
 fun getGlobalShapedDir(context: Context): File {
     val dir = File(context.filesDir, "global_shaped_icons")
     if (!dir.exists()) dir.mkdirs()

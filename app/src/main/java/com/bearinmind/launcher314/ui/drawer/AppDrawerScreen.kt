@@ -7,6 +7,7 @@ import com.bearinmind.launcher314.data.loadAppCustomizations
 import com.bearinmind.launcher314.data.setCustomization
 import com.bearinmind.launcher314.data.removeCustomization
 import com.bearinmind.launcher314.ui.home.AppCustomizeDialog
+import com.bearinmind.launcher314.helpers.clearCachedIconsForPackage
 import androidx.compose.runtime.snapshotFlow
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -277,6 +278,11 @@ fun AppDrawerScreen(
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
+                // Clear cached icons for the changed package so they regenerate fresh
+                val packageName = intent.data?.schemeSpecificPart
+                if (packageName != null) {
+                    clearCachedIconsForPackage(ctx, packageName)
+                }
                 appRefreshTrigger++
             }
         }
