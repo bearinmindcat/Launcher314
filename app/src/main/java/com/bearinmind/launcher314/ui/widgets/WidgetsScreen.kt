@@ -6,6 +6,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
@@ -42,6 +46,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +59,7 @@ import com.bearinmind.launcher314.data.getWidgetRoundedCornersEnabled
 import com.bearinmind.launcher314.data.setWidgetRoundedCornersEnabled
 import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
 import com.bearinmind.launcher314.data.setWidgetCornerRadiusPercent
+import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import androidx.compose.ui.graphics.graphicsLayer
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
@@ -395,6 +401,11 @@ fun WidgetsScreen(
                     }
                 }
             } else {
+                val density = LocalDensity.current
+                val cornerRadiusPx = if (widgetRoundedCornersEnabled) {
+                    with(density) { (widgetCornerRadius / 100f * WIDGET_MAX_CORNER_RADIUS_DP).dp.toPx() }
+                } else 0f
+
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
@@ -405,6 +416,7 @@ fun WidgetsScreen(
                         WidgetAppSection(
                             appGroup = appGroup,
                             isExpanded = expandedApps.contains(appGroup.packageName),
+                            cornerRadiusPx = cornerRadiusPx,
                             onToggleExpand = {
                                 expandedApps = if (expandedApps.contains(appGroup.packageName)) {
                                     expandedApps - appGroup.packageName
@@ -430,7 +442,8 @@ private fun WidgetAppSection(
     appGroup: AppWidgetGroup,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
-    onWidgetSelected: (WidgetInfo) -> Unit = {}
+    onWidgetSelected: (WidgetInfo) -> Unit = {},
+    cornerRadiusPx: Float = 0f
 ) {
     val rotationAngle by animateFloatAsState(
         targetValue = if (isExpanded) -90f else 0f,
@@ -512,6 +525,7 @@ private fun WidgetAppSection(
                 items(appGroup.widgets) { widget ->
                     WidgetPreviewCard(
                         widget = widget,
+                        cornerRadiusPx = cornerRadiusPx,
                         onLongPress = { onWidgetSelected(widget) }
                     )
                 }
@@ -532,11 +546,18 @@ private fun WidgetAppSection(
 @Composable
 private fun WidgetPreviewCard(
     widget: WidgetInfo,
+    cornerRadiusPx: Float = 0f,
     onLongPress: () -> Unit = {}
 ) {
     val cardWidth = 140.dp
     val previewHeight = 100.dp
     val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    // Pre-round the preview bitmap so corners are clipped without morphing
+    val displayPreview = remember(widget.previewImage, cornerRadiusPx) {
+        val src = widget.previewImage ?: return@remember null
+        if (cornerRadiusPx > 0f) roundBitmapCorners(src, cornerRadiusPx) else src
+    }
 
     Column(
         modifier = Modifier
@@ -556,13 +577,12 @@ private fun WidgetPreviewCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(previewHeight)
-                .clip(RoundedCornerShape(8.dp)),
+                .height(previewHeight),
             contentAlignment = Alignment.Center
         ) {
-            if (widget.previewImage != null) {
+            if (displayPreview != null) {
                 Image(
-                    bitmap = widget.previewImage.asImageBitmap(),
+                    bitmap = displayPreview.asImageBitmap(),
                     contentDescription = widget.label,
                     modifier = Modifier
                         .fillMaxSize()
@@ -720,6 +740,26 @@ private fun calculateCellCount(sizeInPixels: Int, density: Float): Int {
     val sizeInDp = sizeInPixels / density
     val cells = kotlin.math.ceil((sizeInDp - 30) / 70.0).toInt()
     return maxOf(cells, 1)
+}
+
+/**
+ * Returns a new bitmap with rounded corners applied via PorterDuff masking.
+ * The source bitmap is drawn at its original aspect ratio — no stretching.
+ */
+private fun roundBitmapCorners(source: Bitmap, radiusPx: Float): Bitmap {
+    val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(output)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val rect = RectF(0f, 0f, source.width.toFloat(), source.height.toFloat())
+
+    // Draw rounded rect as mask
+    canvas.drawRoundRect(rect, radiusPx, radiusPx, paint)
+
+    // Draw source bitmap using SRC_IN so only the masked area shows
+    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+    canvas.drawBitmap(source, 0f, 0f, paint)
+
+    return output
 }
 
 private fun drawableToBitmap(drawable: Drawable): Bitmap {
