@@ -1435,10 +1435,15 @@ fun LauncherScreen(
         dropScope.launch { pagerState.scrollToPage(dropPage) }
 
         // Calculate overlay-based target: animate the bitmap overlay from current
-        // screen position to the target cell position
+        // screen position to the target cell position (or stacking target's origin)
         val overlayTargetOffset = if (finalValid && finalCol != null && finalRow != null) {
-            val targetCellIndex = finalRow * gridColumns + finalCol
-            val targetCellPos = cellPositions[targetCellIndex]
+            val animTargetIndex = if (droppingOnWidget != null) {
+                // Animate to the target widget's origin cell
+                droppingOnWidget.gridRow * gridColumns + droppingOnWidget.gridColumn
+            } else {
+                finalRow * gridColumns + finalCol
+            }
+            val targetCellPos = cellPositions[animTargetIndex]
             if (targetCellPos != null) {
                 Offset(
                     targetCellPos.x - widgetDragScreenPos.x,
@@ -2404,7 +2409,7 @@ fun LauncherScreen(
                                                     scaleX = widgetScale
                                                     scaleY = widgetScale
                                                     // Hide original during drag AND drop animation (overlay handles both)
-                                                    alpha = if (isThisWidgetDragging && widgetDragBitmap != null) 0f else widgetAlpha
+                                                    alpha = if ((isThisWidgetDragging || isThisWidgetDropAnimating) && widgetDragBitmap != null) 0f else widgetAlpha
                                                 }
                                                 // Gesture handler for long-press + drag (like apps)
                                                 // Key includes span so lambda refreshes after resize
