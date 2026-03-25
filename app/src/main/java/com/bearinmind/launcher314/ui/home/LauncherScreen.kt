@@ -557,6 +557,9 @@ fun LauncherScreen(
     // Widget original cells - cells occupied by widget before drag (should show blue, not red)
     var widgetOriginalCells by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
+    // True when dragged widget is hovering over another widget (stack target)
+    var isWidgetOverWidget by remember { mutableStateOf(false) }
+
     // Widget drop animation state
     val widgetDropAnim = remember { Animatable(0f) }
     var isWidgetDropAnimating by remember { mutableStateOf(false) }
@@ -674,8 +677,14 @@ fun LauncherScreen(
     fun buildGridCellsForPage(page: Int): List<HomeGridCell> {
         val cells = MutableList<HomeGridCell>(totalCells) { HomeGridCell.Empty }
 
-        // Place widgets for this specific page
-        placedWidgets.filter { it.page == page }.forEach { widget ->
+        // Place widgets for this specific page (only primary widget per stack)
+        val seenStacks = mutableSetOf<String>()
+        placedWidgets.filter { it.page == page }.filter { w ->
+            val sid = w.stackId
+            if (sid == null) true
+            else if (seenStacks.contains(sid)) false
+            else { seenStacks.add(sid); true }
+        }.forEach { widget ->
             val originPos = widget.gridRow * gridColumns + widget.gridColumn
             if (originPos < totalCells) {
                 cells[originPos] = HomeGridCell.Widget(widget, originPos)
@@ -755,11 +764,26 @@ fun LauncherScreen(
         val targetCol = dropTarget?.first ?: -1
         val targetRow = dropTarget?.second ?: -1
         if (targetCol >= 0 && targetRow >= 0) {
-            hoveredWidgetCells = getWidgetTargetCells(widget, targetCol, targetRow, gridColumns, gridRows)
-            isWidgetDropTargetValid = canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
+            val targetCells = getWidgetTargetCells(widget, targetCol, targetRow, gridColumns, gridRows)
+            hoveredWidgetCells = targetCells
+            val draggedSid = widget.stackId
+            val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage && (draggedSid == null || it.stackId != draggedSid) }
+            val hoveringOverWidget = otherWidgets.any { other ->
+                val otherCells = mutableSetOf<Int>()
+                for (r in other.startRow until other.startRow + other.rowSpan) {
+                    for (c in other.startColumn until other.startColumn + other.columnSpan) {
+                        otherCells.add(r * gridColumns + c)
+                    }
+                }
+                targetCells.any { otherCells.contains(it) }
+            }
+            isWidgetOverWidget = hoveringOverWidget
+            isWidgetDropTargetValid = if (hoveringOverWidget) true
+                else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
         } else {
             hoveredWidgetCells = emptySet()
             isWidgetDropTargetValid = true
+            isWidgetOverWidget = false
         }
     }
 
@@ -1332,6 +1356,7 @@ fun LauncherScreen(
         val widget = widgetDragState.draggedWidget ?: run {
             widgetDragState = WidgetDragState()
             widgetDragBitmap = null
+            isWidgetOverWidget = false
             return
         }
         val dropPage = pagerState.targetPage
@@ -1344,14 +1369,32 @@ fun LauncherScreen(
         )
         val finalCol = finalTarget?.first
         val finalRow = finalTarget?.second
-        val finalValid = if (finalTarget != null) {
-            canPlaceWidgetAt(widget, finalCol!!, finalRow!!, gridColumns, gridRows, buildGridCellsForPage(dropPage))
-        } else false
+        // Check if dropping on another widget (for stacking)
+        val droppingOnWidget = if (finalTarget != null) {
+            val targetCells = getWidgetTargetCells(widget, finalCol!!, finalRow!!, gridColumns, gridRows)
+            val dropSid = widget.stackId
+            val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == dropPage && (dropSid == null || it.stackId != dropSid) }
+            otherWidgets.find { other ->
+                val otherCells = mutableSetOf<Int>()
+                for (r in other.startRow until other.startRow + other.rowSpan) {
+                    for (c in other.startColumn until other.startColumn + other.columnSpan) {
+                        otherCells.add(r * gridColumns + c)
+                    }
+                }
+                targetCells.any { otherCells.contains(it) }
+            }
+        } else null
+
+        val finalValid = if (droppingOnWidget != null) true
+            else if (finalTarget != null) {
+                canPlaceWidgetAt(widget, finalCol!!, finalRow!!, gridColumns, gridRows, buildGridCellsForPage(dropPage))
+            } else false
 
         val currentDragOffset = widgetDragState.dragOffset
 
         hoveredWidgetCells = emptySet()
         isWidgetDropTargetValid = true
+        isWidgetOverWidget = false
 
         val isCrossPage = widgetDragSourcePage != dropPage
 
@@ -1415,7 +1458,12 @@ fun LauncherScreen(
             isWidgetDropAnimating = true
             widgetDropAnim.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
             if (finalValid && finalCol != null && finalRow != null) {
-                placedWidgets = handleWidgetMove(context, widget, finalCol, finalRow, dropPage)
+                if (droppingOnWidget != null) {
+                    // Stack the dragged widget onto the target widget
+                    placedWidgets = WidgetManager.stackWidgets(context, widget.appWidgetId, droppingOnWidget.appWidgetId)
+                } else {
+                    placedWidgets = handleWidgetMove(context, widget, finalCol, finalRow, dropPage)
+                }
             }
             // Clear drag state first — composable becomes visible underneath overlay
             widgetDragState = WidgetDragState()
@@ -1760,11 +1808,27 @@ fun LauncherScreen(
                                 val targetCol = dropTarget?.first ?: -1
                                 val targetRow = dropTarget?.second ?: -1
                                 if (targetCol >= 0 && targetRow >= 0) {
-                                    hoveredWidgetCells = getWidgetTargetCells(widget, targetCol, targetRow, gridColumns, gridRows)
-                                    isWidgetDropTargetValid = canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
+                                    val targetCells = getWidgetTargetCells(widget, targetCol, targetRow, gridColumns, gridRows)
+                                    hoveredWidgetCells = targetCells
+
+                                    val draggedSid2 = widget.stackId
+                                    val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage && (draggedSid2 == null || it.stackId != draggedSid2) }
+                                    val hoveringOverWidget = otherWidgets.any { other ->
+                                        val otherCells = mutableSetOf<Int>()
+                                        for (r in other.startRow until other.startRow + other.rowSpan) {
+                                            for (c in other.startColumn until other.startColumn + other.columnSpan) {
+                                                otherCells.add(r * gridColumns + c)
+                                            }
+                                        }
+                                        targetCells.any { otherCells.contains(it) }
+                                    }
+                                    isWidgetOverWidget = hoveringOverWidget
+                                    isWidgetDropTargetValid = if (hoveringOverWidget) true
+                                        else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
                                 } else {
                                     hoveredWidgetCells = emptySet()
                                     isWidgetDropTargetValid = true
+                                    isWidgetOverWidget = false
                                 }
                             } else {
                                 performWidgetDrop()
@@ -1933,10 +1997,9 @@ fun LauncherScreen(
                                     val isDropTarget = draggedItemIndex != null && (draggedItemIndex != index || page != dragSourcePage)
                                     // Check if this cell is hovered by:
                                     // - App drag (hoveredGridCell)
-                                    // - Widget drop target (hoveredWidgetCells)
-                                    // Widget original cells act like normal cells - only show hover when widget is over them
+                                    // - Widget drop target (hoveredWidgetCells) — but NOT during widget-over-widget (stacking)
                                     val isHovered = hoveredGridCell == index ||
-                                                    hoveredWidgetCells.contains(index)
+                                                    (hoveredWidgetCells.contains(index) && !isWidgetOverWidget)
                                     // Any item dragging includes both apps and widgets
                                     // Exclude drop animation so "+" markers disappear instantly on release
                                     val isAnyDragging = (draggedItemIndex != null && !isDropAnimating) || (widgetDragState.draggedWidget != null && !isWidgetDropAnimating)
@@ -2246,7 +2309,14 @@ fun LauncherScreen(
                             // Inside the same Box as the grid, so widgets respect the same padded bounds
                             // Widgets now support direct long-press + drag (like apps)
                             if (cellSize.width > 0 && cellSize.height > 0) {
-                                placedWidgets.filter { it.page == page }.forEach { widget ->
+                                // Filter widgets for this page, skipping non-primary stacked widgets
+                                val processedStacks = mutableSetOf<String>()
+                                placedWidgets.filter { it.page == page }.filter { widget ->
+                                    val sid = widget.stackId
+                                    if (sid == null) true // standalone widget
+                                    else if (processedStacks.contains(sid)) false // already handled
+                                    else { processedStacks.add(sid); true } // first in stack
+                                }.forEach { widget ->
                                     val originCellIndex = widget.gridRow * gridColumns + widget.gridColumn
                                     val originCellPos = cellPositions[originCellIndex]
 
@@ -2395,12 +2465,22 @@ fun LauncherScreen(
                                                                             widgetOriginalCells = originalCells
 
                                                                             // Capture widget bitmap for root-level drag overlay (above dock bar)
+                                                                            // For stacked widgets, capture the currently visible widget
                                                                             try {
-                                                                                val wv = WidgetManager.getWidgetView(widget.appWidgetId)
-                                                                                if (wv != null && wv.width > 0 && wv.height > 0) {
-                                                                                    widgetDragBitmap = wv.drawToBitmap().asImageBitmap()
-                                                                                    widgetDragScreenPos = widgetBaseScreenPos
-                                                                                    widgetDragSizePx = Pair(widgetWidth, widgetHeight)
+                                                                                val stackedWidgets = if (widget.stackId != null) {
+                                                                                    WidgetManager.getStackWidgets(placedWidgets, widget.stackId!!)
+                                                                                } else listOf(widget)
+                                                                                // Try each widget in the stack until we get a valid bitmap
+                                                                                var captured = false
+                                                                                for (sw in stackedWidgets) {
+                                                                                    val wv = WidgetManager.getWidgetView(sw.appWidgetId)
+                                                                                    if (wv != null && wv.width > 0 && wv.height > 0) {
+                                                                                        widgetDragBitmap = wv.drawToBitmap().asImageBitmap()
+                                                                                        widgetDragScreenPos = widgetBaseScreenPos
+                                                                                        widgetDragSizePx = Pair(widgetWidth, widgetHeight)
+                                                                                        captured = true
+                                                                                        break
+                                                                                    }
                                                                                 }
                                                                             } catch (_: Exception) {}
 
@@ -2457,11 +2537,27 @@ fun LauncherScreen(
                                                                                 val targetCells = getWidgetTargetCells(widget, targetCol, targetRow, gridColumns, gridRows)
                                                                                 hoveredWidgetCells = targetCells
 
+                                                                                // Check if hovering over another widget (for stacking)
+                                                                                val draggedSid3 = widget.stackId
+                                                                                val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage && (draggedSid3 == null || it.stackId != draggedSid3) }
+                                                                                val hoveringOverWidget = otherWidgets.any { other ->
+                                                                                    val otherCells = mutableSetOf<Int>()
+                                                                                    for (r in other.startRow until other.startRow + other.rowSpan) {
+                                                                                        for (c in other.startColumn until other.startColumn + other.columnSpan) {
+                                                                                            otherCells.add(r * gridColumns + c)
+                                                                                        }
+                                                                                    }
+                                                                                    targetCells.any { otherCells.contains(it) }
+                                                                                }
+                                                                                isWidgetOverWidget = hoveringOverWidget
+
                                                                                 // Check if placement is valid on the current target page
-                                                                                isWidgetDropTargetValid = canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
+                                                                                isWidgetDropTargetValid = if (hoveringOverWidget) true
+                                                                                    else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
                                                                             } else {
                                                                                 hoveredWidgetCells = emptySet()
                                                                                 isWidgetDropTargetValid = true
+                                                                                isWidgetOverWidget = false
                                                                             }
                                                                         }
                                                                     } else {
@@ -2500,6 +2596,7 @@ fun LauncherScreen(
                                                                         hoveredWidgetCells = emptySet()
                                                                         widgetOriginalCells = emptySet()
                                                                         isWidgetDropTargetValid = true
+                                                                        isWidgetOverWidget = false
                                                                         widgetDragBitmap = null
                                                                     }
                                                                 } else {
@@ -2507,6 +2604,7 @@ fun LauncherScreen(
                                                                     hoveredWidgetCells = emptySet()
                                                                     widgetOriginalCells = emptySet()
                                                                     isWidgetDropTargetValid = true
+                                                                    isWidgetOverWidget = false
                                                                     widgetDragBitmap = null
                                                                 }
                                                                 localDragStarted = false
@@ -2529,9 +2627,13 @@ fun LauncherScreen(
                                                 draggedItemIndex != null
 
                                             // Check if another widget is being dragged/resized over this widget
-                                            // Exclude if THIS widget is the one being resized (hoveredWidgetCells will contain its own cells)
+                                            // Exclude: this widget being dragged, resized, same stack as dragged widget, or during drop animation
+                                            val draggedStackId = widgetDragState.draggedWidget?.stackId
+                                            val isInSameStackAsDragged = draggedStackId != null && widget.stackId == draggedStackId
                                             val isOtherWidgetHoveringOverThis = !isThisWidgetDragging &&
                                                 !isThisWidgetResizing &&
+                                                !isInSameStackAsDragged &&
+                                                !isWidgetDropAnimating &&
                                                 hoveredWidgetCells.isNotEmpty() &&
                                                 thisWidgetCells.any { hoveredWidgetCells.contains(it) }
 
@@ -2539,11 +2641,12 @@ fun LauncherScreen(
                                             // 1. This widget is being dragged over an invalid target
                                             // 2. This widget is being resized to an invalid size (overlapping)
                                             // 3. An app is being dragged over this widget (can't drop on widget)
-                                            // 4. Another widget is being dragged over this widget (can't drop on widget)
                                             val showWidgetRedTint = (isThisWidgetDragging && !isWidgetDropTargetValid) ||
                                                 (isThisWidgetResizing && !isWidgetDropTargetValid) ||
-                                                isAppHoveringOverThisWidget ||
-                                                isOtherWidgetHoveringOverThis
+                                                isAppHoveringOverThisWidget
+
+                                            // Apply blue tint when another widget is hovering over this one (stack target)
+                                            val showWidgetBlueTint = isOtherWidgetHoveringOverThis
 
                                             Box(
                                                 modifier = Modifier
@@ -2554,27 +2657,90 @@ fun LauncherScreen(
                                                     }
                                                     .drawWithContent {
                                                         drawContent() // Draw the widget first
-                                                        // Draw red ONLY on widget's visible content using SrcAtop blend
+                                                        // Draw tint ONLY on widget's visible content using SrcAtop blend
                                                         if (showWidgetRedTint) {
                                                             drawRect(
                                                                 color = Color(0xFFFF6B6B).copy(alpha = 0.5f),
                                                                 blendMode = BlendMode.SrcAtop
                                                             )
+                                                        } else if (showWidgetBlueTint) {
+                                                            drawRect(
+                                                                color = Color(0xFF1A3D7A).copy(alpha = 0.7f),
+                                                                blendMode = BlendMode.SrcAtop
+                                                            )
                                                         }
                                                     }
                                             ) {
-                                                WidgetHostView(
-                                                    placedWidget = widget,
-                                                    modifier = Modifier.fillMaxSize(),
-                                                    onLongPress = {
-                                                        // Long press is now handled by the container's gesture handler
-                                                        // This callback can be used for additional feedback if needed
-                                                    },
-                                                    onRemove = {
-                                                        WidgetManager.removePlacedWidget(context, widget.appWidgetId)
-                                                        placedWidgets = WidgetManager.loadPlacedWidgets(context)
+                                                val stackWidgets = if (widget.stackId != null) {
+                                                    WidgetManager.getStackWidgets(placedWidgets, widget.stackId!!)
+                                                } else listOf(widget)
+
+                                                if (stackWidgets.size > 1) {
+                                                    // Stacked widgets — swipeable pager with nav-style dots inside widget
+                                                    val stackPagerState = rememberPagerState(pageCount = { stackWidgets.size })
+                                                    val stackDotBaseColor = getScrollbarColor(context)
+                                                    val stackDotIntensity = getScrollbarIntensity(context)
+                                                    val stackDotColor = remember(stackDotBaseColor, stackDotIntensity) {
+                                                        val base = Color(stackDotBaseColor)
+                                                        val factor = (stackDotIntensity / 100f).coerceIn(0f, 1f)
+                                                        Color(
+                                                            red = base.red * factor,
+                                                            green = base.green * factor,
+                                                            blue = base.blue * factor,
+                                                            alpha = base.alpha
+                                                        )
                                                     }
-                                                )
+                                                    val stackDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
+
+                                                    Box(modifier = Modifier.fillMaxSize()) {
+                                                        HorizontalPager(
+                                                            state = stackPagerState,
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            userScrollEnabled = !isThisWidgetDragging
+                                                        ) { stackPage ->
+                                                            WidgetHostView(
+                                                                placedWidget = stackWidgets[stackPage],
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                onLongPress = {},
+                                                                onRemove = {
+                                                                    WidgetManager.removePlacedWidget(context, stackWidgets[stackPage].appWidgetId)
+                                                                    placedWidgets = WidgetManager.loadPlacedWidgets(context)
+                                                                }
+                                                            )
+                                                        }
+                                                        // Page dots (same style as home screen nav dots, inside widget)
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .align(Alignment.BottomCenter)
+                                                                .padding(bottom = 4.dp),
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            repeat(stackWidgets.size) { dotIndex ->
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(stackDotSize)
+                                                                        .clip(CircleShape)
+                                                                        .background(
+                                                                            if (stackPagerState.currentPage == dotIndex)
+                                                                                stackDotColor.copy(alpha = 0.9f)
+                                                                            else stackDotColor.copy(alpha = 0.3f)
+                                                                        )
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Single widget (no stack)
+                                                    WidgetHostView(
+                                                        placedWidget = widget,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        onLongPress = {},
+                                                        onRemove = {
+                                                            WidgetManager.removePlacedWidget(context, widget.appWidgetId)
+                                                            placedWidgets = WidgetManager.loadPlacedWidgets(context)
+                                                        }
+                                                    )
+                                                }
                                             }
 
                                             // Widget context menu (shown on long-press, hidden if user drags)
@@ -3228,7 +3394,8 @@ fun LauncherScreen(
         // Show during active drag AND during drop animation (overlay stays visible
         // until composable has rendered underneath, preventing flash on transition)
         if (widgetDragBitmap != null && (isWidgetBeingDragged || isWidgetDropAnimating)) {
-            val showOverlayRedTint = !isWidgetDropTargetValid
+            val showOverlayRedTint = !isWidgetDropTargetValid && !isWidgetOverWidget
+            val showOverlayBlueTint = isWidgetOverWidget
             Box(
                 modifier = Modifier
                     .size(
@@ -3259,6 +3426,11 @@ fun LauncherScreen(
                         if (showOverlayRedTint) {
                             drawRect(
                                 color = Color(0xFFFF6B6B).copy(alpha = 0.5f),
+                                blendMode = BlendMode.SrcAtop
+                            )
+                        } else if (showOverlayBlueTint) {
+                            drawRect(
+                                color = Color(0xFF1A3D7A).copy(alpha = 0.7f),
                                 blendMode = BlendMode.SrcAtop
                             )
                         }

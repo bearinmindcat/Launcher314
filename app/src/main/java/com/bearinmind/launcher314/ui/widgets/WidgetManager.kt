@@ -27,7 +27,9 @@ data class PlacedWidget(
     val startRow: Int,      // Starting row index
     val columnSpan: Int,    // Width in cells
     val rowSpan: Int,       // Height in cells
-    val page: Int = 0       // Home screen page (default 0 for backward compat)
+    val page: Int = 0,      // Home screen page (default 0 for backward compat)
+    val stackId: String? = null,  // Non-null when widget is part of a stack
+    val stackOrder: Int = 0       // Order within the stack (0 = first/primary)
 ) {
     // Compatibility aliases
     val gridColumn: Int get() = startColumn
@@ -233,6 +235,71 @@ object WidgetManager {
         for (view in widgetViews.values) {
             view.applyRoundedCorners(context)
         }
+    }
+
+    /**
+     * Stack two widgets together. The dropped widget takes the target widget's position/size.
+     * Both widgets get the same stackId.
+     */
+    fun stackWidgets(context: Context, droppedWidgetId: Int, targetWidgetId: Int): List<PlacedWidget> {
+        val widgets = loadPlacedWidgets(context).toMutableList()
+        val target = widgets.find { it.appWidgetId == targetWidgetId } ?: return widgets
+        val dropped = widgets.find { it.appWidgetId == droppedWidgetId } ?: return widgets
+
+        // Use existing stackId or create a new one
+        val stackId = target.stackId ?: "stack_${System.currentTimeMillis()}"
+
+        // Find the highest stackOrder in this stack
+        val maxOrder = widgets.filter { it.stackId == stackId }.maxOfOrNull { it.stackOrder } ?: 0
+
+        // Update target to be in the stack (if not already)
+        val updatedWidgets = widgets.map { w ->
+            when (w.appWidgetId) {
+                targetWidgetId -> w.copy(stackId = stackId, stackOrder = if (w.stackId == null) 0 else w.stackOrder)
+                droppedWidgetId -> w.copy(
+                    stackId = stackId,
+                    stackOrder = maxOrder + 1,
+                    startColumn = target.startColumn,
+                    startRow = target.startRow,
+                    columnSpan = target.columnSpan,
+                    rowSpan = target.rowSpan,
+                    page = target.page
+                )
+                else -> w
+            }
+        }
+
+        savePlacedWidgets(context, updatedWidgets)
+        return updatedWidgets
+    }
+
+    /**
+     * Unstack a widget — remove it from its stack and place it standalone.
+     */
+    fun unstackWidget(context: Context, appWidgetId: Int): List<PlacedWidget> {
+        val widgets = loadPlacedWidgets(context).toMutableList()
+        val widget = widgets.find { it.appWidgetId == appWidgetId } ?: return widgets
+        val stackId = widget.stackId ?: return widgets
+
+        val updatedWidgets = widgets.map { w ->
+            if (w.appWidgetId == appWidgetId) {
+                w.copy(stackId = null, stackOrder = 0)
+            } else if (w.stackId == stackId) {
+                // If only one widget remains in the stack, dissolve the stack
+                val remainingInStack = widgets.count { it.stackId == stackId && it.appWidgetId != appWidgetId }
+                if (remainingInStack <= 1) w.copy(stackId = null, stackOrder = 0) else w
+            } else w
+        }
+
+        savePlacedWidgets(context, updatedWidgets)
+        return updatedWidgets
+    }
+
+    /**
+     * Get all widgets in a stack, ordered by stackOrder.
+     */
+    fun getStackWidgets(widgets: List<PlacedWidget>, stackId: String): List<PlacedWidget> {
+        return widgets.filter { it.stackId == stackId }.sortedBy { it.stackOrder }
     }
 
     /**
