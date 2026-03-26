@@ -886,7 +886,10 @@ internal fun MainDrawerContent(
                                                     draggedIconPath = if (hoveredFolderKey == "folder_${cellItem.id}" && drawerDraggedItem is AppInfo)
                                                         (drawerDraggedItem as AppInfo).iconPath
                                                     else if (escapeHoverState?.folderId == cellItem.id) escapeHoverState.iconPath
-                                                    else null
+                                                    else null,
+                                                    iconClipShape = iconClipShape,
+                                                    iconBgColor = iconBgColor,
+                                                    globalIconShapeName = globalIconShapeName
                                                 )
                                             } else if (cellItem is AppInfo) {
                                                 val selectedApps = filteredApps.filter { it.packageName in selectedAppPackages }
@@ -1081,7 +1084,10 @@ internal fun MainDrawerContent(
                                 draggedIconPath = if (hoveredFolderKey == cellKey && drawerDraggedItem is AppInfo)
                                     (drawerDraggedItem as AppInfo).iconPath
                                 else if (escapeHoverState?.folderId == folder.id) escapeHoverState.iconPath
-                                else null
+                                else null,
+                                iconClipShape = iconClipShape,
+                                iconBgColor = iconBgColor,
+                                globalIconShapeName = globalIconShapeName
                             )
                         }
                     }

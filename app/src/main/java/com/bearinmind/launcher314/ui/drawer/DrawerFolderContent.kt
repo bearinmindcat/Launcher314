@@ -59,6 +59,8 @@ import coil.compose.AsyncImage
 import com.bearinmind.launcher314.data.AppFolder
 import com.bearinmind.launcher314.data.AppInfo
 import com.bearinmind.launcher314.data.launchApp
+import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
+import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
 import com.bearinmind.launcher314.ui.components.GridCellHoverIndicator
@@ -90,7 +92,10 @@ internal fun FolderContentScreen(
     onReorderApps: (List<String>) -> Unit = {},
     onEscapeToDrawer: (AppInfo, Offset) -> Unit = { _, _ -> },
     onEscapeDragMove: (Offset) -> Unit = {},
-    onEscapeDragEnd: () -> Unit = {}
+    onEscapeDragEnd: () -> Unit = {},
+    iconClipShape: androidx.compose.ui.graphics.Shape? = null,
+    iconBgColor: Int? = null,
+    globalIconShapeName: String? = null
 ) {
     val context = LocalContext.current
     val hapticFeedback = rememberHapticFeedback()
@@ -605,11 +610,21 @@ internal fun FolderContentScreen(
                                                     .graphicsLayer { clip = false },
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
+                                                val shapedPath = if (globalIconShapeName != null) {
+                                                    try {
+                                                        if (iconBgColor != null) getOrGenerateBgColorShapedIcon(context, cellApp.packageName, globalIconShapeName, iconBgColor)
+                                                        else getOrGenerateGlobalShapedIcon(context, cellApp.packageName, globalIconShapeName)
+                                                    } catch (_: Exception) { null }
+                                                } else null
+                                                val displayPath = shapedPath ?: cellApp.iconPath
+                                                val isShaped = shapedPath != null
                                                 AsyncImage(
-                                                    model = File(cellApp.iconPath),
+                                                    model = File(displayPath),
                                                     contentDescription = cellApp.name,
-                                                    contentScale = ContentScale.Fit,
-                                                    modifier = Modifier.size(iconSize.dp)
+                                                    contentScale = if (isShaped) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
+                                                    modifier = Modifier
+                                                        .size(iconSize.dp)
+                                                        .then(if (!isShaped && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
                                                 )
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(

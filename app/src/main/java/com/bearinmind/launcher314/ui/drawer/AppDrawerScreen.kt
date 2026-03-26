@@ -634,6 +634,9 @@ fun AppDrawerScreen(
                         iconSize = iconSize,
                         labelFontSize = appLabelFontSize,
                         labelFontFamily = selectedFontFamily,
+                        iconClipShape = getIconShape(globalIconShape),
+                        iconBgColor = globalIconBgColor,
+                        globalIconShapeName = globalIconShape,
                         onBack = {
                             isFolderVisible = false
                             // Delay clearing openFolder until animation completes

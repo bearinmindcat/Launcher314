@@ -81,7 +81,10 @@ internal fun FolderItem(
     onDragMoved: ((Offset) -> Unit)? = null,
     onDragEnded: (() -> Unit)? = null,
     isDragHovered: Boolean = false,
-    draggedIconPath: String? = null
+    draggedIconPath: String? = null,
+    iconClipShape: androidx.compose.ui.graphics.Shape? = null,
+    iconBgColor: Int? = null,
+    globalIconShapeName: String? = null
 ) {
     val hapticFeedback = rememberHapticFeedback()
     var showContextMenu by remember { mutableStateOf(false) }
@@ -273,7 +276,7 @@ internal fun FolderItem(
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                             previewApps.getOrNull(0)?.let { app ->
-                                FolderPreviewIcon(app, miniIconSize)
+                                FolderPreviewIcon(app, miniIconSize, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
                             } ?: if (addSlotIndex == 0 && draggedIconPath != null && dragIconProgress > 0f) {
                                 AsyncImage(
                                     model = File(draggedIconPath),
@@ -288,7 +291,7 @@ internal fun FolderItem(
                                 Spacer(modifier = Modifier.size(miniIconSize))
                             }
                             previewApps.getOrNull(1)?.let { app ->
-                                FolderPreviewIcon(app, miniIconSize)
+                                FolderPreviewIcon(app, miniIconSize, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
                             } ?: if (addSlotIndex == 1 && draggedIconPath != null && dragIconProgress > 0f) {
                                 AsyncImage(
                                     model = File(draggedIconPath),
@@ -305,7 +308,7 @@ internal fun FolderItem(
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                             previewApps.getOrNull(2)?.let { app ->
-                                FolderPreviewIcon(app, miniIconSize)
+                                FolderPreviewIcon(app, miniIconSize, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
                             } ?: if (addSlotIndex == 2 && draggedIconPath != null && dragIconProgress > 0f) {
                                 AsyncImage(
                                     model = File(draggedIconPath),
@@ -325,7 +328,10 @@ internal fun FolderItem(
                                     previewApps.getOrNull(3)?.let { app ->
                                         FolderPreviewIcon(
                                             app, miniIconSize,
-                                            alpha = 1f - dragIconProgress
+                                            alpha = 1f - dragIconProgress,
+                                            iconClipShape = iconClipShape,
+                                            iconBgColor = iconBgColor,
+                                            globalIconShapeName = globalIconShapeName
                                         )
                                     }
                                     AsyncImage(
@@ -340,7 +346,7 @@ internal fun FolderItem(
                                 }
                             } else {
                                 previewApps.getOrNull(3)?.let { app ->
-                                    FolderPreviewIcon(app, miniIconSize)
+                                    FolderPreviewIcon(app, miniIconSize, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
                                 } ?: if (addSlotIndex == 3 && draggedIconPath != null && dragIconProgress > 0f) {
                                     AsyncImage(
                                         model = File(draggedIconPath),
@@ -457,14 +463,34 @@ internal fun FolderItem(
 }
 
 @Composable
-internal fun FolderPreviewIcon(app: AppInfo, size: Dp = 20.dp, alpha: Float = 1f) {
+internal fun FolderPreviewIcon(
+    app: AppInfo,
+    size: Dp = 20.dp,
+    alpha: Float = 1f,
+    iconClipShape: androidx.compose.ui.graphics.Shape? = null,
+    iconBgColor: Int? = null,
+    globalIconShapeName: String? = null
+) {
+    val context = LocalContext.current
+    val shapedIconPath = if (globalIconShapeName != null) {
+        try {
+            if (iconBgColor != null) {
+                getOrGenerateBgColorShapedIcon(context, app.packageName, globalIconShapeName, iconBgColor)
+            } else {
+                getOrGenerateGlobalShapedIcon(context, app.packageName, globalIconShapeName)
+            }
+        } catch (_: Exception) { null }
+    } else null
+    val displayIconPath = shapedIconPath ?: app.iconPath
+    val isShapedIcon = shapedIconPath != null
+
     AsyncImage(
-        model = File(app.iconPath),
+        model = File(displayIconPath),
         contentDescription = null,
-        contentScale = ContentScale.Fit,
+        contentScale = if (isShapedIcon) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(size * 0.2f)) // Scale corner radius
+            .then(if (!isShapedIcon) Modifier.clip(iconClipShape ?: RoundedCornerShape(size * 0.2f)) else Modifier)
             .graphicsLayer { this.alpha = alpha }
     )
 }
