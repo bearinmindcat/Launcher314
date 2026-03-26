@@ -3496,6 +3496,15 @@ fun LauncherScreen(
         if (widgetDragBitmap != null && (isWidgetBeingDragged || isWidgetDropAnimating)) {
             val showOverlayRedTint = !isWidgetDropTargetValid && !isWidgetOverWidget
             val showOverlayBlueTint = isWidgetOverWidget
+
+            // Check if dragged widget is part of a stack (look up from current placedWidgets)
+            val draggedWidgetId = widgetDragState.draggedWidget?.appWidgetId ?: widgetDropWidgetId
+            val draggedFromPlaced = placedWidgets.find { it.appWidgetId == draggedWidgetId }
+            val isDraggedStack = draggedFromPlaced?.stackId != null
+            val dragStackCount = if (isDraggedStack && draggedFromPlaced != null) {
+                placedWidgets.count { it.stackId == draggedFromPlaced.stackId }
+            } else 0
+
             Box(
                 modifier = Modifier
                     .size(
@@ -3536,12 +3545,55 @@ fun LauncherScreen(
                         }
                     }
             ) {
-                Image(
-                    bitmap = widgetDragBitmap!!,
-                    contentDescription = null,
-                    contentScale = ContentScale.FillBounds,
-                    modifier = Modifier.fillMaxSize()
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (isDraggedStack) Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Black.copy(alpha = 0.4f))
+                                .border(1.dp, Color(0xFF888888), RoundedCornerShape(12.dp))
+                            else Modifier
+                        )
+                ) {
+                    Image(
+                        bitmap = widgetDragBitmap!!,
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Stack nav dots on the drag overlay
+                    if (isDraggedStack && dragStackCount > 1) {
+                        val overlayDotBaseColor = getScrollbarColor(context)
+                        val overlayDotIntensity = getScrollbarIntensity(context)
+                        val overlayDotColor = remember(overlayDotBaseColor, overlayDotIntensity) {
+                            val base = Color(overlayDotBaseColor)
+                            val factor = (overlayDotIntensity / 100f).coerceIn(0f, 1f)
+                            Color(base.red * factor, base.green * factor, base.blue * factor, base.alpha)
+                        }
+                        val overlayDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
+
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            repeat(dragStackCount) { dotIndex ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(overlayDotSize)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (dotIndex == 0) overlayDotColor.copy(alpha = 0.9f)
+                                            else overlayDotColor.copy(alpha = 0.3f)
+                                        )
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
