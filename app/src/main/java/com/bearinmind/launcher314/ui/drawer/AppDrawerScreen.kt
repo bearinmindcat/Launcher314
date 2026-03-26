@@ -535,8 +535,12 @@ fun AppDrawerScreen(
             onSettingsClick = onSettingsClick,
             onCreateFolderClick = { showCreateFolderDialog = true },
             onCreateFolderWithApps = { apps ->
-                appsToMoveToNewFolder = apps
-                showCreateFolderDialog = true
+                // Create folder directly without dialog (like home screen)
+                val newFolder = AppFolder(
+                    name = "Folder",
+                    appPackageNames = apps.map { it.packageName }
+                )
+                saveFolders(folders + newFolder)
             },
             onFolderPositioned = { folderId, position ->
                 folderPositions = folderPositions + (folderId to position)

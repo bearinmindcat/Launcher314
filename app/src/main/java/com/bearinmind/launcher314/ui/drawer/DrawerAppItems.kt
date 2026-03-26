@@ -957,7 +957,8 @@ internal fun SelectableAppItem(
     iconClipShape: androidx.compose.ui.graphics.Shape? = null,
     iconBgColor: Int? = null,
     globalIconShapeName: String? = null,
-    onCustomize: () -> Unit = {}
+    onCustomize: () -> Unit = {},
+    folderPreviewDraggedIconPath: String? = null
 ) {
     val drawerItemContext = LocalContext.current
     val hapticFeedback = rememberHapticFeedback()
@@ -1122,11 +1123,22 @@ internal fun SelectableAppItem(
             } else null
             val drawerIsShapedIcon = drawerShapedIconPath != null
             val drawerDisplayIconPath = drawerShapedIconPath ?: app.iconPath
+
+            // Folder creation preview animation
+            var lastDraggedIconPath by remember { mutableStateOf<String?>(null) }
+            if (folderPreviewDraggedIconPath != null) lastDraggedIconPath = folderPreviewDraggedIconPath
+            val effectiveDraggedIconPath = folderPreviewDraggedIconPath ?: lastDraggedIconPath
+            val folderPreviewProgress by animateFloatAsState(
+                targetValue = if (folderPreviewDraggedIconPath != null) 1f else 0f,
+                animationSpec = tween(200),
+                label = "drawerFolderPreview",
+                finishedListener = { if (it == 0f) lastDraggedIconPath = null }
+            )
+
             Box(
                 modifier = Modifier
                     .size(iconSize.dp)
                     .onGloballyPositioned { coords ->
-                        // Always use the final target scale so popup doesn't stutter during animation
                         val targetScale = 1.265f
                         val pos = coords.positionInRoot()
                         val w = coords.size.width * targetScale
@@ -1140,6 +1152,7 @@ internal fun SelectableAppItem(
                     },
                 contentAlignment = Alignment.Center
             ) {
+                // Normal app icon (fades out during folder preview)
                 AsyncImage(
                     model = File(drawerDisplayIconPath),
                     contentDescription = null,
@@ -1150,8 +1163,63 @@ internal fun SelectableAppItem(
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
+                            alpha = 1f - folderPreviewProgress
                         }
                 )
+
+                // Folder creation preview (fades in when dragging app over this app)
+                if (folderPreviewProgress > 0f && effectiveDraggedIconPath != null) {
+                    val folderBoxSize = iconSize.dp
+                    val folderCornerRadius = (iconSize * 0.29f).dp
+                    val previewScale = 0.85f + 0.15f * folderPreviewProgress
+
+                    Box(
+                        modifier = Modifier
+                            .size(folderBoxSize)
+                            .graphicsLayer {
+                                this.alpha = folderPreviewProgress
+                                scaleX = previewScale
+                                scaleY = previewScale
+                            }
+                            .clip(iconClipShape ?: RoundedCornerShape(folderCornerRadius))
+                            .background(Color(0xFF1A1A1A)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val padding = folderBoxSize * 0.08f
+                        val spacing = folderBoxSize * 0.04f
+                        val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
+
+                        Column(
+                            modifier = Modifier.padding(padding),
+                            verticalArrangement = Arrangement.spacedBy(spacing)
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                                // Existing app icon (top-left)
+                                AsyncImage(
+                                    model = File(app.iconPath),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .size(miniIconSize)
+                                        .clip(RoundedCornerShape(miniIconSize * 0.2f))
+                                )
+                                // Dragged app icon (top-right)
+                                AsyncImage(
+                                    model = File(effectiveDraggedIconPath),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .size(miniIconSize)
+                                        .clip(RoundedCornerShape(miniIconSize * 0.2f))
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                                Spacer(modifier = Modifier.size(miniIconSize))
+                                Spacer(modifier = Modifier.size(miniIconSize))
+                            }
+                        }
+                    }
+                }
 
                 // Dark overlay (press + flash) — uses icon silhouette to match exact shape
                 if (overlayAlpha > 0f) {

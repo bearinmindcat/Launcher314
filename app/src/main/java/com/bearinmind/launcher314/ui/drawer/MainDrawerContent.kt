@@ -865,10 +865,6 @@ internal fun MainDrawerContent(
                                         Box(
                                             modifier = Modifier.graphicsLayer {
                                                 alpha = if (isDragTarget || isDropAnimTarget) 0f else 1f
-                                                if (cellKey != null && hoveredFolderKey == cellKey && cellItem is AppInfo) {
-                                                    scaleX = 1.15f
-                                                    scaleY = 1.15f
-                                                }
                                             }
                                         ) {
                                             if (cellItem is AppFolder) {
@@ -902,6 +898,7 @@ internal fun MainDrawerContent(
                                                     iconClipShape = iconClipShape,
                                                     iconBgColor = iconBgColor,
                                                     globalIconShapeName = globalIconShapeName,
+                                                    folderPreviewDraggedIconPath = if (cellKey != null && hoveredFolderKey == cellKey && drawerDraggedItem is AppInfo) (drawerDraggedItem as AppInfo).iconPath else null,
                                                     onClick = {
                                                         if (selectionModeActive) {
                                                             selectedAppPackages = if (cellItem.packageName in selectedAppPackages) {
@@ -1122,15 +1119,12 @@ internal fun MainDrawerContent(
                                 }
                                 .graphicsLayer {
                                     alpha = if (isDragTarget || isDropAnimTarget) 0f else 1f
-                                    if (hoveredFolderKey == cellKey) {
-                                        scaleX = 1.15f
-                                        scaleY = 1.15f
-                                    }
                                 }
                         ) {
                             SelectableAppItem(
                                 app = app,
                                 iconSize = iconSize,
+                                folderPreviewDraggedIconPath = if (hoveredFolderKey == cellKey && drawerDraggedItem is AppInfo) (drawerDraggedItem as AppInfo).iconPath else null,
                                 labelFontSize = labelFontSize,
                                 labelFontFamily = labelFontFamily,
                                 iconClipShape = iconClipShape,
