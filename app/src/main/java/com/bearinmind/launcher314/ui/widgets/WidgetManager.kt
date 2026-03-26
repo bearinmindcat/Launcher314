@@ -395,6 +395,7 @@ object WidgetManager {
 
     /**
      * Update a widget's position and size (Einstein style).
+     * If the widget is in a stack, all widgets in the stack are updated to match.
      */
     fun updateWidget(
         context: Context,
@@ -404,8 +405,12 @@ object WidgetManager {
         columnSpan: Int,
         rowSpan: Int
     ) {
-        val widgets = loadPlacedWidgets(context).map {
-            if (it.appWidgetId == appWidgetId) {
+        val widgets = loadPlacedWidgets(context)
+        val target = widgets.find { it.appWidgetId == appWidgetId }
+        val stackId = target?.stackId
+
+        val updatedWidgets = widgets.map {
+            if (it.appWidgetId == appWidgetId || (stackId != null && it.stackId == stackId)) {
                 it.copy(
                     startColumn = startColumn,
                     startRow = startRow,
@@ -414,7 +419,7 @@ object WidgetManager {
                 )
             } else it
         }
-        savePlacedWidgets(context, widgets)
+        savePlacedWidgets(context, updatedWidgets)
     }
 
     /**
@@ -433,26 +438,36 @@ object WidgetManager {
 
     /**
      * Update a widget's position only.
+     * If the widget is in a stack, all widgets in the stack are updated to match.
      */
     fun updateWidgetPosition(context: Context, appWidgetId: Int, startColumn: Int, startRow: Int, page: Int? = null) {
-        val widgets = loadPlacedWidgets(context).map {
-            if (it.appWidgetId == appWidgetId) {
+        val widgets = loadPlacedWidgets(context)
+        val target = widgets.find { it.appWidgetId == appWidgetId }
+        val stackId = target?.stackId
+
+        val updatedWidgets = widgets.map {
+            if (it.appWidgetId == appWidgetId || (stackId != null && it.stackId == stackId)) {
                 it.copy(startColumn = startColumn, startRow = startRow, page = page ?: it.page)
             } else it
         }
-        savePlacedWidgets(context, widgets)
+        savePlacedWidgets(context, updatedWidgets)
     }
 
     /**
      * Update a widget's size only.
+     * If the widget is in a stack, all widgets in the stack are updated to match.
      */
     fun updateWidgetSize(context: Context, appWidgetId: Int, columnSpan: Int, rowSpan: Int) {
-        val widgets = loadPlacedWidgets(context).map {
-            if (it.appWidgetId == appWidgetId) {
+        val widgets = loadPlacedWidgets(context)
+        val target = widgets.find { it.appWidgetId == appWidgetId }
+        val stackId = target?.stackId
+
+        val updatedWidgets = widgets.map {
+            if (it.appWidgetId == appWidgetId || (stackId != null && it.stackId == stackId)) {
                 it.copy(columnSpan = columnSpan, rowSpan = rowSpan)
             } else it
         }
-        savePlacedWidgets(context, widgets)
+        savePlacedWidgets(context, updatedWidgets)
     }
 
     /**

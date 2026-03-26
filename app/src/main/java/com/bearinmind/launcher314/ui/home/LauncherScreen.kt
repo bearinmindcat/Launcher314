@@ -2383,6 +2383,7 @@ fun LauncherScreen(
 
                                         // State for this widget's context menu
                                         var showWidgetMenu by remember { mutableStateOf(false) }
+                                        var currentStackPage by remember { mutableIntStateOf(0) }
                                         val hapticFeedback = rememberHapticFeedback()
 
                                         // Track local drag state for this widget's gesture handler
@@ -2694,6 +2695,10 @@ fun LauncherScreen(
                                                 if (stackWidgets.size > 1) {
                                                     // Stacked widgets — swipeable pager with nav-style dots inside widget
                                                     val stackPagerState = rememberPagerState(pageCount = { stackWidgets.size })
+                                                    // Sync current page to outer state for context menu
+                                                    LaunchedEffect(stackPagerState.currentPage) {
+                                                        currentStackPage = stackPagerState.currentPage
+                                                    }
                                                     val stackDotBaseColor = getScrollbarColor(context)
                                                     val stackDotIntensity = getScrollbarIntensity(context)
                                                     val stackDotColor = remember(stackDotBaseColor, stackDotIntensity) {
@@ -2884,7 +2889,10 @@ fun LauncherScreen(
                                                                 onClick = {
                                                                     showWidgetMenu = false
                                                                     if (widget.stackId != null) {
-                                                                        placedWidgets = WidgetManager.removeFromStack(context, widget.appWidgetId)
+                                                                        // Remove the currently visible widget in the stack
+                                                                        val visibleStackWidgets = WidgetManager.getStackWidgets(placedWidgets, widget.stackId!!)
+                                                                        val visibleWidget = visibleStackWidgets.getOrNull(currentStackPage) ?: widget
+                                                                        placedWidgets = WidgetManager.removeFromStack(context, visibleWidget.appWidgetId)
                                                                     } else {
                                                                         WidgetManager.removePlacedWidget(context, widget.appWidgetId)
                                                                         placedWidgets = WidgetManager.loadPlacedWidgets(context)
