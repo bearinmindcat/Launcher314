@@ -1463,11 +1463,6 @@ fun LauncherScreen(
             Offset.Zero
         }
 
-        // For stacking, update data immediately so the old position is freed during animation
-        if (droppingOnWidget != null && finalValid) {
-            placedWidgets = WidgetManager.stackWidgets(context, widget.appWidgetId, droppingOnWidget.appWidgetId)
-        }
-
         dropScope.launch {
             widgetDropStartOffset = currentDragOffset
             widgetDropTargetOffset = overlayTargetOffset
@@ -1475,8 +1470,12 @@ fun LauncherScreen(
             widgetDropAnim.snapTo(0f)
             isWidgetDropAnimating = true
             widgetDropAnim.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
-            if (finalValid && finalCol != null && finalRow != null && droppingOnWidget == null) {
-                placedWidgets = handleWidgetMove(context, widget, finalCol, finalRow, dropPage)
+            if (finalValid && finalCol != null && finalRow != null) {
+                if (droppingOnWidget != null) {
+                    placedWidgets = WidgetManager.stackWidgets(context, widget.appWidgetId, droppingOnWidget.appWidgetId)
+                } else {
+                    placedWidgets = handleWidgetMove(context, widget, finalCol, finalRow, dropPage)
+                }
             }
             // Clear drag state first — composable becomes visible underneath overlay
             widgetDragState = WidgetDragState()
@@ -2332,6 +2331,7 @@ fun LauncherScreen(
                                     else if (processedStacks.contains(sid)) false // already handled
                                     else { processedStacks.add(sid); true } // primary in stack
                                 }.forEach { widget ->
+                                    key(widget.appWidgetId, widget.stackId) {
                                     val originCellIndex = widget.gridRow * gridColumns + widget.gridColumn
                                     val originCellPos = cellPositions[originCellIndex]
 
@@ -2930,6 +2930,7 @@ fun LauncherScreen(
                                         }
                                     }
                                 }
+                                    } // key
                             }
 
                             // Widget resize overlay - shows preview outline with draggable handles
