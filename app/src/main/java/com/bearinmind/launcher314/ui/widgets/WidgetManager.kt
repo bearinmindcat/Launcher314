@@ -274,23 +274,27 @@ object WidgetManager {
     }
 
     /**
-     * Unstack a widget — remove it from its stack and place it standalone.
+     * Remove a widget from its stack and delete it from the home screen.
+     * If only one widget remains in the stack, dissolve the stack.
      */
-    fun unstackWidget(context: Context, appWidgetId: Int): List<PlacedWidget> {
+    fun removeFromStack(context: Context, appWidgetId: Int): List<PlacedWidget> {
         val widgets = loadPlacedWidgets(context).toMutableList()
         val widget = widgets.find { it.appWidgetId == appWidgetId } ?: return widgets
         val stackId = widget.stackId ?: return widgets
 
-        val updatedWidgets = widgets.map { w ->
-            if (w.appWidgetId == appWidgetId) {
-                w.copy(stackId = null, stackOrder = 0)
-            } else if (w.stackId == stackId) {
-                // If only one widget remains in the stack, dissolve the stack
-                val remainingInStack = widgets.count { it.stackId == stackId && it.appWidgetId != appWidgetId }
-                if (remainingInStack <= 1) w.copy(stackId = null, stackOrder = 0) else w
+        // Remove the widget from the list
+        val remaining = widgets.filter { it.appWidgetId != appWidgetId }
+
+        // If only one widget left in the stack, dissolve it
+        val updatedWidgets = remaining.map { w ->
+            if (w.stackId == stackId) {
+                val stillInStack = remaining.count { it.stackId == stackId }
+                if (stillInStack <= 1) w.copy(stackId = null, stackOrder = 0) else w
             } else w
         }
 
+        deleteWidgetId(appWidgetId)
+        removeWidgetView(appWidgetId)
         savePlacedWidgets(context, updatedWidgets)
         return updatedWidgets
     }

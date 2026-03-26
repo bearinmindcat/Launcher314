@@ -682,9 +682,9 @@ fun LauncherScreen(
     fun buildGridCellsForPage(page: Int): List<HomeGridCell> {
         val cells = MutableList<HomeGridCell>(totalCells) { HomeGridCell.Empty }
 
-        // Place widgets for this specific page (only primary widget per stack)
+        // Place widgets for this specific page (only primary widget per stack, sorted by stackOrder)
         val seenStacks = mutableSetOf<String>()
-        placedWidgets.filter { it.page == page }.filter { w ->
+        placedWidgets.filter { it.page == page }.sortedBy { it.stackOrder }.filter { w ->
             val sid = w.stackId
             if (sid == null) true
             else if (seenStacks.contains(sid)) false
@@ -1463,6 +1463,11 @@ fun LauncherScreen(
             Offset.Zero
         }
 
+        // For stacking, update data immediately so the old position is freed during animation
+        if (droppingOnWidget != null && finalValid) {
+            placedWidgets = WidgetManager.stackWidgets(context, widget.appWidgetId, droppingOnWidget.appWidgetId)
+        }
+
         dropScope.launch {
             widgetDropStartOffset = currentDragOffset
             widgetDropTargetOffset = overlayTargetOffset
@@ -1470,13 +1475,8 @@ fun LauncherScreen(
             widgetDropAnim.snapTo(0f)
             isWidgetDropAnimating = true
             widgetDropAnim.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
-            if (finalValid && finalCol != null && finalRow != null) {
-                if (droppingOnWidget != null) {
-                    // Stack the dragged widget onto the target widget
-                    placedWidgets = WidgetManager.stackWidgets(context, widget.appWidgetId, droppingOnWidget.appWidgetId)
-                } else {
-                    placedWidgets = handleWidgetMove(context, widget, finalCol, finalRow, dropPage)
-                }
+            if (finalValid && finalCol != null && finalRow != null && droppingOnWidget == null) {
+                placedWidgets = handleWidgetMove(context, widget, finalCol, finalRow, dropPage)
             }
             // Clear drag state first — composable becomes visible underneath overlay
             widgetDragState = WidgetDragState()
@@ -2324,12 +2324,13 @@ fun LauncherScreen(
                             // Widgets now support direct long-press + drag (like apps)
                             if (cellSize.width > 0 && cellSize.height > 0) {
                                 // Filter widgets for this page, skipping non-primary stacked widgets
+                                // Sort by stackOrder so the primary widget (order=0) is always picked first per stack
                                 val processedStacks = mutableSetOf<String>()
-                                placedWidgets.filter { it.page == page }.filter { widget ->
+                                placedWidgets.filter { it.page == page }.sortedBy { it.stackOrder }.filter { widget ->
                                     val sid = widget.stackId
                                     if (sid == null) true // standalone widget
                                     else if (processedStacks.contains(sid)) false // already handled
-                                    else { processedStacks.add(sid); true } // first in stack
+                                    else { processedStacks.add(sid); true } // primary in stack
                                 }.forEach { widget ->
                                     val originCellIndex = widget.gridRow * gridColumns + widget.gridColumn
                                     val originCellPos = cellPositions[originCellIndex]
@@ -2710,6 +2711,7 @@ fun LauncherScreen(
                                                     // Show card chrome (background, outline, dots) while swiping, dragging a widget, + linger after
                                                     val isStackSwiping = stackPagerState.isScrollInProgress
                                                     val showChromeDuringDrag = isWidgetBeingDragged && !isThisWidgetDragging
+                                                    val showChromeDuringMenu = showWidgetMenu && widget.stackId != null
                                                     // Linger only applies to swipe, not drag
                                                     var isSwipeLingering by remember { mutableStateOf(false) }
                                                     LaunchedEffect(isStackSwiping) {
@@ -2720,7 +2722,7 @@ fun LauncherScreen(
                                                             isSwipeLingering = false
                                                         }
                                                     }
-                                                    val showStackChrome = showChromeDuringDrag || isStackSwiping || isSwipeLingering
+                                                    val showStackChrome = showChromeDuringDrag || showChromeDuringMenu || isStackSwiping || isSwipeLingering
                                                     // Different animation speeds: fast when dragging a widget, smooth when swiping stack
                                                     val chromeDuration = if (showChromeDuringDrag) {
                                                         100 // Fast appear/disappear when holding another widget
@@ -2876,13 +2878,17 @@ fun LauncherScreen(
                                                                 }
                                                             )
 
-                                                            // Remove option (Move is no longer needed - just drag directly)
+                                                            // Remove option
                                                             DropdownMenuItem(
-                                                                text = { Text("Remove widget") },
+                                                                text = { Text(if (widget.stackId != null) "Remove from stack" else "Remove widget") },
                                                                 onClick = {
                                                                     showWidgetMenu = false
-                                                                    WidgetManager.removePlacedWidget(context, widget.appWidgetId)
-                                                                    placedWidgets = WidgetManager.loadPlacedWidgets(context)
+                                                                    if (widget.stackId != null) {
+                                                                        placedWidgets = WidgetManager.removeFromStack(context, widget.appWidgetId)
+                                                                    } else {
+                                                                        WidgetManager.removePlacedWidget(context, widget.appWidgetId)
+                                                                        placedWidgets = WidgetManager.loadPlacedWidgets(context)
+                                                                    }
                                                                 },
                                                                 leadingIcon = {
                                                                     Icon(
@@ -2891,6 +2897,27 @@ fun LauncherScreen(
                                                                     )
                                                                 }
                                                             )
+
+                                                            // Delete entire stack option (only for stacked widgets)
+                                                            if (widget.stackId != null) {
+                                                                DropdownMenuItem(
+                                                                    text = { Text("Delete stack") },
+                                                                    onClick = {
+                                                                        showWidgetMenu = false
+                                                                        val stackWidgetsToRemove = WidgetManager.getStackWidgets(placedWidgets, widget.stackId!!)
+                                                                        stackWidgetsToRemove.forEach { sw ->
+                                                                            WidgetManager.removePlacedWidget(context, sw.appWidgetId)
+                                                                        }
+                                                                        placedWidgets = WidgetManager.loadPlacedWidgets(context)
+                                                                    },
+                                                                    leadingIcon = {
+                                                                        Icon(
+                                                                            imageVector = Icons.Outlined.Delete,
+                                                                            contentDescription = null
+                                                                        )
+                                                                    }
+                                                                )
+                                                            }
                                                 }
                                         }
                                     }
