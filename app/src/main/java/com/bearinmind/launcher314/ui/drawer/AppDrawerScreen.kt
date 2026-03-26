@@ -400,7 +400,7 @@ fun AppDrawerScreen(
         }
     }
 
-    // Filter and sort apps based on search query and exclude apps in folders
+    // Filter and sort apps based on search query (apps in folders stay in folders)
     val filteredApps by remember {
         derivedStateOf {
             val availableApps = allApps.filter { it.packageName !in appsInFolders }

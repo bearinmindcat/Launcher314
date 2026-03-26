@@ -227,7 +227,7 @@ internal fun MainDrawerContent(
                 pendingTransferJob = null
             }
 
-            // Check folder hover (only for AppInfo being dragged, not folders)
+            // Check folder/app hover (only for AppInfo being dragged, not folders)
             if (!transferredToHome && !isDropZoneHovered && drawerDraggedItem is AppInfo) {
                 val overlayCenterX = overlayPos.x + drawerDragCellSize.width / 2f
                 val overlayCenterY = overlayPos.y + drawerDragCellSize.height / 2f
@@ -235,17 +235,28 @@ internal fun MainDrawerContent(
                 val draggedPkg = (drawerDraggedItem as AppInfo).packageName
 
                 val previousHovered = hoveredFolderKey
+                // First check folders
                 hoveredFolderKey = drawerCellPositions.entries.firstOrNull { (key, pos) ->
                     if (!key.startsWith("folder_")) return@firstOrNull false
                     val size = drawerCellSizes[key] ?: return@firstOrNull false
-                    // Check if dragged app is already in this folder
                     val folderId = key.removePrefix("folder_")
                     val folder = folders.firstOrNull { it.id == folderId } ?: return@firstOrNull false
                     if (draggedPkg in folder.appPackageNames) return@firstOrNull false
-                    // Bounds check
                     val bounds = Rect(pos.x, pos.y, pos.x + size.width.toFloat(), pos.y + size.height.toFloat())
                     bounds.contains(overlayCenter)
                 }?.key
+
+                // If not hovering a folder, check if hovering another app (for folder creation)
+                if (hoveredFolderKey == null) {
+                    hoveredFolderKey = drawerCellPositions.entries.firstOrNull { (key, pos) ->
+                        if (!key.startsWith("app_")) return@firstOrNull false
+                        val hoveredPkg = key.removePrefix("app_")
+                        if (hoveredPkg == draggedPkg) return@firstOrNull false // Can't drop on self
+                        val size = drawerCellSizes[key] ?: return@firstOrNull false
+                        val bounds = Rect(pos.x, pos.y, pos.x + size.width.toFloat(), pos.y + size.height.toFloat())
+                        bounds.contains(overlayCenter)
+                    }?.key
+                }
 
                 if (hoveredFolderKey != previousHovered && hoveredFolderKey != null) {
                     drawerHaptic.performTextHandleMove()
@@ -268,27 +279,56 @@ internal fun MainDrawerContent(
             isDropZoneHovered = false
             hoveredFolderKey = null
         } else if (hoveredFolderKey != null && drawerDraggedItem is AppInfo) {
-            // Finger lifted on a folder — add app to folder with shrink animation
             val app = drawerDraggedItem as AppInfo
-            val folderId = hoveredFolderKey!!.removePrefix("folder_")
-            val targetFolder = folders.firstOrNull { it.id == folderId }
-            val targetFolderPos = drawerCellPositions[hoveredFolderKey!!] ?: Offset.Zero
-            val targetFolderSize = drawerCellSizes[hoveredFolderKey!!] ?: IntSize.Zero
-            folderDropTargetPos = Offset(
-                targetFolderPos.x + targetFolderSize.width / 2f,
-                targetFolderPos.y + targetFolderSize.height / 2f
-            )
-            // Animate overlay shrinking into the folder
-            drawerDragCurrentOffset = drawerDragOffset
-            folderDropAnimating = true
-            drawerIsDropAnimating = true
-            drawerDragScope.launch {
-                drawerDropAnim.snapTo(0f)
-                drawerDropAnim.animateTo(1f, tween(400, easing = FastOutSlowInEasing))
-                // Add app to folder after animation
-                if (targetFolder != null) {
-                    onAddAppToFolder(app, targetFolder)
+            val isAppDrop = hoveredFolderKey!!.startsWith("app_")
+
+            if (isAppDrop) {
+                // Finger lifted on another app — create a new folder with both apps
+                val targetPkg = hoveredFolderKey!!.removePrefix("app_")
+                val targetApp = filteredApps.find { it.packageName == targetPkg }
+                val targetPos = drawerCellPositions[hoveredFolderKey!!] ?: Offset.Zero
+                val targetSize = drawerCellSizes[hoveredFolderKey!!] ?: IntSize.Zero
+                folderDropTargetPos = Offset(
+                    targetPos.x + targetSize.width / 2f,
+                    targetPos.y + targetSize.height / 2f
+                )
+                drawerDragCurrentOffset = drawerDragOffset
+                folderDropAnimating = true
+                drawerIsDropAnimating = true
+                drawerDragScope.launch {
+                    drawerDropAnim.snapTo(0f)
+                    drawerDropAnim.animateTo(1f, tween(400, easing = FastOutSlowInEasing))
+                    if (targetApp != null) {
+                        onCreateFolderWithApps(listOf(app, targetApp))
+                    }
+                    drawerDraggedItem = null
+                    drawerDragOffset = Offset.Zero
+                    drawerDragCurrentOffset = Offset.Zero
+                    drawerIsDropAnimating = false
+                    folderDropAnimating = false
+                    hoveredFolderKey = null
                 }
+            } else {
+                // Finger lifted on a folder — add app to folder with shrink animation
+                val folderId = hoveredFolderKey!!.removePrefix("folder_")
+                val targetFolder = folders.firstOrNull { it.id == folderId }
+                val targetFolderPos = drawerCellPositions[hoveredFolderKey!!] ?: Offset.Zero
+                val targetFolderSize = drawerCellSizes[hoveredFolderKey!!] ?: IntSize.Zero
+                folderDropTargetPos = Offset(
+                    targetFolderPos.x + targetFolderSize.width / 2f,
+                    targetFolderPos.y + targetFolderSize.height / 2f
+                )
+                // Animate overlay shrinking into the folder
+                drawerDragCurrentOffset = drawerDragOffset
+                folderDropAnimating = true
+                drawerIsDropAnimating = true
+                drawerDragScope.launch {
+                    drawerDropAnim.snapTo(0f)
+                    drawerDropAnim.animateTo(1f, tween(400, easing = FastOutSlowInEasing))
+                    // Add app to folder after animation
+                    if (targetFolder != null) {
+                        onAddAppToFolder(app, targetFolder)
+                    }
                 drawerDraggedItem = null
                 drawerDragOffset = Offset.Zero
                 drawerDragCurrentOffset = Offset.Zero
@@ -296,6 +336,7 @@ internal fun MainDrawerContent(
                 folderDropAnimating = false
                 hoveredFolderKey = null
             }
+            } // close isAppDrop else
         } else if (isDropZoneHovered && drawerDraggedItem != null) {
             // Finger lifted on the zone — transition to home
             val cellCenter = Offset(drawerDragCellSize.width / 2f, drawerDragCellSize.height / 2f)
@@ -680,9 +721,21 @@ internal fun MainDrawerContent(
 
             // Combine folders and apps into a single display list
             // Folders go first, then apps
-            val allDisplayItems = remember(folders, filteredApps) {
+            val allDisplayItems = remember(folders, filteredApps, searchQuery, allApps) {
                 val items = mutableListOf<Any>()
-                items.addAll(folders)
+                if (searchQuery.isBlank()) {
+                    // Show all folders when not searching
+                    items.addAll(folders)
+                } else {
+                    // Only show folders that contain apps matching the search query
+                    items.addAll(folders.filter { folder ->
+                        folder.appPackageNames.any { pkg ->
+                            allApps.any { app ->
+                                app.packageName == pkg && app.name.contains(searchQuery, ignoreCase = true)
+                            }
+                        }
+                    })
+                }
                 items.addAll(filteredApps)
                 items
             }
@@ -812,6 +865,10 @@ internal fun MainDrawerContent(
                                         Box(
                                             modifier = Modifier.graphicsLayer {
                                                 alpha = if (isDragTarget || isDropAnimTarget) 0f else 1f
+                                                if (cellKey != null && hoveredFolderKey == cellKey && cellItem is AppInfo) {
+                                                    scaleX = 1.15f
+                                                    scaleY = 1.15f
+                                                }
                                             }
                                         ) {
                                             if (cellItem is AppFolder) {
@@ -974,9 +1031,16 @@ internal fun MainDrawerContent(
                     state = gridState,
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    // Show folders first
+                    // Show folders first (filter to only matching folders during search)
+                    val displayFolders = if (searchQuery.isBlank()) folders else folders.filter { folder ->
+                        folder.appPackageNames.any { pkg ->
+                            allApps.any { app ->
+                                app.packageName == pkg && app.name.contains(searchQuery, ignoreCase = true)
+                            }
+                        }
+                    }
                     items(
-                        items = folders,
+                        items = displayFolders,
                         key = { "folder_${it.id}" },
                         contentType = { "folder" }
                     ) { folder ->
@@ -1058,6 +1122,10 @@ internal fun MainDrawerContent(
                                 }
                                 .graphicsLayer {
                                     alpha = if (isDragTarget || isDropAnimTarget) 0f else 1f
+                                    if (hoveredFolderKey == cellKey) {
+                                        scaleX = 1.15f
+                                        scaleY = 1.15f
+                                    }
                                 }
                         ) {
                             SelectableAppItem(
