@@ -238,6 +238,28 @@ object WidgetManager {
     }
 
     /**
+     * Recreate all cached widget views (needed when font scale changes).
+     * The new views will use the updated Context from LauncherAppWidgetHost.
+     */
+    fun recreateAllWidgetViews(context: Context) {
+        val host = appWidgetHost ?: return
+        val manager = appWidgetManager ?: return
+        val ids = widgetViews.keys.toList()
+        widgetViews.clear()
+        for (id in ids) {
+            val providerInfo = manager.getAppWidgetInfo(id) ?: continue
+            try {
+                val view = host.createView(context, id, providerInfo) as? LauncherAppWidgetHostView
+                if (view != null) {
+                    widgetViews[id] = view
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WidgetManager", "Failed to recreate widget view for id=$id", e)
+            }
+        }
+    }
+
+    /**
      * Stack two widgets together. The dropped widget takes the target widget's position/size.
      * Both widgets get the same stackId.
      */

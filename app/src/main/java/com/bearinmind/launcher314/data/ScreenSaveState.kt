@@ -442,3 +442,20 @@ fun setWidgetCornerRadiusPercent(context: Context, percent: Int) {
 
 /** Max corner radius in dp (100% maps to this value) */
 const val WIDGET_MAX_CORNER_RADIUS_DP = 32f
+
+// ============================================================================
+// WIDGET TEXT SIZE (font scale)
+// ============================================================================
+
+private const val KEY_WIDGET_FONT_SCALE = "widget_font_scale_percent"
+private const val DEFAULT_WIDGET_FONT_SCALE_PERCENT = 100
+
+fun getWidgetFontScalePercent(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_WIDGET_FONT_SCALE, DEFAULT_WIDGET_FONT_SCALE_PERCENT)
+}
+
+fun setWidgetFontScalePercent(context: Context, percent: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_WIDGET_FONT_SCALE, percent).apply()
+}

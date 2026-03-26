@@ -849,4 +849,15 @@ object SliderConfigs {
         label = "Corner Roundness (%)",
         labelSuffix = "%"
     )
+
+    val widgetTextSize = HorizontalSliderConfig(
+        minValue = 50f,
+        maxValue = 150f,
+        tickValues = (50..150 step 5).toList(),
+        labeledTickValues = listOf(50, 75, 100, 125, 150),
+        snapTickValues = (50..150 step 5).toList(),
+        showMinorTicks = true,
+        label = "Widget Text Size (%)",
+        labelSuffix = "%"
+    )
 }

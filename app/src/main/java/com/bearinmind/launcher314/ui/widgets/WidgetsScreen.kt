@@ -59,6 +59,8 @@ import com.bearinmind.launcher314.data.getWidgetRoundedCornersEnabled
 import com.bearinmind.launcher314.data.setWidgetRoundedCornersEnabled
 import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
 import com.bearinmind.launcher314.data.setWidgetCornerRadiusPercent
+import com.bearinmind.launcher314.data.getWidgetFontScalePercent
+import com.bearinmind.launcher314.data.setWidgetFontScalePercent
 import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import androidx.compose.ui.graphics.graphicsLayer
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
@@ -110,6 +112,7 @@ fun WidgetsScreen(
     var showMenu by remember { mutableStateOf(false) }
     var widgetRoundedCornersEnabled by remember { mutableStateOf(getWidgetRoundedCornersEnabled(context)) }
     var widgetCornerRadius by remember { mutableFloatStateOf(getWidgetCornerRadiusPercent(context).toFloat()) }
+    var widgetFontScale by remember { mutableFloatStateOf(getWidgetFontScalePercent(context).toFloat()) }
 
     // Track expanded state for each app group
     var expandedApps by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -356,6 +359,27 @@ fun WidgetsScreen(
                                             }
                                         )
                                     }
+                                }
+
+                                // Widget text size slider
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp)
+                                        .padding(bottom = 4.dp)
+                                ) {
+                                    ThumbDragHorizontalSlider(
+                                        currentValue = widgetFontScale,
+                                        config = SliderConfigs.widgetTextSize,
+                                        onValueChange = { newVal ->
+                                            widgetFontScale = newVal
+                                            setWidgetFontScalePercent(context, newVal.roundToInt())
+                                        },
+                                        onValueChangeFinished = {
+                                            // Recreate all widget views with new font scale
+                                            WidgetManager.recreateAllWidgetViews(context)
+                                        }
+                                    )
                                 }
                             }
                         }
