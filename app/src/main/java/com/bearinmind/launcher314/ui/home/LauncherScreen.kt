@@ -57,6 +57,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.os.Build
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -560,6 +562,9 @@ fun LauncherScreen(
     // True when dragged widget is hovering over another widget (stack target)
     var isWidgetOverWidget by remember { mutableStateOf(false) }
 
+    // True when user is swiping within a stacked widget pager
+    var isStackSwipeActive by remember { mutableStateOf(false) }
+
     // Widget drop animation state
     val widgetDropAnim = remember { Animatable(0f) }
     var isWidgetDropAnimating by remember { mutableStateOf(false) }
@@ -777,8 +782,9 @@ fun LauncherScreen(
                 }
                 targetCells.any { otherCells.contains(it) }
             }
-            isWidgetOverWidget = hoveringOverWidget
-            isWidgetDropTargetValid = if (hoveringOverWidget) true
+            val atOriginal = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage == widget.page
+            isWidgetOverWidget = hoveringOverWidget && !atOriginal
+            isWidgetDropTargetValid = if (hoveringOverWidget && !atOriginal) true
                 else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
         } else {
             hoveredWidgetCells = emptySet()
@@ -1369,8 +1375,10 @@ fun LauncherScreen(
         )
         val finalCol = finalTarget?.first
         val finalRow = finalTarget?.second
-        // Check if dropping on another widget (for stacking)
-        val droppingOnWidget = if (finalTarget != null) {
+        // Check if dropping on another widget (for stacking) — only if actively hovering over one
+        // and NOT dropping back at the widget's original position
+        val isBackAtOriginalPos = finalCol == widget.startColumn && finalRow == widget.startRow && dropPage == widget.page
+        val droppingOnWidget = if (isWidgetOverWidget && finalTarget != null && !isBackAtOriginalPos) {
             val targetCells = getWidgetTargetCells(widget, finalCol!!, finalRow!!, gridColumns, gridRows)
             val dropSid = widget.stackId
             val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == dropPage && (dropSid == null || it.stackId != dropSid) }
@@ -1827,8 +1835,9 @@ fun LauncherScreen(
                                         }
                                         targetCells.any { otherCells.contains(it) }
                                     }
-                                    isWidgetOverWidget = hoveringOverWidget
-                                    isWidgetDropTargetValid = if (hoveringOverWidget) true
+                                    val atOriginal2 = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage == widget.page
+                                    isWidgetOverWidget = hoveringOverWidget && !atOriginal2
+                                    isWidgetDropTargetValid = if (hoveringOverWidget && !atOriginal2) true
                                         else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
                                 } else {
                                     hoveredWidgetCells = emptySet()
@@ -1965,7 +1974,7 @@ fun LauncherScreen(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
                         // Disable manual swipe during drag to prevent conflicts
-                        userScrollEnabled = draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged
+                        userScrollEnabled = draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged && !isStackSwipeActive
                     ) { page ->
                     // Grid with drag and drop - using Column/Row for proper space distribution
                     // The outer Column applies padding so both grid cells AND widgets respect the same bounds
@@ -2554,10 +2563,11 @@ fun LauncherScreen(
                                                                                     }
                                                                                     targetCells.any { otherCells.contains(it) }
                                                                                 }
-                                                                                isWidgetOverWidget = hoveringOverWidget
+                                                                                val atOriginal3 = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage == widget.page
+                                                                                isWidgetOverWidget = hoveringOverWidget && !atOriginal3
 
                                                                                 // Check if placement is valid on the current target page
-                                                                                isWidgetDropTargetValid = if (hoveringOverWidget) true
+                                                                                isWidgetDropTargetValid = if (hoveringOverWidget && !atOriginal3) true
                                                                                     else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
                                                                             } else {
                                                                                 hoveredWidgetCells = emptySet()
@@ -2697,7 +2707,62 @@ fun LauncherScreen(
                                                     }
                                                     val stackDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
 
-                                                    Box(modifier = Modifier.fillMaxSize()) {
+                                                    // Show card chrome (background, outline, dots) while swiping, dragging a widget, + linger after
+                                                    val isStackSwiping = stackPagerState.isScrollInProgress
+                                                    val showChromeDuringDrag = isWidgetBeingDragged && !isThisWidgetDragging
+                                                    // Linger only applies to swipe, not drag
+                                                    var isSwipeLingering by remember { mutableStateOf(false) }
+                                                    LaunchedEffect(isStackSwiping) {
+                                                        if (isStackSwiping) {
+                                                            isSwipeLingering = true
+                                                        } else if (isSwipeLingering) {
+                                                            delay(1000)
+                                                            isSwipeLingering = false
+                                                        }
+                                                    }
+                                                    val showStackChrome = showChromeDuringDrag || isStackSwiping || isSwipeLingering
+                                                    // Different animation speeds: fast when dragging a widget, smooth when swiping stack
+                                                    val chromeDuration = if (showChromeDuringDrag) {
+                                                        100 // Fast appear/disappear when holding another widget
+                                                    } else if (showStackChrome) {
+                                                        120 // Appear when swiping
+                                                    } else {
+                                                        400 // Disappear after swiping
+                                                    }
+                                                    val stackChromeAlpha by animateFloatAsState(
+                                                        targetValue = if (showStackChrome) 1f else 0f,
+                                                        animationSpec = tween(
+                                                            durationMillis = chromeDuration,
+                                                            easing = FastOutSlowInEasing
+                                                        ),
+                                                        label = "stackChrome"
+                                                    )
+
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .pointerInput(Unit) {
+                                                                awaitEachGesture {
+                                                                    awaitFirstDown(requireUnconsumed = false)
+                                                                    isStackSwipeActive = true
+                                                                    try {
+                                                                        while (true) {
+                                                                            val event = awaitPointerEvent(pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                                                            if (event.changes.all { !it.pressed }) break
+                                                                        }
+                                                                    } finally {
+                                                                        isStackSwipeActive = false
+                                                                    }
+                                                                }
+                                                            }
+                                                            .clip(RoundedCornerShape(12.dp))
+                                                            .then(
+                                                                if (stackChromeAlpha > 0f) Modifier
+                                                                    .background(Color.Black.copy(alpha = 0.4f * stackChromeAlpha))
+                                                                    .border(1.dp, Color(0xFF888888).copy(alpha = stackChromeAlpha), RoundedCornerShape(12.dp))
+                                                                else Modifier
+                                                            )
+                                                    ) {
                                                         HorizontalPager(
                                                             state = stackPagerState,
                                                             modifier = Modifier.fillMaxSize(),
@@ -2713,24 +2778,27 @@ fun LauncherScreen(
                                                                 }
                                                             )
                                                         }
-                                                        // Page dots (same style as home screen nav dots, inside widget)
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .align(Alignment.BottomCenter)
-                                                                .padding(bottom = 4.dp),
-                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                        ) {
-                                                            repeat(stackWidgets.size) { dotIndex ->
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .size(stackDotSize)
-                                                                        .clip(CircleShape)
-                                                                        .background(
-                                                                            if (stackPagerState.currentPage == dotIndex)
-                                                                                stackDotColor.copy(alpha = 0.9f)
-                                                                            else stackDotColor.copy(alpha = 0.3f)
-                                                                        )
-                                                                )
+                                                        // Page dots (only visible while swiping)
+                                                        if (stackChromeAlpha > 0f) {
+                                                            Row(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.BottomCenter)
+                                                                    .padding(bottom = 4.dp)
+                                                                    .graphicsLayer { alpha = stackChromeAlpha },
+                                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                            ) {
+                                                                repeat(stackWidgets.size) { dotIndex ->
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .size(stackDotSize)
+                                                                            .clip(CircleShape)
+                                                                            .background(
+                                                                                if (stackPagerState.currentPage == dotIndex)
+                                                                                    stackDotColor.copy(alpha = 0.9f)
+                                                                                else stackDotColor.copy(alpha = 0.3f)
+                                                                            )
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }

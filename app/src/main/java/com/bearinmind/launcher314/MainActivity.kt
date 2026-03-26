@@ -228,18 +228,29 @@ class MainActivity : ComponentActivity() {
     /**
      * Get all occupied cell indices on the home screen grid.
      */
-    fun getOccupiedCells(gridColumns: Int): Set<Int> {
+    fun getOccupiedCells(gridColumns: Int, page: Int = 0): Set<Int> {
         val occupiedCells = mutableSetOf<Int>()
 
-        // Get occupied cells from placed apps
+        // Get occupied cells from placed apps on this page
         val homeScreenData = loadHomeScreenData()
-        homeScreenData.apps.forEach { app ->
+        homeScreenData.apps.filter { it.page == page }.forEach { app ->
             occupiedCells.add(app.position)
         }
 
-        // Get occupied cells from placed widgets
+        // Get occupied cells from placed folders on this page
+        homeScreenData.folders.filter { it.page == page }.forEach { folder ->
+            occupiedCells.add(folder.position)
+        }
+
+        // Get occupied cells from placed widgets on this page (only primary widget per stack)
         val placedWidgets = WidgetManager.loadPlacedWidgets(this)
-        placedWidgets.forEach { widget ->
+        val seenStacks = mutableSetOf<String>()
+        placedWidgets.filter { it.page == page }.filter { w ->
+            val sid = w.stackId
+            if (sid == null) true
+            else if (seenStacks.contains(sid)) false
+            else { seenStacks.add(sid); true }
+        }.forEach { widget ->
             for (row in widget.startRow until widget.startRow + widget.rowSpan) {
                 for (col in widget.startColumn until widget.startColumn + widget.columnSpan) {
                     val cellIndex = row * gridColumns + col
