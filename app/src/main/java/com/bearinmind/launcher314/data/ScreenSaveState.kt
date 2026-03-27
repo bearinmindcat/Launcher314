@@ -459,3 +459,19 @@ fun setWidgetFontScalePercent(context: Context, percent: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_WIDGET_FONT_SCALE, percent).apply()
 }
+
+// ============================================================================
+// HIDDEN APPS
+// ============================================================================
+
+private const val KEY_HIDDEN_APPS = "hidden_apps"
+
+fun getHiddenApps(context: Context): Set<String> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getStringSet(KEY_HIDDEN_APPS, emptySet()) ?: emptySet()
+}
+
+fun setHiddenApps(context: Context, hiddenApps: Set<String>) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()
+}

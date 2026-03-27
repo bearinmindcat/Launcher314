@@ -400,10 +400,11 @@ fun AppDrawerScreen(
         }
     }
 
-    // Filter and sort apps based on search query (apps in folders stay in folders)
+    // Filter hidden apps and sort based on search query (apps in folders stay in folders)
+    val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(context) }
     val filteredApps by remember {
         derivedStateOf {
-            val availableApps = allApps.filter { it.packageName !in appsInFolders }
+            val availableApps = allApps.filter { it.packageName !in appsInFolders && it.packageName !in hiddenApps }
             val searched = if (searchQuery.isBlank()) {
                 availableApps
             } else {
@@ -505,7 +506,9 @@ fun AppDrawerScreen(
                 }
             },
             isLoading = isLoading,
-            folders = displayFolders,
+            folders = displayFolders.map { folder ->
+                folder.copy(appPackageNames = folder.appPackageNames.filter { it !in hiddenApps })
+            }.filter { it.appPackageNames.isNotEmpty() },
             filteredApps = filteredApps,
             allApps = allApps,
             gridSize = gridSize,
@@ -628,7 +631,9 @@ fun AppDrawerScreen(
                         }
                 ) {
                     FolderContentScreen(
-                        folder = currentFolder,
+                        folder = currentFolder.copy(
+                            appPackageNames = currentFolder.appPackageNames.filter { it !in hiddenApps }
+                        ),
                         allApps = allApps,
                         gridSize = gridSize,
                         iconSize = iconSize,

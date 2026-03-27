@@ -33,6 +33,7 @@ import com.bearinmind.launcher314.ui.settings.SettingsScreen
 import com.bearinmind.launcher314.ui.widgets.WidgetInfo
 import com.bearinmind.launcher314.ui.widgets.WidgetsScreen
 import com.bearinmind.launcher314.ui.settings.FontsScreen
+import com.bearinmind.launcher314.ui.settings.HideAppsScreen
 import com.bearinmind.launcher314.ui.settings.IconPacksScreen
 import com.bearinmind.launcher314.ui.theme.Launcher314Theme
 
@@ -541,6 +542,9 @@ fun MainScreen(
                             },
                             onIconPacksClick = {
                                 navController.navigate("icon_packs")
+                            },
+                            onHideAppsClick = {
+                                navController.navigate("hide_apps")
                             }
                         )
             }
@@ -551,6 +555,11 @@ fun MainScreen(
             }
             composable("icon_packs") {
                 IconPacksScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable("hide_apps") {
+                HideAppsScreen(
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -631,6 +640,9 @@ fun MainScreen(
                         },
                         onIconPacksClick = {
                             navController.navigate("icon_packs")
+                        },
+                        onHideAppsClick = {
+                            navController.navigate("hide_apps")
                         }
                     )
                 }
@@ -641,6 +653,11 @@ fun MainScreen(
                 }
                 composable("icon_packs") {
                     IconPacksScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable("hide_apps") {
+                    HideAppsScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }

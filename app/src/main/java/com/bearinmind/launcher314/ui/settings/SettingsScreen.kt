@@ -102,7 +102,8 @@ fun SettingsScreen(
     onPreviewLauncher: () -> Unit = {},
     onGridSizeChanged: (Int) -> Unit = {},
     onFontsClick: () -> Unit = {},
-    onIconPacksClick: () -> Unit = {}
+    onIconPacksClick: () -> Unit = {},
+    onHideAppsClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -454,6 +455,33 @@ fun SettingsScreen(
                         }
                     }
                 )
+
+                // Hide apps from launcher
+                val hiddenAppCount = com.bearinmind.launcher314.data.getHiddenApps(context).size
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onHideAppsClick() }
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Hide apps from launcher",
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = if (hiddenAppCount > 0) "$hiddenAppCount apps hidden" else "No apps hidden",
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
 
             Divider(color = Color.Gray.copy(alpha = 0.2f))
