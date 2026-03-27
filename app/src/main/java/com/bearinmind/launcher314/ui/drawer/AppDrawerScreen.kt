@@ -508,7 +508,7 @@ fun AppDrawerScreen(
             isLoading = isLoading,
             folders = displayFolders.map { folder ->
                 folder.copy(appPackageNames = folder.appPackageNames.filter { it !in hiddenApps })
-            }.filter { it.appPackageNames.isNotEmpty() },
+            },
             filteredApps = filteredApps,
             allApps = allApps,
             gridSize = gridSize,

@@ -518,21 +518,39 @@ fun LauncherWithDrawer(
         // Layer 1: Home screen (launcher) with gesture detection
         // Only handles the OPENING gesture (swipe up on home screen).
         // Layer 2's nestedScroll handles the CLOSING gesture (swipe down on drawer).
+        val swipeDownEnabled = com.bearinmind.launcher314.data.getSwipeDownNotifications(context)
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
+                .pointerInput(swipeDownEnabled) {
                     // Track whether this gesture started when the drawer was closed.
                     // Prevents Layer 1 from interfering with Layer 2's closing gesture.
                     var gestureOwnedByLayer1 = false
+                    var isSwipeDown = false
+                    var totalDragAmount = 0f
 
                     detectVerticalDragGestures(
                         onDragStart = {
                             // Only own gestures that start when drawer is closed and no folder is open
                             gestureOwnedByLayer1 = swipeUpY.value > screenHeight * 0.9f && !isFolderOpen
+                            isSwipeDown = false
+                            totalDragAmount = 0f
                         },
                         onVerticalDrag = { change, dragAmount ->
                             if (!gestureOwnedByLayer1) return@detectVerticalDragGestures
+                            totalDragAmount += dragAmount
+
+                            // Detect swipe direction early
+                            if (totalDragAmount > 50f && !isSwipeDown && swipeDownEnabled) {
+                                isSwipeDown = true
+                            }
+
+                            if (isSwipeDown) {
+                                change.consume()
+                                return@detectVerticalDragGestures
+                            }
+
                             change.consume()
                             coroutineScope.launch {
                                 val newValue = (swipeUpY.value + dragAmount).coerceIn(0f, screenHeight)
@@ -541,6 +559,18 @@ fun LauncherWithDrawer(
                         },
                         onDragEnd = {
                             if (!gestureOwnedByLayer1) return@detectVerticalDragGestures
+
+                            if (isSwipeDown && totalDragAmount > actionThreshold) {
+                                // Swipe down detected — expand notification or quick settings
+                                val mode = com.bearinmind.launcher314.data.getSwipeDownMode(context)
+                                if (mode == 1) {
+                                    com.bearinmind.launcher314.helpers.NotificationPanelHelper.expandQuickSettings(context)
+                                } else {
+                                    com.bearinmind.launcher314.helpers.NotificationPanelHelper.expandNotificationPanel(context)
+                                }
+                                return@detectVerticalDragGestures
+                            }
+
                             coroutineScope.launch {
                                 if (swipeUpY.value < screenHeight - actionThreshold) {
                                     // Open drawer with spring animation
@@ -567,6 +597,7 @@ fun LauncherWithDrawer(
                         },
                         onDragCancel = {
                             if (!gestureOwnedByLayer1) return@detectVerticalDragGestures
+                            if (isSwipeDown) return@detectVerticalDragGestures
                             coroutineScope.launch {
                                 swipeUpY.animateTo(
                                     targetValue = screenHeight,

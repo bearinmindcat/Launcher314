@@ -475,3 +475,32 @@ fun setHiddenApps(context: Context, hiddenApps: Set<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()
 }
+
+// ============================================================================
+// SWIPE DOWN FOR NOTIFICATIONS
+// ============================================================================
+
+private const val KEY_SWIPE_DOWN_NOTIFICATIONS = "swipe_down_notifications"
+
+fun getSwipeDownNotifications(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_SWIPE_DOWN_NOTIFICATIONS, false)
+}
+
+fun setSwipeDownNotifications(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_SWIPE_DOWN_NOTIFICATIONS, enabled).apply()
+}
+
+private const val KEY_SWIPE_DOWN_MODE = "swipe_down_mode"
+
+/** 0 = Notifications, 1 = Quick Settings */
+fun getSwipeDownMode(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_SWIPE_DOWN_MODE, 0)
+}
+
+fun setSwipeDownMode(context: Context, mode: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_SWIPE_DOWN_MODE, mode).apply()
+}

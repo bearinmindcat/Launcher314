@@ -23,8 +23,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import androidx.lifecycle.Lifecycle
@@ -455,6 +458,112 @@ fun SettingsScreen(
                         }
                     }
                 )
+
+                // Swipe down for notifications/quick settings
+                var swipeDownEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.getSwipeDownNotifications(context)) }
+                var swipeDownMode by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getSwipeDownMode(context)) }
+                var showSwipeDownDropdown by remember { mutableStateOf(false) }
+                val swipeDownModeLabel = if (swipeDownMode == 0) "Notifications" else "Quick Settings"
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        .clickable {
+                            swipeDownEnabled = !swipeDownEnabled
+                            com.bearinmind.launcher314.data.setSwipeDownNotifications(context, swipeDownEnabled)
+                        }
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Swipe down for ",
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Box {
+                                val triangleRotation by animateFloatAsState(
+                                    targetValue = if (showSwipeDownDropdown) -90f else 0f,
+                                    label = "swipeDownTriangle"
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .width(140.dp)
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                            RoundedCornerShape(6.dp)
+                                        )
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable(
+                                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                            indication = androidx.compose.material.ripple.rememberRipple()
+                                        ) { showSwipeDownDropdown = !showSwipeDownDropdown }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = swipeDownModeLabel,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Canvas(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .rotate(triangleRotation)
+                                    ) {
+                                        val path = androidx.compose.ui.graphics.Path().apply {
+                                            moveTo(size.width / 2, size.height * 0.8f)
+                                            lineTo(size.width * 0.15f, size.height * 0.2f)
+                                            lineTo(size.width * 0.85f, size.height * 0.2f)
+                                            close()
+                                        }
+                                        drawPath(path, color = androidx.compose.ui.graphics.Color.Gray)
+                                    }
+                                }
+                                DropdownMenu(
+                                    expanded = showSwipeDownDropdown,
+                                    onDismissRequest = { showSwipeDownDropdown = false },
+                                    modifier = Modifier.width(140.dp)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Notifications") },
+                                        onClick = {
+                                            swipeDownMode = 0
+                                            com.bearinmind.launcher314.data.setSwipeDownMode(context, 0)
+                                            showSwipeDownDropdown = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Quick Settings") },
+                                        onClick = {
+                                            swipeDownMode = 1
+                                            com.bearinmind.launcher314.data.setSwipeDownMode(context, 1)
+                                            showSwipeDownDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = "Swipe down on home screen to access",
+                            fontSize = 14.sp,
+                            lineHeight = 18.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(
+                        checked = swipeDownEnabled,
+                        onCheckedChange = {
+                            swipeDownEnabled = it
+                            com.bearinmind.launcher314.data.setSwipeDownNotifications(context, it)
+                        }
+                    )
+                }
 
                 // Hide apps from launcher
                 val hiddenAppCount = com.bearinmind.launcher314.data.getHiddenApps(context).size
