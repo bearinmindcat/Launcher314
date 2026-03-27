@@ -861,6 +861,92 @@ fun IconTextPersonalizationCard(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // Text Color intensity slider + color row
+        var localTextColor by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
+        var localTextIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
+        run {
+            val textIntensityEnabled = localTextColor != null
+
+            // Intensity slider
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 76.dp)
+            ) {
+                ThumbDragHorizontalSlider(
+                    currentValue = localTextIntensity.toFloat(),
+                    config = SliderConfigs.colorIntensity,
+                    enabled = textIntensityEnabled,
+                    onValueChange = { localTextIntensity = it.toInt() },
+                    onValueChangeFinished = { com.bearinmind.launcher314.data.setGlobalTextColorIntensity(context, localTextIntensity) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            val textColors = listOf(
+                null to "—",
+                0xFFFFFFFF.toInt() to "White",
+                0xFFEF9A9A.toInt() to "Red",
+                0xFFA5D6A7.toInt() to "Green",
+                0xFF90CAF9.toInt() to "Blue",
+                0xFFFFF59D.toInt() to "Yellow",
+                0xFFFFCC80.toInt() to "Orange",
+                0xFFCE93D8.toInt() to "Purple",
+                0xFF9FA8DA.toInt() to "Indigo"
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 76.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                textColors.forEach { (color, _) ->
+                    val isSelected = localTextColor == color
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .then(
+                                if (color != null) Modifier.background(Color(color))
+                                else Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                            )
+                            .then(
+                                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                                else Modifier
+                            )
+                            .clickable {
+                                localTextColor = color
+                                com.bearinmind.launcher314.data.setGlobalTextColor(context, color)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (color == null) {
+                            Icon(
+                                imageVector = Icons.Outlined.Clear,
+                                contentDescription = "Default text color",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = "Text Color",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 76.dp, top = 4.dp),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         // Icon Pack selection button — same layout as font button
         Box(
             modifier = Modifier
@@ -1127,11 +1213,16 @@ fun IconTextPersonalizationCard(
                     } catch (_: Exception) { "App" }
                 }
                 val previewTextSize = (textSizePercent / 100f * 12f).sp
+                val previewTextIntensity = localTextIntensity / 100f
+                val previewTextColor = if (localTextColor != null) {
+                    val b = Color(localTextColor!!)
+                    Color(b.red * previewTextIntensity, b.green * previewTextIntensity, b.blue * previewTextIntensity, b.alpha)
+                } else Color.White
                 Text(
                     text = appLabel,
                     fontSize = previewTextSize,
                     fontFamily = selectedFontFamily ?: FontFamily.Default,
-                    color = Color.White,
+                    color = previewTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,

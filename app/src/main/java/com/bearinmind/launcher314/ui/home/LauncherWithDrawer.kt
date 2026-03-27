@@ -520,6 +520,21 @@ fun LauncherWithDrawer(
         // Layer 2's nestedScroll handles the CLOSING gesture (swipe down on drawer).
         val swipeDownEnabled = com.bearinmind.launcher314.data.getSwipeDownNotifications(context)
 
+        // Resolve global text color for home screen labels (re-read when refresh triggers)
+        var homeTextColorRaw by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
+        var homeTextIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
+        // Re-read on any refresh or composition re-entry
+        homeTextColorRaw = com.bearinmind.launcher314.data.getGlobalTextColor(context)
+        homeTextIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
+        val homeTextColor = if (homeTextColorRaw != null) {
+            val i = homeTextIntensity / 100f
+            val b = androidx.compose.ui.graphics.Color(homeTextColorRaw!!)
+            androidx.compose.ui.graphics.Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+        } else androidx.compose.ui.graphics.Color.White
+
+        androidx.compose.runtime.CompositionLocalProvider(
+            com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides homeTextColor
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -705,6 +720,7 @@ fun LauncherWithDrawer(
                 }
             }
         }
+        } // CompositionLocalProvider
 
     }
 }

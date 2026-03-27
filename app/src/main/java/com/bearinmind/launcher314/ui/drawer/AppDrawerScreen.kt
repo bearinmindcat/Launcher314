@@ -211,6 +211,11 @@ fun AppDrawerScreen(
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
     var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
+    var globalTextColor by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
+    var globalTextColorIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
+    // Re-read on every composition entry
+    globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
+    globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
 
     // Customize dialog state for drawer apps
     var customizingDrawerApp by remember { mutableStateOf<AppInfo?>(null) }
@@ -264,6 +269,8 @@ fun AppDrawerScreen(
                 selectedFontFamily = FontManager.getSelectedFontFamily(context)
                 globalIconShape = getGlobalIconShape(context)
                 globalIconBgColor = getGlobalIconBgColor(context)
+                globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
+                globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
                 // Refresh app list (picks up uninstalls, new installs, etc.)
                 appRefreshTrigger++
             }
@@ -473,6 +480,17 @@ fun AppDrawerScreen(
     val backgroundAlpha = (100 - drawerTransparency) / 100f
     val drawerBackground = Color(0xFF121212).copy(alpha = backgroundAlpha)
 
+    val resolvedTextColor = run {
+        if (globalTextColor != null) {
+            val i = globalTextColorIntensity / 100f
+            val b = Color(globalTextColor!!)
+            Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+        } else Color.White
+    }
+
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides resolvedTextColor
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -518,6 +536,13 @@ fun AppDrawerScreen(
             iconClipShape = getIconShape(globalIconShape),
             iconBgColor = globalIconBgColor,
             globalIconShapeName = globalIconShape,
+            labelTextColor = run {
+                if (globalTextColor != null) {
+                    val i = globalTextColorIntensity / 100f
+                    val b = androidx.compose.ui.graphics.Color(globalTextColor!!)
+                    androidx.compose.ui.graphics.Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+                } else androidx.compose.ui.graphics.Color.White
+            },
             drawerGridRows = drawerGridRows,
             isPagedMode = isPagedMode,
             currentSortOption = currentSortOption,
@@ -1076,6 +1101,7 @@ fun AppDrawerScreen(
             }
         )
     }
+    } // CompositionLocalProvider
 }
 
 // MainDrawerContent moved to MainDrawerContent.kt

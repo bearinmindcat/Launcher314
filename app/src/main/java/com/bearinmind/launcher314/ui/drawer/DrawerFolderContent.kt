@@ -631,7 +631,7 @@ internal fun FolderContentScreen(
                                                     text = cellApp.name,
                                                     fontSize = labelFontSize,
                                                     fontFamily = labelFontFamily ?: FontFamily.Default,
-                                                    color = Color.White,
+                                                    color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
                                                     textAlign = TextAlign.Center,

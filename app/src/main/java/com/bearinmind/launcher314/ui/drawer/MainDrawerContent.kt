@@ -109,6 +109,7 @@ internal fun MainDrawerContent(
     iconClipShape: androidx.compose.ui.graphics.Shape? = null,
     iconBgColor: Int? = null,
     globalIconShapeName: String? = null,
+    labelTextColor: Color = Color.White,
     drawerGridRows: Int,
     isPagedMode: Boolean,
     currentSortOption: SortOption,
