@@ -4157,7 +4157,7 @@ fun LauncherScreen(
                         text = escapeCloseFolderName,
                         fontSize = 42.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
                     )
                 }
                 // Content (2/3) — app grid
@@ -4364,7 +4364,7 @@ fun LauncherScreen(
                         textStyle = TextStyle(
                             fontSize = 42.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
                             textAlign = TextAlign.Center
                         ),
                         singleLine = true,
@@ -4399,7 +4399,7 @@ fun LauncherScreen(
                         text = folder.name,
                         fontSize = 42.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
                         modifier = Modifier.clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -5095,7 +5095,7 @@ private fun HomeFolderAppItem(
                 text = app.name,
                 fontSize = labelFontSize,
                 fontFamily = labelFontFamily ?: FontFamily.Default,
-                color = Color.White,
+                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,

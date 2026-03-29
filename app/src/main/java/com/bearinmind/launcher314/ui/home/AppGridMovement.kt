@@ -666,11 +666,12 @@ fun DraggableGridCell(
                                     modifier = Modifier
                                         .size(folderBoxSize)
                                         .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
-                                        .background(Color(0xFF1A1A1A)),
+                                        .background(Color(0xFF1A1A1A))
+                                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    val padding = folderBoxSize * 0.08f
-                                    val spacing = folderBoxSize * 0.04f
+                                    val padding = folderBoxSize * 0.12f
+                                    val spacing = folderBoxSize * 0.05f
                                     val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
 
                                     Column(
@@ -1121,12 +1122,13 @@ fun DraggableGridCell(
                                         clip = false
                                     }
                                     .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
-                                    .background(Color(0xFF1A1A1A)),
+                                    .background(Color(0xFF1A1A1A))
+                                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (cell.previewApps.isNotEmpty()) {
-                                    val padding = folderBoxSize * 0.08f
-                                    val spacing = folderBoxSize * 0.04f
+                                    val padding = folderBoxSize * 0.12f
+                                    val spacing = folderBoxSize * 0.05f
                                     val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
 
                                     Column(
@@ -1917,6 +1919,7 @@ fun DockSlot(
                         .size(folderBoxSize)
                         .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                         .background(Color(0xFF1A1A1A))
+                        .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                         .graphicsLayer {
                             scaleX = iconScale
                             scaleY = iconScale
