@@ -532,14 +532,8 @@ fun LauncherWithDrawer(
             androidx.compose.ui.graphics.Color(b.red * i, b.green * i, b.blue * i, b.alpha)
         } else androidx.compose.ui.graphics.Color.White
 
-        val homeFolderBorder = run {
-            val bgc = com.bearinmind.launcher314.data.getGlobalIconBgColor(context)
-            if (bgc != null) androidx.compose.ui.graphics.Color(bgc).copy(alpha = 0.6f)
-            else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.3f)
-        }
         androidx.compose.runtime.CompositionLocalProvider(
-            com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides homeTextColor,
-            com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor provides homeFolderBorder
+            com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides homeTextColor
         ) {
         Box(
             modifier = Modifier

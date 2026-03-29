@@ -244,7 +244,7 @@ internal fun FolderContentScreen(
                     textStyle = androidx.compose.ui.text.TextStyle(
                         fontSize = 42.sp,
                         fontWeight = FontWeight.Bold,
-                        color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                        color = Color.White,
                         textAlign = TextAlign.Center
                     ),
                     singleLine = true,
@@ -273,7 +273,7 @@ internal fun FolderContentScreen(
                     text = folder.name,
                     fontSize = 42.sp,
                     fontWeight = FontWeight.Bold,
-                    color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                    color = Color.White,
                     modifier = Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
@@ -788,7 +788,7 @@ internal fun FolderContentScreen(
                                     text = draggedApp.name,
                                     fontSize = labelFontSize,
                                     fontFamily = labelFontFamily ?: FontFamily.Default,
-                                    color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                                    color = Color.White,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = TextAlign.Center,

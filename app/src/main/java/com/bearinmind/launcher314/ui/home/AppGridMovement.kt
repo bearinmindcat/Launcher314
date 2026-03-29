@@ -137,6 +137,7 @@ fun DraggableGridCell(
     globalIconSizePercent: Float = 100f, // Global icon size for absolute per-app scale
     globalIconShape: String? = null, // Global icon shape (EXP method) applied when no per-app shape
     globalIconBgColor: Int? = null, // Global icon background color (drawn behind icon within shape)
+    globalIconBgIntensity: Int = 100, // Triggers recomposition when intensity changes
     removeLabel: String = "Remove from home",
     homeFolders: List<com.bearinmind.launcher314.data.HomeFolder> = emptyList(),
     onAddToFolder: (com.bearinmind.launcher314.data.HomeFolder) -> Unit = {},
@@ -513,10 +514,13 @@ fun DraggableGridCell(
                                     ?: cell.appInfo.customization?.iconShape
                                     ?: globalIconShape
                             } else null
-                            val displayIconPath = if (useBgColorIcon && bgColorEffectiveShape != null) {
-                                try { getOrGenerateBgColorShapedIcon(gridContext, cell.appInfo.packageName, bgColorEffectiveShape, globalIconBgColor!!) }
-                                catch (_: Exception) { finalIconModelPath }
-                            } else finalIconModelPath
+                            // globalIconBgIntensity forces this block to re-evaluate when intensity changes
+                            val displayIconPath = remember(globalIconBgIntensity, globalIconBgColor, bgColorEffectiveShape) {
+                                if (useBgColorIcon && bgColorEffectiveShape != null) {
+                                    try { getOrGenerateBgColorShapedIcon(gridContext, cell.appInfo.packageName, bgColorEffectiveShape, globalIconBgColor!!) }
+                                    catch (_: Exception) { finalIconModelPath }
+                                } else finalIconModelPath
+                            }
                             val isBgColorIcon = displayIconPath != finalIconModelPath
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -666,12 +670,11 @@ fun DraggableGridCell(
                                     modifier = Modifier
                                         .size(folderBoxSize)
                                         .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
-                                        .background(Color(0xFF1A1A1A))
-                                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)),
+                                        .background(Color(0xFF1A1A1A)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    val padding = folderBoxSize * 0.12f
-                                    val spacing = folderBoxSize * 0.05f
+                                    val padding = folderBoxSize * 0.08f
+                                    val spacing = folderBoxSize * 0.04f
                                     val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
 
                                     Column(
@@ -1122,13 +1125,12 @@ fun DraggableGridCell(
                                         clip = false
                                     }
                                     .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
-                                    .background(Color(0xFF1A1A1A))
-                                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)),
+                                    .background(Color(0xFF1A1A1A)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (cell.previewApps.isNotEmpty()) {
-                                    val padding = folderBoxSize * 0.12f
-                                    val spacing = folderBoxSize * 0.05f
+                                    val padding = folderBoxSize * 0.08f
+                                    val spacing = folderBoxSize * 0.04f
                                     val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
 
                                     Column(
@@ -1474,6 +1476,7 @@ fun DockSlot(
     globalIconSizePercent: Float = 100f, // Global icon size for absolute per-app scale
     globalIconShape: String? = null, // Global icon shape (EXP method) applied when no per-app shape
     globalIconBgColor: Int? = null, // Global icon background color (drawn behind icon within shape)
+    globalIconBgIntensity: Int = 100,
     onRenameDockFolder: (() -> Unit)? = null,
     homeFolders: List<com.bearinmind.launcher314.data.HomeFolder> = emptyList(),
     onAddToFolder: (com.bearinmind.launcher314.data.HomeFolder) -> Unit = {},
@@ -1670,10 +1673,12 @@ fun DockSlot(
                         ?: appInfo?.customization?.iconShape
                         ?: globalIconShape
                 } else null
-                val dockDisplayIconPath = if (dockUseBgColorIcon && dockBgColorEffectiveShape != null && appInfo != null) {
-                    try { getOrGenerateBgColorShapedIcon(dockContext, appInfo.packageName, dockBgColorEffectiveShape, globalIconBgColor!!) }
-                    catch (_: Exception) { dockFinalIconModelPath }
-                } else dockFinalIconModelPath
+                val dockDisplayIconPath = remember(globalIconBgIntensity, globalIconBgColor, dockBgColorEffectiveShape) {
+                    if (dockUseBgColorIcon && dockBgColorEffectiveShape != null && appInfo != null) {
+                        try { getOrGenerateBgColorShapedIcon(dockContext, appInfo.packageName, dockBgColorEffectiveShape, globalIconBgColor!!) }
+                        catch (_: Exception) { dockFinalIconModelPath }
+                    } else dockFinalIconModelPath
+                }
                 val dockIsBgColorIcon = dockDisplayIconPath != dockFinalIconModelPath
                 Box(contentAlignment = Alignment.Center) {
                     AsyncImage(
@@ -1919,7 +1924,6 @@ fun DockSlot(
                         .size(folderBoxSize)
                         .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                         .background(Color(0xFF1A1A1A))
-                        .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                         .graphicsLayer {
                             scaleX = iconScale
                             scaleY = iconScale

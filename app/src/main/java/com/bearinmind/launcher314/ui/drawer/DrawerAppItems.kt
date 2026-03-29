@@ -261,14 +261,13 @@ internal fun FolderItem(
                         clip = false
                     }
                     .clip(RoundedCornerShape((iconSize * 0.29f).dp))
-                    .background(Color(0xFF1A1A1A))
-                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, RoundedCornerShape((iconSize * 0.29f).dp)),
+                    .background(Color(0xFF1A1A1A)),
                 contentAlignment = Alignment.Center
             ) {
                 if (previewApps.isNotEmpty() || (draggedIconPath != null && dragIconProgress > 0f)) {
                     val boxSize = maxWidth
-                    val padding = boxSize * 0.12f
-                    val spacing = boxSize * 0.05f
+                    val padding = boxSize * 0.08f
+                    val spacing = boxSize * 0.04f
                     val miniIconSize = (boxSize - padding * 2 - spacing) / 2
 
                     Column(
@@ -1209,12 +1208,11 @@ internal fun SelectableAppItem(
                                 scaleY = previewScale
                             }
                             .clip(iconClipShape ?: RoundedCornerShape(folderCornerRadius))
-                            .background(Color(0xFF1A1A1A))
-                            .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, iconClipShape ?: RoundedCornerShape(folderCornerRadius)),
+                            .background(Color(0xFF1A1A1A)),
                         contentAlignment = Alignment.Center
                     ) {
-                        val padding = folderBoxSize * 0.12f
-                        val spacing = folderBoxSize * 0.05f
+                        val padding = folderBoxSize * 0.08f
+                        val spacing = folderBoxSize * 0.04f
                         val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
 
                         Column(
