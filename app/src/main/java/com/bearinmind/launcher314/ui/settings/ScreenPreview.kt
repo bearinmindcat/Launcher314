@@ -1031,6 +1031,7 @@ private fun ScaledPreviewFolderItem(
     showPlusMarker: Boolean = false,
     scaleFactor: Float = 0.4f
 ) {
+    val folderPreviewContext = LocalContext.current
     val miniIconSize = iconSize / 2.2f
     val markerHalfSize = 6.dp * scaleFactor
 
@@ -1045,12 +1046,17 @@ private fun ScaledPreviewFolderItem(
                 modifier = Modifier
                     .size(iconSize)
                     .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF1A1A1A))
                     .border(
                         width = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        color = run {
+                            val bgc = com.bearinmind.launcher314.data.getGlobalIconBgColor(folderPreviewContext)
+                            val intensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(folderPreviewContext)
+                            if (bgc != null) Color(bgc).copy(alpha = (intensity / 100f).coerceIn(0f, 1f))
+                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                        },
                         shape = RoundedCornerShape(4.dp)
-                    )
-                    .background(Color(0xFF1A1A1A)),
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 if (appIcons.isNotEmpty()) {
@@ -2177,12 +2183,18 @@ private fun HomeScreenPreview(
                                                     modifier = Modifier
                                                         .requiredSize(folderBoxSize)
                                                         .clip(RoundedCornerShape(folderCornerRadius))
-                                                        .background(Color(0xFF1A1A1A)),
+                                                        .background(Color(0xFF1A1A1A))
+                                                        .border(
+                                                            width = 0.5.dp,
+                                                            color = if (iconBgColorOverride != null) Color(iconBgColorOverride).copy(alpha = (iconBgIntensityOverride / 100f).coerceIn(0f, 1f))
+                                                                    else Color.White.copy(alpha = 0.3f),
+                                                            shape = RoundedCornerShape(folderCornerRadius)
+                                                        ),
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     if (cell.previewApps.isNotEmpty()) {
-                                                        val fPad = folderBoxSize * 0.08f
-                                                        val fSpacing = folderBoxSize * 0.04f
+                                                        val fPad = folderBoxSize * 0.12f
+                                                        val fSpacing = folderBoxSize * 0.05f
                                                         val miniIcon = (folderBoxSize - fPad * 2 - fSpacing) / 2
                                                         Column(
                                                             modifier = Modifier.padding(fPad),

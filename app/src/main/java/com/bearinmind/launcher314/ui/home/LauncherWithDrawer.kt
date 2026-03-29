@@ -534,7 +534,8 @@ fun LauncherWithDrawer(
 
         val homeFolderBorder = run {
             val bgc = com.bearinmind.launcher314.data.getGlobalIconBgColor(context)
-            if (bgc != null) androidx.compose.ui.graphics.Color(bgc).copy(alpha = 0.6f)
+            val intensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)
+            if (bgc != null) androidx.compose.ui.graphics.Color(bgc).copy(alpha = (intensity / 100f).coerceIn(0f, 1f))
             else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.3f)
         }
         androidx.compose.runtime.CompositionLocalProvider(

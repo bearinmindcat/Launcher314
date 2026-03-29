@@ -488,8 +488,15 @@ fun AppDrawerScreen(
         } else Color.White
     }
 
+    val drawerFolderBorder = run {
+        val bgc = com.bearinmind.launcher314.data.getGlobalIconBgColor(context)
+        val intensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)
+        if (bgc != null) Color(bgc).copy(alpha = (intensity / 100f).coerceIn(0f, 1f))
+        else Color.White.copy(alpha = 0.3f)
+    }
     androidx.compose.runtime.CompositionLocalProvider(
-        com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides resolvedTextColor
+        com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides resolvedTextColor,
+        com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor provides drawerFolderBorder
     ) {
     Box(
         modifier = Modifier
