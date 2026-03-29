@@ -264,42 +264,42 @@ fun setIconTextSizePercent(context: Context, percent: Int) {
 // ============================================================================
 
 fun getGlobalIconShape(context: Context): String? {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val value = prefs.getString(KEY_GLOBAL_ICON_SHAPE, null)
     return if (value.isNullOrEmpty()) null else value
 }
 
 fun setGlobalIconShape(context: Context, shape: String?) {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     if (shape == null) {
-        prefs.edit().remove(KEY_GLOBAL_ICON_SHAPE).apply()
+        prefs.edit().remove(KEY_GLOBAL_ICON_SHAPE).commit()
     } else {
-        prefs.edit().putString(KEY_GLOBAL_ICON_SHAPE, shape).apply()
+        prefs.edit().putString(KEY_GLOBAL_ICON_SHAPE, shape).commit()
     }
 }
 
 fun getGlobalIconBgColor(context: Context): Int? {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return if (prefs.contains(KEY_GLOBAL_ICON_BG_COLOR)) prefs.getInt(KEY_GLOBAL_ICON_BG_COLOR, 0) else null
 }
 
 fun setGlobalIconBgColor(context: Context, color: Int?) {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     if (color == null) {
-        prefs.edit().remove(KEY_GLOBAL_ICON_BG_COLOR).apply()
+        prefs.edit().remove(KEY_GLOBAL_ICON_BG_COLOR).commit()
     } else {
-        prefs.edit().putInt(KEY_GLOBAL_ICON_BG_COLOR, color).apply()
+        prefs.edit().putInt(KEY_GLOBAL_ICON_BG_COLOR, color).commit()
     }
 }
 
 fun getGlobalIconBgIntensity(context: Context): Int {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_GLOBAL_ICON_BG_INTENSITY, 100)
 }
 
 fun setGlobalIconBgIntensity(context: Context, intensity: Int) {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    prefs.edit().putInt(KEY_GLOBAL_ICON_BG_INTENSITY, intensity).apply()
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_GLOBAL_ICON_BG_INTENSITY, intensity).commit()
 }
 
 // ============================================================================

@@ -519,7 +519,9 @@ fun MainScreen(
             composable("settings") {
                         val settingsAct = context as? MainActivity
                         androidx.compose.runtime.DisposableEffect(Unit) {
-                            onDispose { settingsAct?.widgetAddedTrigger?.intValue = (settingsAct?.widgetAddedTrigger?.intValue ?: 0) + 1 }
+                            onDispose {
+                                settingsAct?.widgetAddedTrigger?.intValue = (settingsAct?.widgetAddedTrigger?.intValue ?: 0) + 1
+                            }
                         }
                         SettingsScreen(
                             onBack = {
@@ -618,7 +620,9 @@ fun MainScreen(
                 composable("settings") {
                     val settingsAct = context as? MainActivity
                     androidx.compose.runtime.DisposableEffect(Unit) {
-                        onDispose { settingsAct?.widgetAddedTrigger?.intValue = (settingsAct?.widgetAddedTrigger?.intValue ?: 0) + 1 }
+                        onDispose {
+                            settingsAct?.widgetAddedTrigger?.intValue = (settingsAct?.widgetAddedTrigger?.intValue ?: 0) + 1
+                        }
                     }
                     SettingsScreen(
                         onBack = {

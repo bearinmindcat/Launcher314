@@ -399,6 +399,13 @@ fun LauncherScreen(
     var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
     var globalIconBgIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)) }
+    // Re-read on every recomposition so it picks up changes from settings immediately
+    // Use applicationContext to ensure same SharedPreferences instance as settings
+    val appContext = context.applicationContext
+    globalIconBgIntensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(appContext)
+    globalIconShape = getGlobalIconShape(appContext)
+    globalIconBgColor = getGlobalIconBgColor(appContext)
+
 
     // Home screen selection state — uses "page_position" keys to uniquely identify cells
     var selectedHomeCells by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -4166,7 +4173,7 @@ fun LauncherScreen(
                         text = escapeCloseFolderName,
                         fontSize = 42.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
                     )
                 }
                 // Content (2/3) — app grid
@@ -4373,7 +4380,7 @@ fun LauncherScreen(
                         textStyle = TextStyle(
                             fontSize = 42.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
                             textAlign = TextAlign.Center
                         ),
                         singleLine = true,
@@ -4408,7 +4415,7 @@ fun LauncherScreen(
                         text = folder.name,
                         fontSize = 42.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
                         modifier = Modifier.clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -5104,7 +5111,7 @@ private fun HomeFolderAppItem(
                 text = app.name,
                 fontSize = labelFontSize,
                 fontFamily = labelFontFamily ?: FontFamily.Default,
-                color = Color.White,
+                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,

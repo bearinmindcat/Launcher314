@@ -277,14 +277,16 @@ fun clearBgColorShapedIcons(context: Context) {
     if (dir.exists()) dir.deleteRecursively()
 }
 
-fun getOrGenerateBgColorShapedIcon(context: Context, packageName: String, shapeName: String, bgColor: Int): String {
-    val prefs = context.getSharedPreferences("app_drawer_settings", Context.MODE_PRIVATE)
-    val intensity = prefs.getInt("global_icon_bg_intensity", 100)
+fun getOrGenerateBgColorShapedIcon(context: Context, packageName: String, shapeName: String, bgColor: Int, intensity: Int = -1): String {
+    val actualIntensity = if (intensity >= 0) intensity else {
+        val prefs = context.applicationContext.getSharedPreferences("app_drawer_settings", Context.MODE_PRIVATE)
+        prefs.getInt("global_icon_bg_intensity", 100)
+    }
     val dir = getBgColorShapedDir(context)
     val colorHex = Integer.toHexString(bgColor)
-    val file = File(dir, "${packageName}_${shapeName}_${colorHex}_${intensity}.png")
+    val file = File(dir, "${packageName}_${shapeName}_${colorHex}_${actualIntensity}.png")
     if (file.exists()) return file.absolutePath
-    return generateBgColorShapedIcon(context, packageName, shapeName, bgColor, intensity)
+    return generateBgColorShapedIcon(context, packageName, shapeName, bgColor, actualIntensity)
 }
 
 /**

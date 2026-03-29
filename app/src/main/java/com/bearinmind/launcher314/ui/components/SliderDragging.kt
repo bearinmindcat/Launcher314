@@ -156,6 +156,7 @@ fun ThumbDragHorizontalSlider(
                                     val wasInOverflow = dragValue > dragMax
                                     if (wasInOverflow) isOverflowSnapping = true
                                     currentOnValueChange(snappedValue)
+                                    currentOnValueChangeFinished()
                                     coroutineScope.launch {
                                         animatedValue.snapTo(dragValue) // sync animatable to drag position
                                         isDragging = false // safe: animatedValue now matches dragValue
@@ -171,7 +172,6 @@ fun ThumbDragHorizontalSlider(
                                             )
                                         )
                                         isOverflowSnapping = false
-                                        currentOnValueChangeFinished()
                                     }
                                 }
                             },
@@ -184,6 +184,7 @@ fun ThumbDragHorizontalSlider(
                                     val wasInOverflow = dragValue > dragMax
                                     if (wasInOverflow) isOverflowSnapping = true
                                     currentOnValueChange(snappedValue)
+                                    currentOnValueChangeFinished()
                                     coroutineScope.launch {
                                         animatedValue.snapTo(dragValue)
                                         isDragging = false
@@ -518,6 +519,7 @@ fun ThumbDragVerticalSlider(
                                     val wasInOverflow = animatedValue.value > dragMax
                                     if (wasInOverflow) isOverflowSnapping = true
                                     onValueChange(snappedValue)
+                                    onValueChangeFinished()
                                     coroutineScope.launch {
                                         animatedValue.animateTo(
                                             targetValue = snappedValue,
@@ -530,7 +532,6 @@ fun ThumbDragVerticalSlider(
                                             )
                                         )
                                         isOverflowSnapping = false
-                                        onValueChangeFinished()
                                     }
                                 }
                                 isDragging = false
