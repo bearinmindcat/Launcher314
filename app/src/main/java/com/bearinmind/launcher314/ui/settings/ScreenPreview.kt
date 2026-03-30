@@ -2192,55 +2192,77 @@ private fun HomeScreenPreview(
                                                         ),
                                                     contentAlignment = Alignment.Center
                                                 ) {
+                                                    val folderPreviewCtx = LocalContext.current
                                                     if (cell.previewApps.isNotEmpty()) {
                                                         val fPad = folderBoxSize * 0.12f
                                                         val fSpacing = folderBoxSize * 0.05f
                                                         val miniIcon = (folderBoxSize - fPad * 2 - fSpacing) / 2
+                                                        val miniClip = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(miniIcon * 0.2f) else RoundedCornerShape(miniIcon * 0.2f)
                                                         Column(
                                                             modifier = Modifier.padding(fPad),
                                                             verticalArrangement = Arrangement.spacedBy(fSpacing)
                                                         ) {
                                                             Row(horizontalArrangement = Arrangement.spacedBy(fSpacing)) {
                                                                 cell.previewApps.getOrNull(0)?.let { a ->
+                                                                    val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                                                        if (iconShapeOverride != null) {
+                                                                            try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                                                                  else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
+                                                                            } catch (_: Exception) { a.iconPath }
+                                                                        } else a.iconPath
+                                                                    }
                                                                     AsyncImage(
-                                                                        model = File(a.iconPath),
+                                                                        model = File(p),
                                                                         contentDescription = null,
                                                                         contentScale = ContentScale.Fit,
-                                                                        modifier = Modifier
-                                                                            .size(miniIcon)
-                                                                            .clip(RoundedCornerShape(miniIcon * 0.2f))
+                                                                        modifier = Modifier.size(miniIcon).clip(miniClip)
                                                                     )
                                                                 } ?: Spacer(Modifier.size(miniIcon))
                                                                 cell.previewApps.getOrNull(1)?.let { a ->
+                                                                    val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                                                        if (iconShapeOverride != null) {
+                                                                            try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                                                                  else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
+                                                                            } catch (_: Exception) { a.iconPath }
+                                                                        } else a.iconPath
+                                                                    }
                                                                     AsyncImage(
-                                                                        model = File(a.iconPath),
+                                                                        model = File(p),
                                                                         contentDescription = null,
                                                                         contentScale = ContentScale.Fit,
-                                                                        modifier = Modifier
-                                                                            .size(miniIcon)
-                                                                            .clip(RoundedCornerShape(miniIcon * 0.2f))
+                                                                        modifier = Modifier.size(miniIcon).clip(miniClip)
                                                                     )
                                                                 } ?: Spacer(Modifier.size(miniIcon))
                                                             }
                                                             Row(horizontalArrangement = Arrangement.spacedBy(fSpacing)) {
                                                                 cell.previewApps.getOrNull(2)?.let { a ->
+                                                                    val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                                                        if (iconShapeOverride != null) {
+                                                                            try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                                                                  else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
+                                                                            } catch (_: Exception) { a.iconPath }
+                                                                        } else a.iconPath
+                                                                    }
                                                                     AsyncImage(
-                                                                        model = File(a.iconPath),
+                                                                        model = File(p),
                                                                         contentDescription = null,
                                                                         contentScale = ContentScale.Fit,
-                                                                        modifier = Modifier
-                                                                            .size(miniIcon)
-                                                                            .clip(RoundedCornerShape(miniIcon * 0.2f))
+                                                                        modifier = Modifier.size(miniIcon).clip(miniClip)
                                                                     )
                                                                 } ?: Spacer(Modifier.size(miniIcon))
                                                                 cell.previewApps.getOrNull(3)?.let { a ->
+                                                                    val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                                                        if (iconShapeOverride != null) {
+                                                                            try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                                                                  else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
+                                                                            } catch (_: Exception) { a.iconPath }
+                                                                        } else a.iconPath
+                                                                    }
                                                                     AsyncImage(
-                                                                        model = File(a.iconPath),
+                                                                        model = File(p),
                                                                         contentDescription = null,
                                                                         contentScale = ContentScale.Fit,
-                                                                        modifier = Modifier
-                                                                            .size(miniIcon)
-                                                                            .clip(RoundedCornerShape(miniIcon * 0.2f))
+                                                                        modifier = Modifier.size(miniIcon).clip(miniClip)
                                                                     )
                                                                 } ?: Spacer(Modifier.size(miniIcon))
                                                             }
