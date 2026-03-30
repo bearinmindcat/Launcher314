@@ -1933,13 +1933,33 @@ private fun HomeScreenPreview(
         } else Color.White
     }
 
+    // Load saved stack pages for widget stacks
+    val savedStackPages = remember {
+        val prefs = homePreviewContext.applicationContext.getSharedPreferences("app_drawer_settings", android.content.Context.MODE_PRIVATE)
+        val str = prefs.getString("widget_stack_pages", null)
+        val map = mutableMapOf<String, Int>()
+        str?.split(",")?.forEach { entry ->
+            val parts = entry.split("=")
+            if (parts.size == 2) map[parts[0]] = parts[1].toIntOrNull() ?: 0
+        }
+        map
+    }
+
     // Build grid cells from home screen apps, folders, and widgets
     val totalCells = gridColumns * gridRows
     val gridCells = remember(homeScreenApps, allApps, homeFolders, placedWidgets, totalCells, gridColumns) {
         val cells = MutableList<HomePreviewCell?>(totalCells) { null }
 
         // Place widgets first (they span multiple cells)
-        placedWidgets.forEach { widget ->
+        // For stacked widgets, only show the currently selected one
+        val visibleWidgets = placedWidgets.filter { w ->
+            if (w.stackId == null) true
+            else {
+                val currentPage = savedStackPages[w.stackId] ?: 0
+                w.stackOrder == currentPage
+            }
+        }
+        visibleWidgets.forEach { widget ->
             val originPos = widget.startRow * gridColumns + widget.startColumn
             if (originPos in 0 until totalCells) {
                 cells[originPos] = HomePreviewCell.WidgetOrigin(widget)
@@ -2382,8 +2402,16 @@ private fun HomeScreenPreview(
 
                         // Use bitmaps from the parent (persists across icon size changes)
                         val widgetContext = LocalContext.current
+                        // For stacked widgets, only show the currently selected one
+                        val previewVisibleWidgets = placedWidgets.filter { w ->
+                            if (w.stackId == null) true
+                            else {
+                                val currentPage = savedStackPages[w.stackId] ?: 0
+                                w.stackOrder == currentPage
+                            }
+                        }
 
-                        placedWidgets.forEach { widget ->
+                        previewVisibleWidgets.forEach { widget ->
                             LaunchedEffect(widget.appWidgetId) {
                                 if (widgetBitmaps.containsKey(widget.appWidgetId)) return@LaunchedEffect
                                 try {
@@ -2420,7 +2448,7 @@ private fun HomeScreenPreview(
                             val cellW = maxWidth / gridColumns
                             val cellH = maxHeight / gridRows
 
-                            placedWidgets.forEach { widget ->
+                            previewVisibleWidgets.forEach { widget ->
                                 key(widget.appWidgetId) {
                                     val x = cellW * widget.startColumn
                                     val y = cellH * widget.startRow

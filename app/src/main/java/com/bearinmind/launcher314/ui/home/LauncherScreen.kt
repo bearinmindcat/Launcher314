@@ -407,6 +407,22 @@ fun LauncherScreen(
     globalIconBgColor = getGlobalIconBgColor(appContext)
 
 
+    // Persistent stack page state — remembers which widget is shown in each stack
+    val stackPageMap = remember { mutableStateMapOf<String, Int>() }
+    // Load saved stack pages from prefs on first composition
+    LaunchedEffect(Unit) {
+        val prefs = appContext.getSharedPreferences("app_drawer_settings", android.content.Context.MODE_PRIVATE)
+        val saved = prefs.getString("widget_stack_pages", null)
+        if (saved != null) {
+            saved.split(",").forEach { entry ->
+                val parts = entry.split("=")
+                if (parts.size == 2) {
+                    stackPageMap[parts[0]] = parts[1].toIntOrNull() ?: 0
+                }
+            }
+        }
+    }
+
     // Home screen selection state — uses "page_position" keys to uniquely identify cells
     var selectedHomeCells by remember { mutableStateOf<Set<String>>(emptySet()) }
     var homeSelectionModeActive by remember { mutableStateOf(false) }
@@ -2709,10 +2725,18 @@ fun LauncherScreen(
 
                                                 if (stackWidgets.size > 1) {
                                                     // Stacked widgets — swipeable pager with nav-style dots inside widget
-                                                    val stackPagerState = rememberPagerState(pageCount = { stackWidgets.size })
-                                                    // Sync current page to outer state for context menu
+                                                    val savedPage = (stackPageMap[widget.stackId] ?: 0).coerceIn(0, stackWidgets.size - 1)
+                                                    val stackPagerState = rememberPagerState(initialPage = savedPage, pageCount = { stackWidgets.size })
+                                                    // Sync current page to outer state for context menu + persist
                                                     LaunchedEffect(stackPagerState.currentPage) {
                                                         currentStackPage = stackPagerState.currentPage
+                                                        if (widget.stackId != null) {
+                                                            stackPageMap[widget.stackId!!] = stackPagerState.currentPage
+                                                            // Save to prefs
+                                                            val encoded = stackPageMap.entries.joinToString(",") { "${it.key}=${it.value}" }
+                                                            appContext.getSharedPreferences("app_drawer_settings", android.content.Context.MODE_PRIVATE)
+                                                                .edit().putString("widget_stack_pages", encoded).apply()
+                                                        }
                                                     }
                                                     val stackDotBaseColor = getScrollbarColor(context)
                                                     val stackDotIntensity = getScrollbarIntensity(context)
