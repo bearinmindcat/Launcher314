@@ -289,6 +289,8 @@ fun SettingsScreen(
                 }
 
                 // Shared settings sections (same for both tabs)
+                Divider(color = Color.Gray.copy(alpha = 0.2f))
+
                 CollapsibleSection(
                     title = "Icon Personalization",
                     expanded = iconTextSectionExpanded,
@@ -320,6 +322,8 @@ fun SettingsScreen(
                         }
                     )
                 }
+
+                Divider(color = Color.Gray.copy(alpha = 0.2f))
 
                 CollapsibleSection(
                     title = "Scroll Bar / Navigation",
