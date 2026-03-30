@@ -136,7 +136,8 @@ internal fun MainDrawerContent(
     dropAnimatingPackage: String? = null,
     onDropTargetPositioned: (Offset, IntSize) -> Unit = { _, _ -> },
     escapeHoverState: EscapeHoverState? = null,
-    onCustomizeApp: (AppInfo) -> Unit = {}
+    onCustomizeApp: (AppInfo) -> Unit = {},
+    onCustomizeFolder: (com.bearinmind.launcher314.data.AppFolder) -> Unit = {}
 ) {
     val onDragToHome = homeDragCallbacks.onDragToHome
     val onDragToHomeMove = homeDragCallbacks.onDragToHomeMove
@@ -890,7 +891,8 @@ internal fun MainDrawerContent(
                                                     else null,
                                                     iconClipShape = iconClipShape,
                                                     iconBgColor = iconBgColor,
-                                                    globalIconShapeName = globalIconShapeName
+                                                    globalIconShapeName = globalIconShapeName,
+                                                    onCustomize = { onCustomizeFolder(cellItem) }
                                                 )
                                             } else if (cellItem is AppInfo) {
                                                 val selectedApps = filteredApps.filter { it.packageName in selectedAppPackages }
@@ -1088,7 +1090,8 @@ internal fun MainDrawerContent(
                                 else null,
                                 iconClipShape = iconClipShape,
                                 iconBgColor = iconBgColor,
-                                globalIconShapeName = globalIconShapeName
+                                globalIconShapeName = globalIconShapeName,
+                                onCustomize = { onCustomizeFolder(folder) }
                             )
                         }
                     }

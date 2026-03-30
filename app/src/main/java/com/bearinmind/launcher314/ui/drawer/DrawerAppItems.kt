@@ -77,6 +77,7 @@ internal fun FolderItem(
     onPositioned: (Offset) -> Unit = {},
     onDelete: () -> Unit = {},
     onAddToHome: () -> Unit = {},
+    onCustomize: () -> Unit = {},
     onDragStarted: (() -> Unit)? = null,
     onDragMoved: ((Offset) -> Unit)? = null,
     onDragEnded: (() -> Unit)? = null,
@@ -437,6 +438,14 @@ internal fun FolderItem(
                                 showDeleteConfirmDialog = true
                             },
                             leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Customize") },
+                            onClick = {
+                                showContextMenu = false
+                                onCustomize()
+                            },
+                            leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                         )
             }
 

@@ -492,6 +492,8 @@ fun LauncherScreen(
     var allAvailableApps by remember { mutableStateOf<List<HomeAppInfo>>(emptyList()) }
     var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
     var customizingApp by remember { mutableStateOf<HomeAppInfo?>(null) }
+    var customizingFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.HomeFolder?>(null) }
+    var customizingDockFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.DockFolder?>(null) }
     var placedWidgets by remember { mutableStateOf<List<PlacedWidget>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
@@ -2131,6 +2133,7 @@ fun LauncherScreen(
                                                 (cell is HomeGridCell.Folder && (draggedItemIndex != null || dragFromFolderApp != null) && draggedItemIndex != index)
                                             )) draggedAppInfo?.iconPath else null,
                                             isReceivingDrop = folderReceiveAnimIndex == index,
+                                            folderCustomization = if (cell is HomeGridCell.Folder) appCustomizations.customizations["folder_${cell.folder.id}"] else null,
                                             onPositioned = { position, size ->
                                                 cellPositions = cellPositions + (index to position)
                                                 cellSize = size
@@ -2298,6 +2301,8 @@ fun LauncherScreen(
                                             onCustomize = {
                                                 if (cell is HomeGridCell.App) {
                                                     customizingApp = cell.appInfo
+                                                } else if (cell is HomeGridCell.Folder) {
+                                                    customizingFolder = cell.folder
                                                 }
                                             },
                                             onWidgetRemove = {
@@ -2306,7 +2311,8 @@ fun LauncherScreen(
                                                     placedWidgets = WidgetManager.loadPlacedWidgets(context)
                                                 }
                                             },
-                                            isCustomizing = cell is HomeGridCell.App && customizingApp?.packageName == cell.appInfo.packageName,
+                                            isCustomizing = (cell is HomeGridCell.App && customizingApp?.packageName == cell.appInfo.packageName) ||
+                                                (cell is HomeGridCell.Folder && customizingFolder?.id == cell.folder.id),
                                             globalIconSizePercent = iconSizePercent.toFloat(),
                                             globalIconShape = globalIconShape,
                                             globalIconBgColor = globalIconBgColor,
@@ -3510,7 +3516,9 @@ fun LauncherScreen(
                                 }
                             },
                             onCustomize = {
-                                if (appInfo != null) {
+                                if (dockFolder != null) {
+                                    customizingDockFolder = dockFolder
+                                } else if (appInfo != null) {
                                     customizingApp = appInfo
                                 }
                             },
@@ -4114,6 +4122,70 @@ fun LauncherScreen(
                 customizingApp = null
             },
             onDismiss = { customizingApp = null }
+        )
+    }
+
+    // ========== FOLDER CUSTOMIZE DIALOG (Home screen) ==========
+    customizingFolder?.let { folder ->
+        val folderKey = "folder_${folder.id}"
+        val folderPreviewIcons = remember(folder.appPackageNames, allAvailableApps, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+            folder.appPackageNames.filter { it.isNotEmpty() }.take(4).map { pkg ->
+                resolveMiniIconPath(appContext, pkg, allAvailableApps.find { it.packageName == pkg }?.iconPath ?: "", globalIconShape, globalIconBgColor, globalIconBgIntensity)
+            }
+        }
+        FolderCustomizeDialog(
+            context = context,
+            folderName = folder.name,
+            folderId = folder.id,
+            currentCustomization = appCustomizations.customizations[folderKey],
+            globalIconSizePercent = iconSizePercent.toFloat().toInt(),
+            globalIconTextSizePercent = iconTextSizePercent,
+            iconSizeOverflowThreshold = universalOverflowThreshold,
+            globalIconShape = globalIconShape,
+            globalIconBgColor = globalIconBgColor,
+            globalIconBgIntensity = globalIconBgIntensity,
+            previewAppIcons = folderPreviewIcons,
+            onSave = { newCustomization ->
+                appCustomizations = setCustomization(context, appCustomizations, folderKey, newCustomization)
+                customizingFolder = null
+            },
+            onReset = {
+                appCustomizations = removeCustomization(context, appCustomizations, folderKey)
+                customizingFolder = null
+            },
+            onDismiss = { customizingFolder = null }
+        )
+    }
+
+    // ========== FOLDER CUSTOMIZE DIALOG (Dock) ==========
+    customizingDockFolder?.let { folder ->
+        val folderKey = "folder_${folder.id}"
+        val dockFolderPreviewIcons = remember(folder.appPackageNames, allAvailableApps, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+            folder.appPackageNames.filter { it.isNotEmpty() }.take(4).map { pkg ->
+                resolveMiniIconPath(appContext, pkg, allAvailableApps.find { it.packageName == pkg }?.iconPath ?: "", globalIconShape, globalIconBgColor, globalIconBgIntensity)
+            }
+        }
+        FolderCustomizeDialog(
+            context = context,
+            folderName = folder.name,
+            folderId = folder.id,
+            currentCustomization = appCustomizations.customizations[folderKey],
+            globalIconSizePercent = iconSizePercent.toFloat().toInt(),
+            globalIconTextSizePercent = iconTextSizePercent,
+            iconSizeOverflowThreshold = universalOverflowThreshold,
+            globalIconShape = globalIconShape,
+            globalIconBgColor = globalIconBgColor,
+            globalIconBgIntensity = globalIconBgIntensity,
+            previewAppIcons = dockFolderPreviewIcons,
+            onSave = { newCustomization ->
+                appCustomizations = setCustomization(context, appCustomizations, folderKey, newCustomization)
+                customizingDockFolder = null
+            },
+            onReset = {
+                appCustomizations = removeCustomization(context, appCustomizations, folderKey)
+                customizingDockFolder = null
+            },
+            onDismiss = { customizingDockFolder = null }
         )
     }
 

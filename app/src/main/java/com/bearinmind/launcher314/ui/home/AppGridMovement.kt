@@ -93,7 +93,7 @@ import androidx.compose.ui.unit.TextUnit
  * Supports tap, long-press context menu, and drag-and-drop
  */
 /** Resolve the shaped icon path for a mini icon inside a folder preview. */
-private fun resolveMiniIconPath(
+internal fun resolveMiniIconPath(
     context: android.content.Context,
     packageName: String,
     fallbackPath: String,
@@ -164,7 +164,8 @@ fun DraggableGridCell(
     onBulkRemove: () -> Unit = {},
     selectedCount: Int = 0,
     folderPreviewDraggedIconPath: String? = null, // When non-null, animates this cell into a folder preview
-    isReceivingDrop: Boolean = false // When true, plays a pulse scale animation on the folder cell
+    isReceivingDrop: Boolean = false, // When true, plays a pulse scale animation on the folder cell
+    folderCustomization: com.bearinmind.launcher314.data.AppCustomization? = null // Per-folder customization
 ) {
     val cellContext = LocalContext.current
     val hapticFeedback = rememberHapticFeedback()
@@ -967,7 +968,7 @@ fun DraggableGridCell(
             is HomeGridCell.Folder -> {
                 // Folder cell - shows 2x2 preview grid of app icons
                 var showFolderRemoveConfirm by remember { mutableStateOf(false) }
-                val isFolderScaledUp = showContextMenu || isDragging || showFolderRemoveConfirm
+                val isFolderScaledUp = showContextMenu || isDragging || showFolderRemoveConfirm || isCustomizing
                 val animatedFolderScale by animateFloatAsState(
                     targetValue = if (isFolderScaledUp) 1.265f else 1f,
                     animationSpec = if (isFolderScaledUp) tween(durationMillis = 150) else snap(),
@@ -976,7 +977,7 @@ fun DraggableGridCell(
                 val iconScale = if (isFolderScaledUp) animatedFolderScale else 1f
 
                 // Hide label only for THIS cell when it's being dragged or has context menu open
-                val hideFolderLabel = showContextMenu || isDragging || showFolderRemoveConfirm
+                val hideFolderLabel = showContextMenu || isDragging || showFolderRemoveConfirm || isCustomizing
                 val folderLabelAlpha by animateFloatAsState(
                     targetValue = if (showContextMenu || showFolderRemoveConfirm) 0f else 1f,
                     animationSpec = tween(durationMillis = 150),
@@ -1133,12 +1134,20 @@ fun DraggableGridCell(
                             // Folder preview - 2x2 grid of app icons in a rounded square
                             val folderBoxSize = iconSize.dp
                             val folderCornerRadius = (iconSize * 0.29f).dp
+                            // Per-folder shape override: folder customization > global shape > rounded corner
+                            val effectiveFolderShapeName = folderCustomization?.iconShapeExp ?: globalIconShape
+                            val effectiveFolderClip = getIconShape(effectiveFolderShapeName) ?: RoundedCornerShape(folderCornerRadius)
                             // Determine which slot index the dragged app would go into
                             val addSlotIndex = cell.previewApps.size.coerceAtMost(3)
                             // Red tint for mini icons when hovered by an invalid drop (e.g. folder on folder)
                             val folderInvalidTint = if (isHovered && !isValidDropTarget && !isDragging) {
                                 ColorFilter.tint(Color(0xFFFF6B6B).copy(alpha = 0.6f), androidx.compose.ui.graphics.BlendMode.SrcAtop)
                             } else null
+
+                            val folderBorderColor = if (folderCustomization?.iconTintColor != null) {
+                                val intensity = (folderCustomization.iconTintIntensity ?: 100) / 100f
+                                Color(folderCustomization.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
+                            } else com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current
 
                             Box(
                                 modifier = Modifier
@@ -1147,10 +1156,16 @@ fun DraggableGridCell(
                                         scaleX = combinedScale
                                         scaleY = combinedScale
                                         clip = false
-                                    }
-                                    .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
-                                    .background(Color(0xFF1A1A1A))
-                                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)),
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                            // Background layer — no clip, uses shape parameter
+                            Box(modifier = Modifier.matchParentSize().background(Color(0xFF1A1A1A), effectiveFolderClip))
+                            // Content layer — clipped to shape so icons don't overflow
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .graphicsLayer { clip = true; shape = effectiveFolderClip },
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (cell.previewApps.isNotEmpty()) {
@@ -1317,12 +1332,22 @@ fun DraggableGridCell(
                                             .background(Color.Black)
                                     )
                                 }
+                            } // end content Box
+                            // Border overlay — drawn on top of content so outline is always visible
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .border(1.dp, folderBorderColor, effectiveFolderClip)
+                            )
                             }
 
                             Spacer(modifier = Modifier.height(iconTextSpacer))
 
+                            val folderDisplayName = if (isHovered && !isDragging) "Folder"
+                                else folderCustomization?.customLabel ?: cell.folder.name
+                            val folderHideLabel = folderCustomization?.hideLabel ?: false
                             Text(
-                                text = if (isHovered && !isDragging) "Folder" else cell.folder.name,
+                                text = folderDisplayName,
                                 fontSize = appNameFontSize,
                                 fontFamily = appNameFontFamily ?: FontFamily.Default,
                                 color = if (isHovered && !isValidDropTarget && !isDragging)
@@ -1332,7 +1357,7 @@ fun DraggableGridCell(
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .graphicsLayer { alpha = if (isDragging) 0f else folderLabelAlpha },
+                                    .graphicsLayer { alpha = if (isDragging || folderHideLabel) 0f else folderLabelAlpha },
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     shadow = androidx.compose.ui.graphics.Shadow(
                                         color = Color.Black,
@@ -1373,6 +1398,14 @@ fun DraggableGridCell(
                                             showFolderRemoveConfirm = true
                                         },
                                         leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Customize") },
+                                        onClick = {
+                                            showContextMenu = false
+                                            onCustomize()
+                                        },
+                                        leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                                     )
                         }
 
@@ -2093,6 +2126,14 @@ fun DockSlot(
                                     onRemove()
                                 },
                                 leadingIcon = { HomeOffIcon() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Customize") },
+                                onClick = {
+                                    showContextMenu = false
+                                    onCustomize()
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                             )
                 }
         }
