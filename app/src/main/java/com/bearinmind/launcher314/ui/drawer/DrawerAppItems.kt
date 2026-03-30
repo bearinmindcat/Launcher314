@@ -260,9 +260,9 @@ internal fun FolderItem(
                         scaleY = scale
                         clip = false
                     }
-                    .clip(RoundedCornerShape((iconSize * 0.29f).dp))
+                    .clip(iconClipShape ?: RoundedCornerShape((iconSize * 0.29f).dp))
                     .background(Color(0xFF1A1A1A))
-                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, RoundedCornerShape((iconSize * 0.29f).dp)),
+                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, iconClipShape ?: RoundedCornerShape((iconSize * 0.29f).dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (previewApps.isNotEmpty() || (draggedIconPath != null && dragIconProgress > 0f)) {

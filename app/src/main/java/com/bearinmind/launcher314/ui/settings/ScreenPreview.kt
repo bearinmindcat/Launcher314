@@ -292,11 +292,11 @@ fun AppDrawerPreviewSection(
 
             // Add folders first (filter hidden apps from folder contents)
             previewFolders.forEach { folder ->
-                val visiblePkgs = folder.appPackageNames.filter { it.isNotEmpty() && it !in hiddenApps }
-                val folderAppIcons = visiblePkgs
+                val allPkgs = folder.appPackageNames.filter { it.isNotEmpty() && it !in hiddenApps }
+                val folderAppIcons = allPkgs
                     .mapNotNull { pkgName -> previewApps.find { it.packageName == pkgName }?.iconPath }
                     .take(4)
-                val folderPkgNames = visiblePkgs
+                val folderPkgNames = allPkgs
                     .filter { pkgName -> previewApps.any { it.packageName == pkgName } }
                     .take(4)
                 items.add(PreviewItem.FolderItem(folder, folderAppIcons, folderPkgNames))
@@ -1048,7 +1048,9 @@ private fun ScaledPreviewFolderItem(
     scaleFactor: Float = 0.4f
 ) {
     val folderPreviewContext = LocalContext.current
-    val miniIconSize = iconSize / 2.2f
+    val folderPadding = iconSize * 0.12f
+    val folderSpacing = iconSize * 0.05f
+    val miniIconSize = (iconSize - folderPadding * 2 - folderSpacing) / 2
     val markerHalfSize = 6.dp * scaleFactor
 
     Box(
@@ -1058,10 +1060,11 @@ private fun ScaledPreviewFolderItem(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
+            val folderShape = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(4.dp) else RoundedCornerShape(4.dp)
             Box(
                 modifier = Modifier
                     .size(iconSize)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(folderShape)
                     .background(Color(0xFF1A1A1A))
                     .border(
                         width = 0.5.dp,
@@ -1071,83 +1074,47 @@ private fun ScaledPreviewFolderItem(
                             if (bgc != null) Color(bgc).copy(alpha = (intensity / 100f).coerceIn(0f, 1f))
                             else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                         },
-                        shape = RoundedCornerShape(4.dp)
+                        shape = folderShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 if (appIcons.isNotEmpty()) {
                     val miniClip = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(2.dp) else RoundedCornerShape(2.dp)
+                    // Helper to resolve shaped icon path
+                    @Composable
+                    fun MiniIcon(index: Int) {
+                        val iconPath = appIcons.getOrNull(index)
+                        if (iconPath != null) {
+                            val pkg = appPackageNames.getOrNull(index)
+                            val p = if (pkg != null && iconShapeOverride != null) {
+                                remember(pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                    try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewContext, pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                          else getOrGenerateGlobalShapedIcon(folderPreviewContext, pkg, iconShapeOverride)
+                                    } catch (_: Exception) { iconPath }
+                                }
+                            } else iconPath
+                            AsyncImage(
+                                model = File(p),
+                                contentDescription = null,
+                                modifier = Modifier.size(miniIconSize).clip(miniClip),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            Spacer(Modifier.size(miniIconSize))
+                        }
+                    }
                     Column(
-                        verticalArrangement = Arrangement.spacedBy(0.5.dp),
+                        modifier = Modifier.padding(folderPadding),
+                        verticalArrangement = Arrangement.spacedBy(folderSpacing),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(0.5.dp)) {
-                            appIcons.getOrNull(0)?.let { iconPath ->
-                                val pkg = appPackageNames.getOrNull(0)
-                                val p = if (pkg != null && iconShapeOverride != null) {
-                                    remember(pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
-                                        try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewContext, pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
-                                              else getOrGenerateGlobalShapedIcon(folderPreviewContext, pkg, iconShapeOverride)
-                                        } catch (_: Exception) { iconPath }
-                                    }
-                                } else iconPath
-                                AsyncImage(
-                                    model = File(p),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(miniIconSize).clip(miniClip),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                            appIcons.getOrNull(1)?.let { iconPath ->
-                                val pkg = appPackageNames.getOrNull(1)
-                                val p = if (pkg != null && iconShapeOverride != null) {
-                                    remember(pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
-                                        try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewContext, pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
-                                              else getOrGenerateGlobalShapedIcon(folderPreviewContext, pkg, iconShapeOverride)
-                                        } catch (_: Exception) { iconPath }
-                                    }
-                                } else iconPath
-                                AsyncImage(
-                                    model = File(p),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(miniIconSize).clip(miniClip),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
+                        Row(horizontalArrangement = Arrangement.spacedBy(folderSpacing)) {
+                            MiniIcon(0)
+                            MiniIcon(1)
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(0.5.dp)) {
-                            appIcons.getOrNull(2)?.let { iconPath ->
-                                val pkg = appPackageNames.getOrNull(2)
-                                val p = if (pkg != null && iconShapeOverride != null) {
-                                    remember(pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
-                                        try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewContext, pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
-                                              else getOrGenerateGlobalShapedIcon(folderPreviewContext, pkg, iconShapeOverride)
-                                        } catch (_: Exception) { iconPath }
-                                    }
-                                } else iconPath
-                                AsyncImage(
-                                    model = File(p),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(miniIconSize).clip(miniClip),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                            appIcons.getOrNull(3)?.let { iconPath ->
-                                val pkg = appPackageNames.getOrNull(3)
-                                val p = if (pkg != null && iconShapeOverride != null) {
-                                    remember(pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
-                                        try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewContext, pkg, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
-                                              else getOrGenerateGlobalShapedIcon(folderPreviewContext, pkg, iconShapeOverride)
-                                        } catch (_: Exception) { iconPath }
-                                    }
-                                } else iconPath
-                                AsyncImage(
-                                    model = File(p),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(miniIconSize).clip(miniClip),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
+                        Row(horizontalArrangement = Arrangement.spacedBy(folderSpacing)) {
+                            MiniIcon(2)
+                            MiniIcon(3)
                         }
                     }
                 }
@@ -2220,16 +2187,17 @@ private fun HomeScreenPreview(
                                             ) {
                                                 val folderBoxSize = baseIconSize
                                                 val folderCornerRadius = baseIconSize * 0.29f
+                                                val previewFolderShape = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(folderCornerRadius) else RoundedCornerShape(folderCornerRadius)
                                                 Box(
                                                     modifier = Modifier
                                                         .requiredSize(folderBoxSize)
-                                                        .clip(RoundedCornerShape(folderCornerRadius))
+                                                        .clip(previewFolderShape)
                                                         .background(Color(0xFF1A1A1A))
                                                         .border(
                                                             width = 0.5.dp,
                                                             color = if (iconBgColorOverride != null) Color(iconBgColorOverride).copy(alpha = (iconBgIntensityOverride / 100f).coerceIn(0f, 1f))
                                                                     else Color.White.copy(alpha = 0.3f),
-                                                            shape = RoundedCornerShape(folderCornerRadius)
+                                                            shape = previewFolderShape
                                                         ),
                                                     contentAlignment = Alignment.Center
                                                 ) {
