@@ -1326,7 +1326,7 @@ fun DraggableGridCell(
                                 fontSize = appNameFontSize,
                                 fontFamily = appNameFontFamily ?: FontFamily.Default,
                                 color = if (isHovered && !isValidDropTarget && !isDragging)
-                                    Color(0xFFFF6B6B) else Color.White,
+                                    Color(0xFFFF6B6B) else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,

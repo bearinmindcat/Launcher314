@@ -633,9 +633,21 @@ private fun RealAppDrawerPreview(
     val screenWidth = configuration.screenWidthDp.dp
     val screenHeight = configuration.screenHeightDp.dp
 
+    val drawerPreviewContext = LocalContext.current
     val scaleFactor = 0.4f
     val previewWidth = screenWidth * scaleFactor
     val previewHeight = screenHeight * scaleFactor
+
+    // Resolve label text color from prefs
+    val previewLabelColor = run {
+        val tc = com.bearinmind.launcher314.data.getGlobalTextColor(drawerPreviewContext)
+        val ti = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(drawerPreviewContext)
+        if (tc != null) {
+            val i = ti / 100f
+            val b = Color(tc)
+            Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+        } else Color.White
+    }
 
     // Compute icon dp from percentage using fixed reference (screenWidth / 4)
     // Uses reference column count of 4 so icon size is consistent across screens
@@ -853,7 +865,8 @@ private fun RealAppDrawerPreview(
                                                     fontFamily = labelFontFamily,
                                                     iconShapeOverride = iconShapeOverride,
                                                     iconBgColorOverride = iconBgColorOverride,
-                                                    iconBgIntensityOverride = iconBgIntensityOverride
+                                                    iconBgIntensityOverride = iconBgIntensityOverride,
+                                                    labelColor = previewLabelColor
                                                 )
                                                 is PreviewItem.AppItem -> ScaledPreviewAppItem(
                                                     app = item.app,
@@ -863,6 +876,7 @@ private fun RealAppDrawerPreview(
                                                     iconClipShape = getIconShape(iconShapeOverride),
                                                     iconBgColor = iconBgColorOverride,
                                                     iconBgIntensity = iconBgIntensityOverride,
+                                                    labelColor = previewLabelColor,
                                                     customization = appCustomizations.customizations[item.app.packageName],
                                                     iconShapeName = iconShapeOverride
                                                 )
@@ -943,7 +957,8 @@ private fun RealAppDrawerPreview(
                                     fontFamily = labelFontFamily,
                                     iconShapeOverride = iconShapeOverride,
                                     iconBgColorOverride = iconBgColorOverride,
-                                    iconBgIntensityOverride = iconBgIntensityOverride
+                                    iconBgIntensityOverride = iconBgIntensityOverride,
+                                    labelColor = previewLabelColor
                                 )
                                 is PreviewItem.AppItem -> ScaledPreviewAppItem(
                                     app = item.app,
@@ -952,6 +967,7 @@ private fun RealAppDrawerPreview(
                                     fontFamily = labelFontFamily,
                                     iconClipShape = getIconShape(iconShapeOverride),
                                     iconBgColor = iconBgColorOverride,
+                                    labelColor = previewLabelColor,
                                     customization = appCustomizations.customizations[item.app.packageName],
                                     iconShapeName = iconShapeOverride
                                 )
@@ -1044,6 +1060,7 @@ private fun ScaledPreviewFolderItem(
     iconShapeOverride: String? = null,
     iconBgColorOverride: Int? = null,
     iconBgIntensityOverride: Int = 100,
+    labelColor: Color = Color.White,
     showPlusMarker: Boolean = false,
     scaleFactor: Float = 0.4f
 ) {
@@ -1126,7 +1143,7 @@ private fun ScaledPreviewFolderItem(
                 text = folder.name,
                 fontSize = fontSize,
                 fontFamily = fontFamily ?: FontFamily.Default,
-                color = Color.White,
+                color = labelColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -1164,6 +1181,7 @@ private fun ScaledPreviewAppItem(
     iconClipShape: Shape? = null,
     iconBgColor: Int? = null,
     iconBgIntensity: Int = 100,
+    labelColor: Color = Color.White,
     customization: AppCustomization? = null,
     iconShapeName: String? = null
 ) {
@@ -1246,7 +1264,7 @@ private fun ScaledPreviewAppItem(
                     text = displayName,
                     fontSize = fontSize,
                     fontFamily = fontFamily ?: FontFamily.Default,
-                    color = Color.White,
+                    color = labelColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -1903,6 +1921,18 @@ private fun HomeScreenPreview(
     val baseFontSize = 12.sp * scaleFactor * iconTextSizePercent / 100f
     val iconTextSpacer = 4.dp * scaleFactor
 
+    // Resolve label text color from prefs
+    val homePreviewContext = LocalContext.current
+    val previewLabelColor = run {
+        val tc = com.bearinmind.launcher314.data.getGlobalTextColor(homePreviewContext)
+        val ti = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(homePreviewContext)
+        if (tc != null) {
+            val i = ti / 100f
+            val b = Color(tc)
+            Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+        } else Color.White
+    }
+
     // Build grid cells from home screen apps, folders, and widgets
     val totalCells = gridColumns * gridRows
     val gridCells = remember(homeScreenApps, allApps, homeFolders, placedWidgets, totalCells, gridColumns) {
@@ -2159,7 +2189,7 @@ private fun HomeScreenPreview(
                                                         text = displayName,
                                                         fontSize = baseFontSize,
                                                         fontFamily = labelFontFamily,
-                                                        color = Color.White,
+                                                        color = previewLabelColor,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis,
                                                         textAlign = TextAlign.Center,
@@ -2283,7 +2313,7 @@ private fun HomeScreenPreview(
                                                     text = cell.folder.name,
                                                     fontSize = baseFontSize,
                                                     fontFamily = labelFontFamily,
-                                                    color = Color.White,
+                                                    color = previewLabelColor,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
                                                     textAlign = TextAlign.Center,

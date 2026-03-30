@@ -512,27 +512,27 @@ fun setSwipeDownMode(context: Context, mode: Int) {
 private const val KEY_GLOBAL_TEXT_COLOR = "global_text_color"
 
 fun getGlobalTextColor(context: Context): Int? {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return if (prefs.contains(KEY_GLOBAL_TEXT_COLOR)) prefs.getInt(KEY_GLOBAL_TEXT_COLOR, 0) else null
 }
 
 fun setGlobalTextColor(context: Context, color: Int?) {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     if (color == null) {
-        prefs.edit().remove(KEY_GLOBAL_TEXT_COLOR).apply()
+        prefs.edit().remove(KEY_GLOBAL_TEXT_COLOR).commit()
     } else {
-        prefs.edit().putInt(KEY_GLOBAL_TEXT_COLOR, color).apply()
+        prefs.edit().putInt(KEY_GLOBAL_TEXT_COLOR, color).commit()
     }
 }
 
 private const val KEY_GLOBAL_TEXT_COLOR_INTENSITY = "global_text_color_intensity"
 
 fun getGlobalTextColorIntensity(context: Context): Int {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_GLOBAL_TEXT_COLOR_INTENSITY, 100)
 }
 
 fun setGlobalTextColorIntensity(context: Context, intensity: Int) {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    prefs.edit().putInt(KEY_GLOBAL_TEXT_COLOR_INTENSITY, intensity).apply()
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_GLOBAL_TEXT_COLOR_INTENSITY, intensity).commit()
 }

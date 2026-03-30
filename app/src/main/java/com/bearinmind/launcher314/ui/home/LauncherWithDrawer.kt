@@ -523,9 +523,10 @@ fun LauncherWithDrawer(
         // Resolve global text color for home screen labels (re-read when refresh triggers)
         var homeTextColorRaw by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
         var homeTextIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
-        // Re-read on any refresh or composition re-entry
-        homeTextColorRaw = com.bearinmind.launcher314.data.getGlobalTextColor(context)
-        homeTextIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
+        // Re-read on any refresh or composition re-entry (use applicationContext for consistent SharedPreferences)
+        val appCtx = context.applicationContext
+        homeTextColorRaw = com.bearinmind.launcher314.data.getGlobalTextColor(appCtx)
+        homeTextIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(appCtx)
         val homeTextColor = if (homeTextColorRaw != null) {
             val i = homeTextIntensity / 100f
             val b = androidx.compose.ui.graphics.Color(homeTextColorRaw!!)
