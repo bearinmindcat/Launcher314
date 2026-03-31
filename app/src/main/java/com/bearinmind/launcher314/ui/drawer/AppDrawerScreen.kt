@@ -211,16 +211,14 @@ fun AppDrawerScreen(
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
     var globalIconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
-    var globalIconBgIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)) }
     var globalTextColor by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
     var globalTextColorIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
     // Re-read on every composition entry
     globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
     globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
 
-    // Customize dialog state for drawer apps and folders
+    // Customize dialog state for drawer apps
     var customizingDrawerApp by remember { mutableStateOf<AppInfo?>(null) }
-    var customizingDrawerFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.AppFolder?>(null) }
     var appCustomizations by remember { mutableStateOf(loadAppCustomizations(context)) }
 
     customizingDrawerApp?.let { app ->
@@ -247,38 +245,6 @@ fun AppDrawerScreen(
                 customizingDrawerApp = null
             },
             onDismiss = { customizingDrawerApp = null }
-        )
-    }
-
-    customizingDrawerFolder?.let { folder ->
-        val folderKey = "folder_${folder.id}"
-        val drawerFolderPreviewIcons = remember(folder.appPackageNames, globalIconShape, globalIconBgColor) {
-            folder.appPackageNames.filter { it.isNotEmpty() }.take(4).map { pkg ->
-                com.bearinmind.launcher314.ui.home.resolveMiniIconPath(context, pkg,
-                    allApps.find { it.packageName == pkg }?.iconPath ?: "",
-                    globalIconShape, globalIconBgColor, globalIconBgIntensity)
-            }
-        }
-        com.bearinmind.launcher314.ui.home.FolderCustomizeDialog(
-            context = context,
-            folderName = folder.name,
-            folderId = folder.id,
-            currentCustomization = appCustomizations.customizations[folderKey],
-            globalIconSizePercent = iconSizePercent,
-            globalIconTextSizePercent = iconTextSizePercent,
-            globalIconShape = globalIconShape,
-            globalIconBgColor = globalIconBgColor,
-            globalIconBgIntensity = globalIconBgIntensity,
-            previewAppIcons = drawerFolderPreviewIcons,
-            onSave = { newCustomization ->
-                appCustomizations = setCustomization(context, appCustomizations, folderKey, newCustomization)
-                customizingDrawerFolder = null
-            },
-            onReset = {
-                appCustomizations = removeCustomization(context, appCustomizations, folderKey)
-                customizingDrawerFolder = null
-            },
-            onDismiss = { customizingDrawerFolder = null }
         )
     }
 
@@ -668,7 +634,6 @@ fun AppDrawerScreen(
                 }
             },
             onCustomizeApp = { app -> customizingDrawerApp = app },
-            onCustomizeFolder = { folder -> customizingDrawerFolder = folder },
             escapeHoverState = EscapeHoverState(
                 folderId = if (escapeHoveredFolderId != null && folderEscapedApp != null) escapeHoveredFolderId else null,
                 iconPath = if (escapeHoveredFolderId != null && folderEscapedApp != null) folderEscapedApp?.iconPath else null,

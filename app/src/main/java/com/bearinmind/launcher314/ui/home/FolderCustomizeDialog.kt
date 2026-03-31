@@ -96,6 +96,10 @@ fun FolderCustomizeDialog(
         (currentCustomization?.iconTextSizePercent ?: globalIconTextSizePercent).toFloat().coerceIn(SliderConfigs.iconTextSize.minValue, SliderConfigs.iconTextSize.maxValue)
     ) }
     var selectedFontId by remember { mutableStateOf(currentCustomization?.labelFontId) }
+    var selectedLabelColor by remember { mutableStateOf(currentCustomization?.labelColor) }
+    var labelColorIntensity by remember { mutableStateOf(
+        (currentCustomization?.labelColorIntensity ?: 100).toFloat()
+    ) }
     var showFontScreen by remember { mutableStateOf(false) }
 
     var expandedSection by remember { mutableStateOf(0) } // 0=none, 1=shape, 2=tint, 3=size, 4=label
@@ -455,6 +459,44 @@ fun FolderCustomizeDialog(
                                     Text("Hide Label", color = Color.White.copy(alpha = 0.87f), fontSize = 14.sp)
                                     Switch(checked = hideLabel, onCheckedChange = { hideLabel = it })
                                 }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Label color picker
+                                val labelColors = PRESET_COLORS
+                                val chunkedLabelColors = labelColors.chunked(5)
+                                chunkedLabelColors.forEach { row ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
+                                    ) {
+                                        row.forEach { (colorLong, _) ->
+                                            val isSelected = selectedLabelColor == colorLong
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(if (colorLong != null) Color(colorLong) else Color.White.copy(alpha = 0.1f))
+                                                    .then(if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp)) else Modifier)
+                                                    .clickable { selectedLabelColor = colorLong },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (colorLong == null) {
+                                                    Icon(Icons.Outlined.Clear, contentDescription = "Default color", tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(0.dp))
+
+                                ThumbDragHorizontalSlider(
+                                    currentValue = labelColorIntensity,
+                                    config = SliderConfigs.tintIntensity,
+                                    onValueChange = { labelColorIntensity = it },
+                                    onValueChangeFinished = {}
+                                )
                             }
                         }
                         else -> Spacer(modifier = Modifier.fillMaxWidth())
@@ -499,7 +541,9 @@ fun FolderCustomizeDialog(
                                 iconShapeExp = selectedShapeExp,
                                 iconSizePercent = sizeInt.takeIf { it != globalIconSizePercent },
                                 iconTextSizePercent = selectedTextSizePercent.roundToInt().takeIf { it != globalIconTextSizePercent },
-                                labelFontId = selectedFontId
+                                labelFontId = selectedFontId,
+                                labelColor = selectedLabelColor,
+                                labelColorIntensity = if (selectedLabelColor != null) labelColorIntensity.roundToInt().takeIf { it != 100 } else null
                             )
                             onSave(newCustomization)
                         },

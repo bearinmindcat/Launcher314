@@ -20,7 +20,9 @@ data class AppCustomization(
     val iconShapeExpV2: String? = null,
     val iconSizePercent: Int? = null,
     val iconTextSizePercent: Int? = null,
-    val labelFontId: String? = null
+    val labelFontId: String? = null,
+    val labelColor: Long? = null,
+    val labelColorIntensity: Int? = null
 )
 
 @Serializable

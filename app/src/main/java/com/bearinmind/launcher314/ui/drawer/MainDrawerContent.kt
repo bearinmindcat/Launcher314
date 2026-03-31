@@ -136,9 +136,10 @@ internal fun MainDrawerContent(
     dropAnimatingPackage: String? = null,
     onDropTargetPositioned: (Offset, IntSize) -> Unit = { _, _ -> },
     escapeHoverState: EscapeHoverState? = null,
-    onCustomizeApp: (AppInfo) -> Unit = {},
-    onCustomizeFolder: (com.bearinmind.launcher314.data.AppFolder) -> Unit = {}
+    onCustomizeApp: (AppInfo) -> Unit = {}
 ) {
+    // Local folder customize state — avoids adding another parameter
+    var localCustomizingFolder by remember { mutableStateOf<AppFolder?>(null) }
     val onDragToHome = homeDragCallbacks.onDragToHome
     val onDragToHomeMove = homeDragCallbacks.onDragToHomeMove
     val onDragToHomeDrop = homeDragCallbacks.onDragToHomeDrop
@@ -892,7 +893,7 @@ internal fun MainDrawerContent(
                                                     iconClipShape = iconClipShape,
                                                     iconBgColor = iconBgColor,
                                                     globalIconShapeName = globalIconShapeName,
-                                                    onCustomize = { onCustomizeFolder(cellItem) }
+                                                    onCustomize = { localCustomizingFolder = cellItem }
                                                 )
                                             } else if (cellItem is AppInfo) {
                                                 val selectedApps = filteredApps.filter { it.packageName in selectedAppPackages }
@@ -1091,7 +1092,7 @@ internal fun MainDrawerContent(
                                 iconClipShape = iconClipShape,
                                 iconBgColor = iconBgColor,
                                 globalIconShapeName = globalIconShapeName,
-                                onCustomize = { onCustomizeFolder(folder) }
+                                onCustomize = { localCustomizingFolder = folder }
                             )
                         }
                     }
@@ -1441,5 +1442,41 @@ internal fun MainDrawerContent(
             searchBarBlock()
             Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
         }
+    }
+
+    // Folder customize dialog (local to MainDrawerContent)
+    localCustomizingFolder?.let { folder ->
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val folderKey = "folder_${folder.id}"
+        val localAppCustomizations = remember { com.bearinmind.launcher314.data.loadAppCustomizations(context) }
+        val folderPreviewIcons = remember(folder.appPackageNames, globalIconShapeName, iconBgColor) {
+            folder.appPackageNames.filter { it.isNotEmpty() }.take(4).map { pkg ->
+                com.bearinmind.launcher314.ui.home.resolveMiniIconPath(context, pkg,
+                    allApps.find { it.packageName == pkg }?.iconPath ?: "",
+                    globalIconShapeName, iconBgColor,
+                    com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context))
+            }
+        }
+        com.bearinmind.launcher314.ui.home.FolderCustomizeDialog(
+            context = context,
+            folderName = folder.name,
+            folderId = folder.id,
+            currentCustomization = localAppCustomizations.customizations[folderKey],
+            globalIconSizePercent = iconSize,
+            globalIconTextSizePercent = 100,
+            globalIconShape = globalIconShapeName,
+            globalIconBgColor = iconBgColor,
+            globalIconBgIntensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context),
+            previewAppIcons = folderPreviewIcons,
+            onSave = { newCustomization ->
+                com.bearinmind.launcher314.data.setCustomization(context, localAppCustomizations, folderKey, newCustomization)
+                localCustomizingFolder = null
+            },
+            onReset = {
+                com.bearinmind.launcher314.data.removeCustomization(context, localAppCustomizations, folderKey)
+                localCustomizingFolder = null
+            },
+            onDismiss = { localCustomizingFolder = null }
+        )
     }
 }
