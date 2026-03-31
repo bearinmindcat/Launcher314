@@ -1161,17 +1161,19 @@ fun DraggableGridCell(
                             ) {
                             // Background layer — no clip, uses shape parameter
                             Box(modifier = Modifier.matchParentSize().background(Color(0xFF1A1A1A), effectiveFolderClip))
-                            // Content layer — clipped to shape so icons don't overflow
+                            // Content layer — inset by border width and clipped so icons stay inside outline
                             Box(
                                 modifier = Modifier
                                     .matchParentSize()
+                                    .padding(1.dp)
                                     .graphicsLayer { clip = true; shape = effectiveFolderClip },
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (cell.previewApps.isNotEmpty()) {
-                                    val padding = folderBoxSize * 0.12f
-                                    val spacing = folderBoxSize * 0.05f
-                                    val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
+                                    val contentSize = folderBoxSize - 2.dp // account for border inset
+                                    val padding = contentSize * 0.12f
+                                    val spacing = contentSize * 0.05f
+                                    val miniIconSize = (contentSize - padding * 2 - spacing) / 2
                                     val miniClip = if (globalIconShape != null) getIconShape(globalIconShape) ?: RoundedCornerShape(miniIconSize * 0.2f) else RoundedCornerShape(miniIconSize * 0.2f)
 
                                     Column(

@@ -866,7 +866,8 @@ private fun RealAppDrawerPreview(
                                                     iconShapeOverride = iconShapeOverride,
                                                     iconBgColorOverride = iconBgColorOverride,
                                                     iconBgIntensityOverride = iconBgIntensityOverride,
-                                                    labelColor = previewLabelColor
+                                                    labelColor = previewLabelColor,
+                                                    folderCustomization = appCustomizations.customizations["folder_${item.folder.id}"]
                                                 )
                                                 is PreviewItem.AppItem -> ScaledPreviewAppItem(
                                                     app = item.app,
@@ -958,7 +959,8 @@ private fun RealAppDrawerPreview(
                                     iconShapeOverride = iconShapeOverride,
                                     iconBgColorOverride = iconBgColorOverride,
                                     iconBgIntensityOverride = iconBgIntensityOverride,
-                                    labelColor = previewLabelColor
+                                    labelColor = previewLabelColor,
+                                    folderCustomization = appCustomizations.customizations["folder_${item.folder.id}"]
                                 )
                                 is PreviewItem.AppItem -> ScaledPreviewAppItem(
                                     app = item.app,
@@ -1061,6 +1063,7 @@ private fun ScaledPreviewFolderItem(
     iconBgColorOverride: Int? = null,
     iconBgIntensityOverride: Int = 100,
     labelColor: Color = Color.White,
+    folderCustomization: AppCustomization? = null,
     showPlusMarker: Boolean = false,
     scaleFactor: Float = 0.4f
 ) {
@@ -1077,7 +1080,19 @@ private fun ScaledPreviewFolderItem(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
-            val folderShape = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(4.dp) else RoundedCornerShape(4.dp)
+            // Per-folder shape override > global shape > default
+            val effectiveFolderShapeName = folderCustomization?.iconShapeExp ?: iconShapeOverride
+            val folderShape = if (effectiveFolderShapeName != null) getIconShape(effectiveFolderShapeName) ?: RoundedCornerShape(4.dp) else RoundedCornerShape(4.dp)
+            // Per-folder outline color > global bg color > default
+            val drawerFolderBorderColor = if (folderCustomization?.iconTintColor != null) {
+                val intensity = (folderCustomization.iconTintIntensity ?: 100) / 100f
+                Color(folderCustomization.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
+            } else run {
+                val bgc = com.bearinmind.launcher314.data.getGlobalIconBgColor(folderPreviewContext)
+                val intensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(folderPreviewContext)
+                if (bgc != null) Color(bgc).copy(alpha = (intensity / 100f).coerceIn(0f, 1f))
+                else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            }
             Box(
                 modifier = Modifier
                     .size(iconSize)
@@ -1085,12 +1100,7 @@ private fun ScaledPreviewFolderItem(
                     .background(Color(0xFF1A1A1A))
                     .border(
                         width = 0.5.dp,
-                        color = run {
-                            val bgc = com.bearinmind.launcher314.data.getGlobalIconBgColor(folderPreviewContext)
-                            val intensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(folderPreviewContext)
-                            if (bgc != null) Color(bgc).copy(alpha = (intensity / 100f).coerceIn(0f, 1f))
-                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        },
+                        color = drawerFolderBorderColor,
                         shape = folderShape
                     ),
                 contentAlignment = Alignment.Center
@@ -1139,8 +1149,8 @@ private fun ScaledPreviewFolderItem(
 
             Spacer(modifier = Modifier.height(1.dp))
 
-            Text(
-                text = folder.name,
+            if (folderCustomization?.hideLabel != true) Text(
+                text = folderCustomization?.customLabel ?: folder.name,
                 fontSize = fontSize,
                 fontFamily = fontFamily ?: FontFamily.Default,
                 color = labelColor,
@@ -2227,6 +2237,9 @@ private fun HomeScreenPreview(
                                         }
                                         is HomePreviewCell.Folder -> {
                                             // Folder: 2x2 mini-icon grid in a dark rounded box + name
+                                            val folderCust = appCustomizations.customizations["folder_${cell.folder.id}"]
+                                            val folderCustomLabel = folderCust?.customLabel
+                                            val folderHideLabel = folderCust?.hideLabel ?: false
                                             Column(
                                                 horizontalAlignment = Alignment.CenterHorizontally,
                                                 modifier = Modifier
@@ -2237,7 +2250,16 @@ private fun HomeScreenPreview(
                                             ) {
                                                 val folderBoxSize = baseIconSize
                                                 val folderCornerRadius = baseIconSize * 0.29f
-                                                val previewFolderShape = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(folderCornerRadius) else RoundedCornerShape(folderCornerRadius)
+                                                // Per-folder shape override > global shape > default
+                                                val effectiveFolderShapeName = folderCust?.iconShapeExp ?: iconShapeOverride
+                                                val previewFolderShape = if (effectiveFolderShapeName != null) getIconShape(effectiveFolderShapeName) ?: RoundedCornerShape(folderCornerRadius) else RoundedCornerShape(folderCornerRadius)
+                                                // Per-folder outline color > global bg color > default
+                                                val folderBorderColor = if (folderCust?.iconTintColor != null) {
+                                                    val intensity = (folderCust.iconTintIntensity ?: 100) / 100f
+                                                    Color(folderCust.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
+                                                } else if (iconBgColorOverride != null) {
+                                                    Color(iconBgColorOverride).copy(alpha = (iconBgIntensityOverride / 100f).coerceIn(0f, 1f))
+                                                } else Color.White.copy(alpha = 0.3f)
                                                 Box(
                                                     modifier = Modifier
                                                         .requiredSize(folderBoxSize)
@@ -2245,8 +2267,7 @@ private fun HomeScreenPreview(
                                                         .background(Color(0xFF1A1A1A))
                                                         .border(
                                                             width = 0.5.dp,
-                                                            color = if (iconBgColorOverride != null) Color(iconBgColorOverride).copy(alpha = (iconBgIntensityOverride / 100f).coerceIn(0f, 1f))
-                                                                    else Color.White.copy(alpha = 0.3f),
+                                                            color = folderBorderColor,
                                                             shape = previewFolderShape
                                                         ),
                                                     contentAlignment = Alignment.Center
@@ -2329,8 +2350,8 @@ private fun HomeScreenPreview(
                                                     }
                                                 }
                                                 Spacer(modifier = Modifier.height(iconTextSpacer))
-                                                Text(
-                                                    text = cell.folder.name,
+                                                if (!folderHideLabel) Text(
+                                                    text = folderCustomLabel ?: cell.folder.name,
                                                     fontSize = baseFontSize,
                                                     fontFamily = labelFontFamily,
                                                     color = previewLabelColor,
