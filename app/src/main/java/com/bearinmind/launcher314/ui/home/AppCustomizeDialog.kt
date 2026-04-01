@@ -735,7 +735,38 @@ fun AppCustomizeDialog(
                                         unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
                                         cursorColor = Color.White
                                     ),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    leadingIcon = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            val leadingFontFamily = if (selectedFontId != null) {
+                                                FontManager.bundledFonts.find { it.id == selectedFontId }?.fontFamily
+                                                    ?: FontManager.getImportedFonts(context).find { it.id == selectedFontId }?.fontFamily
+                                                    ?: FontManager.getSelectedFontFamily(context) ?: FontFamily.Default
+                                            } else FontManager.getSelectedFontFamily(context) ?: FontFamily.Default
+                                            IconButton(onClick = { showFontScreen = true }) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text("Aa", fontSize = 14.sp, fontFamily = leadingFontFamily,
+                                                        color = if (selectedFontId != null) Color.White else Color.White.copy(alpha = 0.4f),
+                                                        maxLines = 1, softWrap = false, overflow = TextOverflow.Visible,
+                                                        modifier = Modifier.requiredHeight(18.dp).wrapContentHeight(Alignment.CenterVertically, unbounded = true))
+                                                    Text("Font", fontSize = 8.sp, color = if (selectedFontId != null) Color.White else Color.White.copy(alpha = 0.4f), fontFamily = leadingFontFamily)
+                                                }
+                                            }
+                                            Box(modifier = Modifier.width(1.dp).height(56.dp).background(Color.White.copy(alpha = 0.2f)))
+                                        }
+                                    },
+                                    trailingIcon = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.width(1.dp).height(56.dp).background(Color.White.copy(alpha = 0.2f)))
+                                            IconButton(onClick = { hideLabel = !hideLabel }) {
+                                                Icon(
+                                                    painter = painterResource(id = if (hideLabel) R.drawable.ic_visibility_off else R.drawable.ic_visibility),
+                                                    contentDescription = if (hideLabel) "Show label" else "Hide label",
+                                                    tint = if (hideLabel) Color.White.copy(alpha = 0.4f) else Color.White
+                                                )
+                                            }
+                                        }
+                                    }
                                 )
 
                                 Spacer(modifier = Modifier.height(0.dp))
@@ -747,65 +778,6 @@ fun AppCustomizeDialog(
                                 )
 
                                 Spacer(modifier = Modifier.height(4.dp))
-
-                                val selectedFontName = if (selectedFontId != null) {
-                                    FontManager.bundledFonts.find { it.id == selectedFontId }?.displayName
-                                        ?: FontManager.getImportedFonts(context).find { it.id == selectedFontId }?.displayName
-                                        ?: "System Font (Default)"
-                                } else "System Font (Default)"
-                                val selectedFontFamily = if (selectedFontId != null) {
-                                    FontManager.bundledFonts.find { it.id == selectedFontId }?.fontFamily
-                                        ?: FontManager.getImportedFonts(context).find { it.id == selectedFontId }?.fontFamily
-                                        ?: FontFamily.Default
-                                } else FontFamily.Default
-
-                                // Font button — opens full font picker screen
-                                Button(
-                                    onClick = { showFontScreen = true },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color.White.copy(alpha = 0.08f),
-                                        contentColor = Color.White
-                                    ),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(
-                                        text = selectedFontName,
-                                        fontFamily = selectedFontFamily,
-                                        maxLines = 1
-                                    )
-                                }
-
-                                Text(
-                                    text = "Font",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color.White.copy(alpha = 0.7f),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp),
-                                    textAlign = TextAlign.Center
-                                )
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 32.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "Hide Label",
-                                        color = Color.White.copy(alpha = 0.87f),
-                                        fontSize = 14.sp
-                                    )
-                                    Switch(
-                                        checked = hideLabel,
-                                        onCheckedChange = { hideLabel = it }
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
 
                                 // Label color picker
                                 val labelColors = PRESET_COLORS

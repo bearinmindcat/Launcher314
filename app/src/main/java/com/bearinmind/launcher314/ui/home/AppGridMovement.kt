@@ -648,12 +648,17 @@ fun DraggableGridCell(
                                 FontManager.bundledFonts.find { it.id == id }?.fontFamily
                                     ?: FontManager.getImportedFonts(gridContext).find { it.id == id }?.fontFamily
                             } ?: appNameFontFamily ?: FontFamily.Default
+                            val perAppLabelColor = if (customization?.labelColor != null) {
+                                val i = (customization.labelColorIntensity ?: 100) / 100f
+                                val b = Color(customization.labelColor)
+                                Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+                            } else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
                             Text(
                                 text = displayLabel,
                                 fontSize = perAppFontSize,
                                 fontFamily = perAppFontFamily,
                                 color = if ((isDragging && !isHoverTargetValid) || (isHovered && !isValidDropTarget))
-                                    Color(0xFFFF6B6B) else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                                    Color(0xFFFF6B6B) else perAppLabelColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,
@@ -1348,12 +1353,22 @@ fun DraggableGridCell(
                             val folderDisplayName = if (isHovered && !isDragging) "Folder"
                                 else folderCustomization?.customLabel ?: cell.folder.name
                             val folderHideLabel = folderCustomization?.hideLabel ?: false
+                            val folderFontSize = folderCustomization?.iconTextSizePercent?.let { 12.sp * it / 100f } ?: appNameFontSize
+                            val folderFontFamily = folderCustomization?.labelFontId?.let { id ->
+                                FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                                    ?: FontManager.getImportedFonts(cellContext).find { it.id == id }?.fontFamily
+                            } ?: appNameFontFamily ?: FontFamily.Default
+                            val folderLabelColor = if (folderCustomization?.labelColor != null) {
+                                val i = (folderCustomization.labelColorIntensity ?: 100) / 100f
+                                val b = Color(folderCustomization.labelColor)
+                                Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+                            } else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
                             Text(
                                 text = folderDisplayName,
-                                fontSize = appNameFontSize,
-                                fontFamily = appNameFontFamily ?: FontFamily.Default,
+                                fontSize = folderFontSize,
+                                fontFamily = folderFontFamily,
                                 color = if (isHovered && !isValidDropTarget && !isDragging)
-                                    Color(0xFFFF6B6B) else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                                    Color(0xFFFF6B6B) else folderLabelColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,

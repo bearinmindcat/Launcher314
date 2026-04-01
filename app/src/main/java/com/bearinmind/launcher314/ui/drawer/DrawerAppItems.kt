@@ -88,6 +88,10 @@ internal fun FolderItem(
     globalIconShapeName: String? = null
 ) {
     val hapticFeedback = rememberHapticFeedback()
+    val drawerFolderContext = LocalContext.current
+    val drawerFolderCust = remember(folder.id) {
+        com.bearinmind.launcher314.data.loadAppCustomizations(drawerFolderContext).customizations["folder_${folder.id}"]
+    }
     var showContextMenu by remember { mutableStateOf(false) }
 
     // Get the first 4 apps in this folder for preview (filter empty gap markers)
@@ -378,11 +382,21 @@ internal fun FolderItem(
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = folder.name,
-                fontSize = labelFontSize,
-                fontFamily = labelFontFamily ?: FontFamily.Default,
-                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+            val drawerFolderFontFamily = drawerFolderCust?.labelFontId?.let { id ->
+                com.bearinmind.launcher314.helpers.FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                    ?: com.bearinmind.launcher314.helpers.FontManager.getImportedFonts(drawerFolderContext).find { it.id == id }?.fontFamily
+            } ?: labelFontFamily ?: FontFamily.Default
+            val drawerFolderLabelColor = if (drawerFolderCust?.labelColor != null) {
+                val i = (drawerFolderCust.labelColorIntensity ?: 100) / 100f
+                val b = Color(drawerFolderCust.labelColor)
+                Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+            } else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
+            val drawerFolderFontSize = drawerFolderCust?.iconTextSizePercent?.let { 12.sp * it / 100f } ?: labelFontSize
+            if (drawerFolderCust?.hideLabel != true) Text(
+                text = drawerFolderCust?.customLabel ?: folder.name,
+                fontSize = drawerFolderFontSize,
+                fontFamily = drawerFolderFontFamily,
+                color = drawerFolderLabelColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
