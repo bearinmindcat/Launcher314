@@ -72,7 +72,7 @@ fun loadAvailableApps(context: Context): List<HomeAppInfo> {
             }
         }
         .distinctBy { it.packageName }
-        .sortedBy { it.name.lowercase() }
+        .sortedBy { it.name.lowercase() } + loadShortcutApps(context)
 }
 
 // Shared bitmap utility functions (used by home, drawer, and preview)
@@ -99,9 +99,51 @@ fun saveBitmapToFile(bitmap: Bitmap, file: File) {
 }
 
 fun launchApp(context: Context, packageName: String) {
+    // Handle shortcuts (e.g., "Add to Home Screen" from Firefox)
+    if (packageName.startsWith("shortcut_")) {
+        val metaFile = java.io.File(context.filesDir, "shortcut_icons/$packageName.meta")
+        if (metaFile.exists()) {
+            try {
+                val lines = metaFile.readLines()
+                if (lines.size >= 2) {
+                    val launchIntent = Intent.parseUri(lines[1], Intent.URI_INTENT_SCHEME)
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launchIntent)
+                    return
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("LaunchApp", "Failed to launch shortcut $packageName", e)
+            }
+        }
+        return
+    }
+
     val intent = context.packageManager.getLaunchIntentForPackage(packageName)
     intent?.let {
         it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(it)
     }
+}
+
+/** Load shortcut metadata and return as HomeAppInfo list */
+fun loadShortcutApps(context: Context): List<HomeAppInfo> {
+    val iconsDir = java.io.File(context.filesDir, "shortcut_icons")
+    if (!iconsDir.exists()) return emptyList()
+
+    return iconsDir.listFiles()
+        ?.filter { it.extension == "meta" }
+        ?.mapNotNull { metaFile ->
+            try {
+                val lines = metaFile.readLines()
+                if (lines.size >= 2) {
+                    val shortcutId = metaFile.nameWithoutExtension
+                    val name = lines[0]
+                    val iconFile = java.io.File(iconsDir, "$shortcutId.png")
+                    val iconPath = if (iconFile.exists()) iconFile.absolutePath
+                        else java.io.File(context.cacheDir, "app_icons/com.android.chrome.png").absolutePath // fallback
+                    HomeAppInfo(name = name, packageName = shortcutId, iconPath = iconPath)
+                } else null
+            } catch (_: Exception) { null }
+        }
+        ?: emptyList()
 }

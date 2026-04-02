@@ -358,6 +358,11 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
+        // Handle pin shortcut request (Android 8.0+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            handlePinShortcutRequest(intent)
+        }
+
         // Initialize widget manager
         WidgetManager.init(this)
 
@@ -416,6 +421,11 @@ class MainActivity : ComponentActivity() {
         val navigateTo = intent.getStringExtra("navigate_to")
         android.util.Log.d("MainActivity", "onNewIntent: isHomeLaunch=$isHomeLaunch, navigateTo=$navigateTo, isLauncherMode=$isLauncherMode, categories=${intent.categories}")
 
+        // Handle pin shortcut request (Android 8.0+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (handlePinShortcutRequest(intent)) return
+        }
+
         when {
             // Home button pressed while already in launcher mode:
             // Signal Compose to return to home screen and close drawer
@@ -445,6 +455,123 @@ class MainActivity : ComponentActivity() {
                 })
             }
         }
+    }
+
+    @android.annotation.TargetApi(android.os.Build.VERSION_CODES.O)
+    private fun handlePinShortcutRequest(intent: Intent?): Boolean {
+        if (intent == null) return false
+        val launcherApps = getSystemService(android.content.pm.LauncherApps::class.java) ?: return false
+
+        val request = try {
+            launcherApps.getPinItemRequest(intent)
+        } catch (_: Exception) {
+            null
+        } ?: return false
+
+        if (!request.isValid) return false
+
+        val shortcutInfo = request.shortcutInfo ?: return false
+        val shortcutId = "shortcut_${System.currentTimeMillis()}"
+        val iconsDir = java.io.File(filesDir, "shortcut_icons")
+        if (!iconsDir.exists()) iconsDir.mkdirs()
+
+        // Save shortcut metadata
+        val name = shortcutInfo.shortLabel?.toString() ?: shortcutInfo.longLabel?.toString() ?: "Shortcut"
+        // Try getIntent first, fall back to getIntents (plural)
+        val launchIntent = try {
+            shortcutInfo.intent ?: shortcutInfo.getIntents()?.lastOrNull()
+        } catch (_: Exception) { null }
+
+        val metaFile = java.io.File(iconsDir, "$shortcutId.meta")
+        if (launchIntent != null) {
+            metaFile.writeText("$name\n${launchIntent.toUri(Intent.URI_INTENT_SCHEME)}")
+        } else {
+            // Even without an intent, save the shortcut with package info so we can try to launch it
+            val pkg = shortcutInfo.`package`
+            val fallbackIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                `package` = pkg
+            }
+            metaFile.writeText("$name\n${fallbackIntent.toUri(Intent.URI_INTENT_SCHEME)}")
+        }
+
+        // Save icon — try to get the shortcut's actual icon via LauncherApps
+        try {
+            val launcherAppsForIcon = getSystemService(android.content.pm.LauncherApps::class.java)
+            val iconDrawable = launcherAppsForIcon?.getShortcutIconDrawable(shortcutInfo, resources.displayMetrics.densityDpi)
+            val bitmap = if (iconDrawable != null) {
+                com.bearinmind.launcher314.data.drawableToBitmap(iconDrawable)
+            } else {
+                val fallbackIcon = try {
+                    packageManager.getApplicationIcon(shortcutInfo.`package`)
+                } catch (_: Exception) { null }
+                if (fallbackIcon != null) com.bearinmind.launcher314.data.drawableToBitmap(fallbackIcon) else null
+            }
+            if (bitmap != null) {
+                val iconFile = java.io.File(iconsDir, "$shortcutId.png")
+                com.bearinmind.launcher314.data.saveBitmapToFile(bitmap, iconFile)
+                bitmap.recycle()
+            }
+        } catch (_: Exception) {}
+
+        // Add to home screen — find first truly empty cell across all pages
+        val data = com.bearinmind.launcher314.data.loadHomeScreenData(this)
+        val prefs = applicationContext.getSharedPreferences("app_drawer_settings", MODE_PRIVATE)
+        val gridColumns = prefs.getInt("home_grid_columns", 4)
+        val gridRows = prefs.getInt("home_grid_rows", 5)
+        val totalCells = gridColumns * gridRows
+        val placedWidgets = com.bearinmind.launcher314.ui.widgets.WidgetManager.loadPlacedWidgets(this)
+
+        // Try each page starting from 0
+        var targetPage = 0
+        var targetPosition = 0
+        var found = false
+        for (page in 0..10) {
+            val occupiedByApps = data.apps.filter { it.page == page }.map { it.position }.toSet()
+            val occupiedByFolders = data.folders.filter { it.page == page }.map { it.position }.toSet()
+            val occupiedByWidgets = mutableSetOf<Int>()
+            placedWidgets.filter { it.page == page }.forEach { widget ->
+                for (r in widget.startRow until (widget.startRow + widget.rowSpan)) {
+                    for (c in widget.startColumn until (widget.startColumn + widget.columnSpan)) {
+                        occupiedByWidgets.add(r * gridColumns + c)
+                    }
+                }
+            }
+            val allOccupied = occupiedByApps + occupiedByFolders + occupiedByWidgets
+            val empty = (0 until totalCells).firstOrNull { it !in allOccupied }
+            if (empty != null) {
+                targetPage = page
+                targetPosition = empty
+                found = true
+                break
+            }
+        }
+        if (!found) {
+            targetPage = 0
+            targetPosition = 0
+        }
+
+        val newApp = com.bearinmind.launcher314.data.HomeScreenApp(
+            packageName = shortcutId,
+            position = targetPosition,
+            page = targetPage
+        )
+        val updatedData = data.copy(apps = data.apps + newApp)
+        com.bearinmind.launcher314.data.saveHomeScreenData(this, updatedData)
+
+        // Accept the pin request
+        request.accept()
+
+        android.widget.Toast.makeText(this, "\"$name\" added to home screen", android.widget.Toast.LENGTH_SHORT).show()
+
+        // Restart the activity to force a full home screen reload
+        val restartIntent = Intent(this, MainActivity::class.java).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        startActivity(restartIntent)
+
+        return true
     }
 }
 
