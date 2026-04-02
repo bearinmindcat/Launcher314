@@ -490,6 +490,7 @@ fun LauncherScreen(
     var dockFolders by remember { mutableStateOf<List<DockFolder>>(emptyList()) }
     var homeFolders by remember { mutableStateOf<List<HomeFolder>>(emptyList()) }
     var allAvailableApps by remember { mutableStateOf<List<HomeAppInfo>>(emptyList()) }
+    val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(appContext) }
     var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
     var customizingApp by remember { mutableStateOf<HomeAppInfo?>(null) }
     var customizingFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.HomeFolder?>(null) }
@@ -742,7 +743,7 @@ fun LauncherScreen(
             if (folder.position < totalCells) {
                 val currentCell = cells[folder.position]
                 if (currentCell is HomeGridCell.Empty) {
-                    val previewApps = folder.appPackageNames.filter { it.isNotEmpty() }.take(4).mapNotNull { pkg ->
+                    val previewApps = folder.appPackageNames.filter { it.isNotEmpty() && it !in hiddenApps }.take(4).mapNotNull { pkg ->
                         allAvailableApps.find { it.packageName == pkg }
                     }
                     cells[folder.position] = HomeGridCell.Folder(folder, previewApps, folder.position)
@@ -3179,7 +3180,7 @@ fun LauncherScreen(
                         }
                     }
                     val dockFolder = dockFolders.find { it.position == slot }
-                    val dockFolderPreviewApps = dockFolder?.appPackageNames?.filter { it.isNotEmpty() }?.take(4)?.mapNotNull { pkg ->
+                    val dockFolderPreviewApps = dockFolder?.appPackageNames?.filter { it.isNotEmpty() && it !in hiddenApps }?.take(4)?.mapNotNull { pkg ->
                         allAvailableApps.find { it.packageName == pkg }
                     } ?: emptyList()
                     val slotOccupied = appInfo != null || dockFolder != null
@@ -4325,15 +4326,15 @@ fun LauncherScreen(
         val folder = openHomeFolder ?: lastOpenedFolder!!
         val folderDropScope = rememberCoroutineScope()
 
-        // Position-based cell map: cellIndex → packageName (supports empty cells between apps)
+        // Position-based cell map: cellIndex → packageName (supports empty cells between apps, filters hidden)
         var folderCellMap by remember(folder.id) {
             mutableStateOf(folder.appPackageNames.withIndex()
-                .filter { it.value.isNotEmpty() }
+                .filter { it.value.isNotEmpty() && it.value !in hiddenApps }
                 .associate { it.index to it.value })
         }
         LaunchedEffect(folder.appPackageNames) {
             folderCellMap = folder.appPackageNames.withIndex()
-                .filter { it.value.isNotEmpty() }
+                .filter { it.value.isNotEmpty() && it.value !in hiddenApps }
                 .associate { it.index to it.value }
         }
         // Resolve package names to HomeAppInfo for rendering
