@@ -4397,6 +4397,23 @@ fun LauncherScreen(
             }
         }
 
+        // Auto-save folder name as user types (debounced)
+        LaunchedEffect(editedFolderName.text) {
+            if (editedFolderName.text != folder.name && editedFolderName.text.isNotBlank()) {
+                kotlinx.coroutines.delay(300)
+                if (isDockFolder) {
+                    saveDockFolders(dockFolders.map {
+                        if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
+                    })
+                } else {
+                    saveHomeFolders(homeFolders.map {
+                        if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
+                    })
+                }
+                openHomeFolder = folder.copy(name = editedFolderName.text)
+            }
+        }
+
         var folderOverlayRootPos by remember { mutableStateOf(Offset.Zero) }
         var folderHeaderBottomY by remember { mutableStateOf(0f) }
         Box(

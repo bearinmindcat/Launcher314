@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -117,6 +118,14 @@ internal fun FolderContentScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+
+    // Auto-save folder name as user types (debounced)
+    LaunchedEffect(editedName.text) {
+        if (editedName.text != folder.name && editedName.text.isNotBlank()) {
+            kotlinx.coroutines.delay(300)
+            onRenameFolder(editedName.text)
+        }
+    }
 
     val folderApps = remember(folder, allApps) {
         allApps.filter { it.packageName in folder.appPackageNames }
@@ -549,10 +558,19 @@ internal fun FolderContentScreen(
                                                         }
                                                     }
                                                 } else {
-                                                    // Tap (long press cancelled = quick release)
-                                                    val currentCellApp = folderCellMap[cellIdx]?.let { p -> allApps.find { it.packageName == p } }
-                                                    if (currentCellApp != null && draggedPkg == null) {
-                                                        launchApp(context, currentCellApp.packageName)
+                                                    // Long press cancelled — either finger lifted (tap) or moved (drag/swipe)
+                                                    // Wait for up event to get final position, then check distance
+                                                    val up = waitForUpOrCancellation()
+                                                    if (up != null) {
+                                                        val dx = up.position.x - startPosition.x
+                                                        val dy = up.position.y - startPosition.y
+                                                        val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                                        if (dist < touchSlop * 2) {
+                                                            val currentCellApp = folderCellMap[cellIdx]?.let { p -> allApps.find { it.packageName == p } }
+                                                            if (currentCellApp != null && draggedPkg == null) {
+                                                                launchApp(context, currentCellApp.packageName)
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
