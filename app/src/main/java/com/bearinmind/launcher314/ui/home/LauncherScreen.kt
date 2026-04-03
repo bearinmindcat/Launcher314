@@ -4866,7 +4866,9 @@ fun LauncherScreen(
                                         },
                                         isCustomizing = cellApp != null && customizingApp?.packageName == cellApp.packageName,
                                         globalIconSizePercent = iconSizePercent.toFloat(),
-                                        globalIconShape = globalIconShape
+                                        globalIconShape = globalIconShape,
+                                        globalIconBgColor = globalIconBgColor,
+                                        globalIconBgIntensity = globalIconBgIntensity
                                     )
                                 }
                             }
@@ -5132,6 +5134,9 @@ private fun HomeFolderAppItem(
     labelFontSize: androidx.compose.ui.unit.TextUnit = 12.sp,
     labelFontFamily: FontFamily? = null,
     isDragged: Boolean = false,
+    globalIconShape: String? = null,
+    globalIconBgColor: Int? = null,
+    globalIconBgIntensity: Int = 100,
     onClick: () -> Unit,
     onRemove: () -> Unit,
     onUninstall: () -> Unit,
@@ -5209,8 +5214,23 @@ private fun HomeFolderAppItem(
                 .padding(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            val folderItemContext = LocalContext.current
+            val displayIconPath = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                if (globalIconBgColor != null && globalIconShape != null) {
+                    try { com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon(folderItemContext, app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) }
+                    catch (_: Exception) {
+                        if (globalIconShape != null) {
+                            try { com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon(folderItemContext, app.packageName, globalIconShape) }
+                            catch (_: Exception) { app.iconPath }
+                        } else app.iconPath
+                    }
+                } else if (globalIconShape != null) {
+                    try { com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon(folderItemContext, app.packageName, globalIconShape) }
+                    catch (_: Exception) { app.iconPath }
+                } else app.iconPath
+            }
             AsyncImage(
-                model = File(app.iconPath),
+                model = File(displayIconPath),
                 contentDescription = app.name,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier

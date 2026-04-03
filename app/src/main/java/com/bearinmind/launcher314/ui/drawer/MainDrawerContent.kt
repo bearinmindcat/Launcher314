@@ -90,6 +90,25 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
+/** Bundled drawer state to reduce parameter count (avoids DEX register limit) */
+internal data class DrawerIconConfig(
+    val iconClipShape: androidx.compose.ui.graphics.Shape? = null,
+    val iconBgColor: Int? = null,
+    val globalIconShapeName: String? = null
+)
+
+internal data class DrawerExtraCallbacks(
+    val onCreateFolderWithApps: (List<AppInfo>) -> Unit = {},
+    val onFolderPositioned: (String, Offset) -> Unit = { _, _ -> },
+    val onAddAppToFolder: (AppInfo, AppFolder) -> Unit = { _, _ -> },
+    val onDeleteFolder: (AppFolder) -> Unit = {},
+    val onAddToHome: (AppInfo) -> Unit = {},
+    val onAddFolderToHome: (AppFolder) -> Unit = {},
+    val onBulkAddToFolder: (List<AppInfo>, AppFolder) -> Unit = { _, _ -> },
+    val onDropTargetPositioned: (Offset, IntSize) -> Unit = { _, _ -> },
+    val onCustomizeApp: (AppInfo) -> Unit = {}
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun MainDrawerContent(
@@ -106,10 +125,7 @@ internal fun MainDrawerContent(
     iconSize: Int,
     labelFontSize: androidx.compose.ui.unit.TextUnit = 12.sp,
     labelFontFamily: FontFamily? = null,
-    iconClipShape: androidx.compose.ui.graphics.Shape? = null,
-    iconBgColor: Int? = null,
-    globalIconShapeName: String? = null,
-    labelTextColor: Color = Color.White,
+    iconConfig: DrawerIconConfig = DrawerIconConfig(),
     drawerGridRows: Int,
     isPagedMode: Boolean,
     currentSortOption: SortOption,
@@ -122,22 +138,27 @@ internal fun MainDrawerContent(
     onAppInfo: (AppInfo) -> Unit,
     onSettingsClick: () -> Unit,
     onCreateFolderClick: () -> Unit,
-    onCreateFolderWithApps: (List<AppInfo>) -> Unit = {},
-    onFolderPositioned: (String, Offset) -> Unit = { _, _ -> },
-    onAddAppToFolder: (AppInfo, AppFolder) -> Unit = { _, _ -> },
-    onDeleteFolder: (AppFolder) -> Unit = {},
-    onAddToHome: (AppInfo) -> Unit = {},
-    onAddFolderToHome: (AppFolder) -> Unit = {},
     homeDragCallbacks: HomeDragCallbacks = HomeDragCallbacks(),
-    onBulkAddToFolder: (List<AppInfo>, AppFolder) -> Unit = { _, _ -> },
     isFolderMenuExpanded: Boolean = false,
     onFolderMenuExpandedChange: (Boolean) -> Unit = {},
     clearSelectionTrigger: Int = 0,
     dropAnimatingPackage: String? = null,
-    onDropTargetPositioned: (Offset, IntSize) -> Unit = { _, _ -> },
     escapeHoverState: EscapeHoverState? = null,
-    onCustomizeApp: (AppInfo) -> Unit = {}
+    extraCallbacks: DrawerExtraCallbacks = DrawerExtraCallbacks()
 ) {
+    // Unpack bundled params for backward compatibility
+    val iconClipShape = iconConfig.iconClipShape
+    val iconBgColor = iconConfig.iconBgColor
+    val globalIconShapeName = iconConfig.globalIconShapeName
+    val onCreateFolderWithApps = extraCallbacks.onCreateFolderWithApps
+    val onFolderPositioned = extraCallbacks.onFolderPositioned
+    val onAddAppToFolder = extraCallbacks.onAddAppToFolder
+    val onDeleteFolder = extraCallbacks.onDeleteFolder
+    val onAddToHome = extraCallbacks.onAddToHome
+    val onAddFolderToHome = extraCallbacks.onAddFolderToHome
+    val onBulkAddToFolder = extraCallbacks.onBulkAddToFolder
+    val onDropTargetPositioned = extraCallbacks.onDropTargetPositioned
+    val onCustomizeApp = extraCallbacks.onCustomizeApp
     // Local folder customize state — avoids adding another parameter
     var localCustomizingFolder by remember { mutableStateOf<AppFolder?>(null) }
     val onDragToHome = homeDragCallbacks.onDragToHome
@@ -392,17 +413,14 @@ internal fun MainDrawerContent(
     }
 
 
-    // Detect keyboard dismissal (e.g. back button) and clear focus + search
+    // Detect keyboard dismissal (e.g. back button) and clear focus
+    // Don't clear the search query — the user may have dismissed the keyboard
+    // by long-pressing an app (context menu) and still wants the search results
     val isKeyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     LaunchedEffect(isKeyboardOpen) {
         if (!isKeyboardOpen && isSearchFocused) {
             focusManager.clearFocus()
             isSearchFocused = false
-            onSearchQueryChange("")
-            // Delay before telling parent search is inactive,
-            // so layout fully restores before drawer can be swiped closed
-            kotlinx.coroutines.delay(800)
-            onSearchFocusChanged(false)
         }
     }
 

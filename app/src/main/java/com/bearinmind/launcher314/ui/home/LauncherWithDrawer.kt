@@ -161,21 +161,31 @@ fun LauncherWithDrawer(
         }
     }
 
-    // Widget added or widget screen closed: ensure drawer is closed so home screen is visible
-    LaunchedEffect(widgetRefreshTrigger) {
-        if (widgetRefreshTrigger > 0 && showAppDrawer) {
-            swipeUpY.snapTo(screenHeight)
-            showAppDrawer = false
-            homeRefreshTrigger++
-        }
-    }
-
     // Accessibility service / preview requested drawer open
     // Track last consumed trigger to avoid re-firing when composable re-enters composition
     var lastConsumedDrawerTrigger by rememberSaveable { mutableIntStateOf(0) }
+    // Whether the drawer was intentionally opened via trigger (guards against widget refresh closing it)
+    var drawerOpenedViaTrigger by remember { mutableStateOf(false) }
+
+    // Widget added or widget screen closed: ensure drawer is closed so home screen is visible
+    // Skip if the drawer was just intentionally opened via openDrawerTrigger (race condition)
+    var lastConsumedWidgetTrigger by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(widgetRefreshTrigger) {
+        if (widgetRefreshTrigger > 0 && widgetRefreshTrigger != lastConsumedWidgetTrigger) {
+            lastConsumedWidgetTrigger = widgetRefreshTrigger
+            if (showAppDrawer && !drawerOpenedViaTrigger) {
+                swipeUpY.snapTo(screenHeight)
+                showAppDrawer = false
+                homeRefreshTrigger++
+            }
+            drawerOpenedViaTrigger = false
+        }
+    }
+
     LaunchedEffect(openDrawerTrigger) {
         if (openDrawerTrigger > 0 && openDrawerTrigger != lastConsumedDrawerTrigger) {
             lastConsumedDrawerTrigger = openDrawerTrigger
+            drawerOpenedViaTrigger = true
             showAppDrawer = true
             swipeUpY.animateTo(
                 targetValue = 0f,

@@ -540,16 +540,11 @@ fun AppDrawerScreen(
             iconSize = iconSize,
             labelFontSize = appLabelFontSize,
             labelFontFamily = selectedFontFamily,
-            iconClipShape = getIconShape(globalIconShape),
-            iconBgColor = globalIconBgColor,
-            globalIconShapeName = globalIconShape,
-            labelTextColor = run {
-                if (globalTextColor != null) {
-                    val i = globalTextColorIntensity / 100f
-                    val b = androidx.compose.ui.graphics.Color(globalTextColor!!)
-                    androidx.compose.ui.graphics.Color(b.red * i, b.green * i, b.blue * i, b.alpha)
-                } else androidx.compose.ui.graphics.Color.White
-            },
+            iconConfig = DrawerIconConfig(
+                iconClipShape = getIconShape(globalIconShape),
+                iconBgColor = globalIconBgColor,
+                globalIconShapeName = globalIconShape
+            ),
             drawerGridRows = drawerGridRows,
             isPagedMode = isPagedMode,
             currentSortOption = currentSortOption,
@@ -569,71 +564,65 @@ fun AppDrawerScreen(
             onAppInfo = { app -> openAppInfo(context, app.packageName) },
             onSettingsClick = onSettingsClick,
             onCreateFolderClick = { showCreateFolderDialog = true },
-            onCreateFolderWithApps = { apps ->
-                // Create folder directly without dialog (like home screen)
-                val newFolder = AppFolder(
-                    name = "Folder",
-                    appPackageNames = apps.map { it.packageName }
-                )
-                saveFolders(folders + newFolder)
-            },
-            onFolderPositioned = { folderId, position ->
-                folderPositions = folderPositions + (folderId to position)
-            },
-            onAddAppToFolder = { app, folder ->
-                val updatedFolder = folder.copy(
-                    appPackageNames = folder.appPackageNames + app.packageName
-                )
-                Log.d("FolderDebug", "onAddAppToFolder: adding ${app.packageName} to folder '${folder.name}' (${folder.id})")
-                Log.d("FolderDebug", "  old apps: ${folder.appPackageNames}")
-                Log.d("FolderDebug", "  new apps: ${updatedFolder.appPackageNames}")
-                saveFolders(folders.map { if (it.id == folder.id) updatedFolder else it })
-                // Update openFolder so FolderContentScreen sees the new app
-                if (openFolder?.id == folder.id) {
-                    openFolder = updatedFolder
-                }
-            },
-            onDeleteFolder = { folder ->
-                // Delete the folder - apps will automatically return to main drawer
-                saveFolders(folders.filter { it.id != folder.id })
-            },
-            onAddToHome = onAddToHome,
-            onAddFolderToHome = onAddFolderToHome,
             homeDragCallbacks = HomeDragCallbacks(
                 onDragToHome = onDragToHome,
                 onDragToHomeMove = onDragToHomeMove,
                 onDragToHomeDrop = onDragToHomeDrop
             ),
-            onBulkAddToFolder = { apps, folder ->
-                // Add all selected apps to the folder
-                val updatedFolder = folder.copy(
-                    appPackageNames = folder.appPackageNames + apps.map { it.packageName }
-                )
-                saveFolders(folders.map { if (it.id == folder.id) updatedFolder else it })
-                if (openFolder?.id == folder.id) {
-                    openFolder = updatedFolder
-                }
-            },
             isFolderMenuExpanded = globalFolderMenuExpanded,
             onFolderMenuExpandedChange = { globalFolderMenuExpanded = it },
             clearSelectionTrigger = clearSelectionTrigger,
             dropAnimatingPackage = escapeDropApp?.packageName,
-            onDropTargetPositioned = { pos, size ->
-                if (escapeDropApp != null && escapeDropTargetPos == null) {
-                    escapeDropTargetPos = pos
-                    escapeDropTargetSize = size
-                    // Now we have both start and target — animate
-                    folderEscapeScope.launch {
-                        escapeDropAnim.snapTo(0f)
-                        escapeDropAnim.animateTo(
-                            1f,
-                            tween(300, easing = FastOutSlowInEasing)
-                        )
-                        escapeDropApp = null
+            extraCallbacks = DrawerExtraCallbacks(
+                onCreateFolderWithApps = { apps ->
+                    val newFolder = AppFolder(
+                        name = "Folder",
+                        appPackageNames = apps.map { it.packageName }
+                    )
+                    saveFolders(folders + newFolder)
+                },
+                onFolderPositioned = { folderId, position ->
+                    folderPositions = folderPositions + (folderId to position)
+                },
+                onAddAppToFolder = { app, folder ->
+                    val updatedFolder = folder.copy(
+                        appPackageNames = folder.appPackageNames + app.packageName
+                    )
+                    Log.d("FolderDebug", "onAddAppToFolder: adding ${app.packageName} to folder '${folder.name}' (${folder.id})")
+                    Log.d("FolderDebug", "  old apps: ${folder.appPackageNames}")
+                    Log.d("FolderDebug", "  new apps: ${updatedFolder.appPackageNames}")
+                    saveFolders(folders.map { if (it.id == folder.id) updatedFolder else it })
+                    if (openFolder?.id == folder.id) {
+                        openFolder = updatedFolder
                     }
-                }
-            },
-            onCustomizeApp = { app -> customizingDrawerApp = app },
+                },
+                onDeleteFolder = { folder ->
+                    saveFolders(folders.filter { it.id != folder.id })
+                },
+                onAddToHome = onAddToHome,
+                onAddFolderToHome = onAddFolderToHome,
+                onBulkAddToFolder = { apps, folder ->
+                    val updatedFolder = folder.copy(
+                        appPackageNames = folder.appPackageNames + apps.map { it.packageName }
+                    )
+                    saveFolders(folders.map { if (it.id == folder.id) updatedFolder else it })
+                    if (openFolder?.id == folder.id) {
+                        openFolder = updatedFolder
+                    }
+                },
+                onDropTargetPositioned = { pos, size ->
+                    if (escapeDropApp != null && escapeDropTargetPos == null) {
+                        escapeDropTargetPos = pos
+                        escapeDropTargetSize = size
+                        folderEscapeScope.launch {
+                            escapeDropAnim.snapTo(0f)
+                            escapeDropAnim.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+                            escapeDropApp = null
+                        }
+                    }
+                },
+                onCustomizeApp = { app -> customizingDrawerApp = app }
+            ),
             escapeHoverState = EscapeHoverState(
                 folderId = if (escapeHoveredFolderId != null && folderEscapedApp != null) escapeHoveredFolderId else null,
                 iconPath = if (escapeHoveredFolderId != null && folderEscapedApp != null) folderEscapedApp?.iconPath else null,
