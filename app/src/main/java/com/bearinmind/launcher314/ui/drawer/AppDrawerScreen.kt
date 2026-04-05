@@ -407,11 +407,18 @@ fun AppDrawerScreen(
         }
     }
 
-    // Filter hidden apps and sort based on search query (apps in folders stay in folders)
+    // Filter hidden apps and sort based on search query
+    // When searching, include apps from folders so they appear in results
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(context) }
+    val isSearching by remember { derivedStateOf { searchQuery.isNotBlank() } }
     val filteredApps by remember {
         derivedStateOf {
-            val availableApps = allApps.filter { it.packageName !in appsInFolders && it.packageName !in hiddenApps }
+            val availableApps = if (searchQuery.isBlank()) {
+                allApps.filter { it.packageName !in appsInFolders && it.packageName !in hiddenApps }
+            } else {
+                // When searching, include all apps (even those in folders) so they appear in results
+                allApps.filter { it.packageName !in hiddenApps }
+            }
             val searched = if (searchQuery.isBlank()) {
                 availableApps
             } else {
@@ -531,7 +538,7 @@ fun AppDrawerScreen(
                 }
             },
             isLoading = isLoading,
-            folders = displayFolders.map { folder ->
+            folders = if (isSearching) emptyList() else displayFolders.map { folder ->
                 folder.copy(appPackageNames = folder.appPackageNames.filter { it !in hiddenApps })
             },
             filteredApps = filteredApps,
