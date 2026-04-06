@@ -233,6 +233,44 @@ object IconPackManager {
         return cachedCount
     }
 
+    /**
+     * Re-cache a single package's icon from the active icon pack.
+     * Called after clearing cached icons for an updated app so the icon pack icon is preserved.
+     */
+    fun recacheIconForPackage(context: Context, packageName: String) {
+        val selectedPack = getSelectedIconPack(context)
+        if (selectedPack.isEmpty()) return
+
+        try {
+            val pm = context.packageManager
+            val appFilterMap = parseAppFilter(context, selectedPack)
+            val iconPackResources = pm.getResourcesForApplication(selectedPack)
+            val cacheDir = getIconPackCacheDir(context)
+
+            // Find the activity for this package
+            val launchIntent = pm.getLaunchIntentForPackage(packageName) ?: return
+            val resolveInfo = pm.resolveActivity(launchIntent, 0) ?: return
+            val activityName = resolveInfo.activityInfo.name
+
+            val componentInfo = "ComponentInfo{$packageName/$activityName}"
+            val drawableName = appFilterMap[componentInfo] ?: return
+
+            val drawableResId = iconPackResources.getIdentifier(
+                drawableName, "drawable", selectedPack
+            )
+            if (drawableResId == 0) return
+
+            @Suppress("DEPRECATION")
+            val drawable = iconPackResources.getDrawable(drawableResId, null) ?: return
+            val bitmap = drawableToBitmap(drawable)
+            val outFile = File(cacheDir, "$packageName.png")
+            saveBitmapToFile(bitmap, outFile)
+            bitmap.recycle()
+        } catch (_: Exception) {
+            // Silently fail — app will use system icon as fallback
+        }
+    }
+
     fun clearIconPackCache(context: Context) {
         val cacheDir = getIconPackCacheDir(context)
         cacheDir.listFiles()?.forEach { it.delete() }

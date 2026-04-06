@@ -57,6 +57,8 @@ fun clearCachedIconsForPackage(context: Context, packageName: String) {
             dir.listFiles()?.filter { it.name.startsWith(packageName) }?.forEach { it.delete() }
         }
     }
+    // Re-cache the icon pack icon for this package so it doesn't fall back to system icon
+    IconPackManager.recacheIconForPackage(context, packageName)
 }
 
 fun getGlobalShapedDir(context: Context): File {
