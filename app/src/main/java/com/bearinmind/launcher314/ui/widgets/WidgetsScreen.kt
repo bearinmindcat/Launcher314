@@ -325,8 +325,14 @@ fun WidgetsScreen(
                                 else 0f
                                 val previewPaddingDp = widgetPadding / 100f * com.bearinmind.launcher314.data.WIDGET_MAX_PADDING_DP
                                 val previewTextScale = widgetFontScale / 100f
-                                // Outer wrapper: reserves space for "+" markers that sit at grid intersections
-                                val markerHalf = 6.dp
+                                // Outer wrapper: "+" markers sit at grid intersections
+                                // markerSize is the size of each "+" box; markers are centered on the edge
+                                val markerSize = 12.dp
+                                val markerHalf = markerSize / 2
+                                // Gap between marker center and widget edge at 0% spacing
+                                val baseGap = 8.dp
+                                // Total inset from outer box edge to widget content area
+                                val widgetInset = markerHalf + baseGap
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -336,7 +342,6 @@ fun WidgetsScreen(
                                     // "+" markers at grid intersection points (corners + mid-points for 2x1)
                                     val markerColor = Color.White.copy(alpha = 0.5f)
                                     val markerFontSize = 10.sp
-                                    val markerSize = 12.dp
                                     // Top row
                                     Box(modifier = Modifier.align(Alignment.TopStart).size(markerSize), contentAlignment = Alignment.Center) {
                                         Text("+", color = markerColor, fontSize = markerFontSize)
@@ -358,13 +363,14 @@ fun WidgetsScreen(
                                         Text("+", color = markerColor, fontSize = markerFontSize)
                                     }
 
-                                    // Widget area: inset by markerHalf so content sits between markers
+                                    // Widget area: centered between markers
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .padding(markerHalf)
+                                            .padding(widgetInset)
                                     ) {
-                                        // Widget content with user padding and corner radius
+                                        // Scale icon and text proportionally as spacing shrinks the widget
+                                        val spacingScale = (1f - widgetPadding / 100f * 0.5f).coerceIn(0.3f, 1f)
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
@@ -376,25 +382,30 @@ fun WidgetsScreen(
                                             val appIcon = remember {
                                                 context.packageManager.getApplicationIcon(context.packageName)
                                             }
-                                            Image(
-                                                painter = com.google.accompanist.drawablepainter.rememberDrawablePainter(appIcon),
-                                                contentDescription = null,
+                                            val scaledIconSize = (36f * spacingScale).dp
+                                            val innerPad = (8f * spacingScale).dp
+                                            val gapAfterIcon = (6f * spacingScale).dp
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
                                                 modifier = Modifier
-                                                    .size(36.dp)
-                                                    .align(Alignment.CenterStart)
-                                                    .offset(x = 12.dp)
-                                            )
-                                            Text(
-                                                text = "Launcher314",
-                                                color = Color.White.copy(alpha = 0.7f),
-                                                fontSize = (13f * previewTextScale).sp,
-                                                maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
-                                                modifier = Modifier
-                                                    .align(Alignment.CenterStart)
-                                                    .offset(x = 56.dp)
-                                                    .padding(end = 56.dp)
-                                            )
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = innerPad)
+                                            ) {
+                                                Image(
+                                                    painter = com.google.accompanist.drawablepainter.rememberDrawablePainter(appIcon),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(scaledIconSize)
+                                                )
+                                                Spacer(modifier = Modifier.width(gapAfterIcon))
+                                                Text(
+                                                    text = "Launcher314",
+                                                    color = Color.White.copy(alpha = 0.7f),
+                                                    fontSize = (13f * previewTextScale * spacingScale).sp,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -439,6 +450,11 @@ fun WidgetsScreen(
                                             },
                                             onValueChangeFinished = {
                                                 WidgetManager.refreshAllWidgetCorners(context)
+                                            },
+                                            onDoubleTap = {
+                                                widgetCornerRadius = 50f
+                                                setWidgetCornerRadiusPercent(context, 50)
+                                                WidgetManager.refreshAllWidgetCorners(context)
                                             }
                                         )
                                     }
@@ -461,6 +477,11 @@ fun WidgetsScreen(
                                         onValueChangeFinished = {
                                             // Recreate all widget views with new font scale
                                             WidgetManager.recreateAllWidgetViews(context)
+                                        },
+                                        onDoubleTap = {
+                                            widgetFontScale = 100f
+                                            setWidgetFontScalePercent(context, 100)
+                                            WidgetManager.recreateAllWidgetViews(context)
                                         }
                                     )
                                 }
@@ -479,7 +500,11 @@ fun WidgetsScreen(
                                             widgetPadding = newVal
                                             setWidgetPaddingPercent(context, newVal.roundToInt())
                                         },
-                                        onValueChangeFinished = { }
+                                        onValueChangeFinished = { },
+                                        onDoubleTap = {
+                                            widgetPadding = 0f
+                                            setWidgetPaddingPercent(context, 0)
+                                        }
                                     )
                                 }
                             }

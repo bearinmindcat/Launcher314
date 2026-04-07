@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,7 +72,8 @@ fun ThumbDragHorizontalSlider(
     onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    overflowThreshold: Float = config.maxValue // above this value, track/thumb turns red and snaps back
+    overflowThreshold: Float = config.maxValue, // above this value, track/thumb turns red and snaps back
+    onDoubleTap: (() -> Unit)? = null // optional double-tap to reset
 ) {
     // Cap at highest usable snap value (below overflow threshold)
     val dragMax = if (overflowThreshold >= config.maxValue) config.maxValue
@@ -130,6 +132,13 @@ fun ThumbDragHorizontalSlider(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(32.dp)
+                    .then(
+                        if (onDoubleTap != null && enabled) Modifier.pointerInput(Unit) {
+                            detectTapGestures(
+                                onDoubleTap = { onDoubleTap() }
+                            )
+                        } else Modifier
+                    )
                     .pointerInput(enabled, overflowThreshold) {
                         if (!enabled) return@pointerInput
                         detectHorizontalDragGestures(
@@ -869,7 +878,7 @@ object SliderConfigs {
         labeledTickValues = listOf(0, 25, 50, 75, 100),
         snapTickValues = (0..100 step 5).toList(),
         showMinorTicks = true,
-        label = "Widget Padding (%)",
+        label = "Widget Spacing (%)",
         labelSuffix = "%"
     )
 }
