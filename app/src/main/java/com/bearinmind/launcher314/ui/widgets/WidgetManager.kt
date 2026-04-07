@@ -29,7 +29,9 @@ data class PlacedWidget(
     val rowSpan: Int,       // Height in cells
     val page: Int = 0,      // Home screen page (default 0 for backward compat)
     val stackId: String? = null,  // Non-null when widget is part of a stack
-    val stackOrder: Int = 0       // Order within the stack (0 = first/primary)
+    val stackOrder: Int = 0,      // Order within the stack (0 = first/primary)
+    val paddingPercent: Int? = null,  // Per-widget padding override (null = use global)
+    val borderless: Boolean = false   // When true: padding=0, corner radius=0
 ) {
     // Compatibility aliases
     val gridColumn: Int get() = startColumn
@@ -232,8 +234,10 @@ object WidgetManager {
      * Called when the user changes the rounded corners toggle or radius.
      */
     fun refreshAllWidgetCorners(context: Context) {
-        for (view in widgetViews.values) {
-            view.applyRoundedCorners(context)
+        val placed = loadPlacedWidgets(context)
+        for ((id, view) in widgetViews) {
+            val pw = placed.find { it.appWidgetId == id }
+            view.applyRoundedCorners(context, forceBorderless = pw?.borderless == true)
         }
     }
 

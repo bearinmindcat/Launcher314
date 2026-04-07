@@ -46,7 +46,14 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
     /**
      * Read the user's rounded-corner preference and apply (or remove) clipping.
      */
-    fun applyRoundedCorners(ctx: Context) {
+    fun applyRoundedCorners(ctx: Context, forceBorderless: Boolean = false) {
+        if (forceBorderless) {
+            cornerRadiusDp = 0f
+            clipToOutline = false
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            invalidateOutline()
+            return
+        }
         val enabled = getWidgetRoundedCornersEnabled(ctx)
         val percent = if (enabled) getWidgetCornerRadiusPercent(ctx) else 0
         val radiusDp = percent / 100f * WIDGET_MAX_CORNER_RADIUS_DP

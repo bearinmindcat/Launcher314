@@ -861,4 +861,15 @@ object SliderConfigs {
         label = "Widget Text Size (%)",
         labelSuffix = "%"
     )
+
+    val widgetPadding = HorizontalSliderConfig(
+        minValue = 0f,
+        maxValue = 100f,
+        tickValues = listOf(0, 25, 50, 75, 100),
+        labeledTickValues = listOf(0, 25, 50, 75, 100),
+        snapTickValues = (0..100 step 5).toList(),
+        showMinorTicks = true,
+        label = "Widget Padding (%)",
+        labelSuffix = "%"
+    )
 }

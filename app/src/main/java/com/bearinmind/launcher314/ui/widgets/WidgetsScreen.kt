@@ -61,6 +61,8 @@ import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
 import com.bearinmind.launcher314.data.setWidgetCornerRadiusPercent
 import com.bearinmind.launcher314.data.getWidgetFontScalePercent
 import com.bearinmind.launcher314.data.setWidgetFontScalePercent
+import com.bearinmind.launcher314.data.getWidgetPaddingPercent
+import com.bearinmind.launcher314.data.setWidgetPaddingPercent
 import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import androidx.compose.ui.graphics.graphicsLayer
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
@@ -113,6 +115,7 @@ fun WidgetsScreen(
     var widgetRoundedCornersEnabled by remember { mutableStateOf(getWidgetRoundedCornersEnabled(context)) }
     var widgetCornerRadius by remember { mutableFloatStateOf(getWidgetCornerRadiusPercent(context).toFloat()) }
     var widgetFontScale by remember { mutableFloatStateOf(getWidgetFontScalePercent(context).toFloat()) }
+    var widgetPadding by remember { mutableFloatStateOf(getWidgetPaddingPercent(context).toFloat()) }
 
     // Track expanded state for each app group
     var expandedApps by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -316,6 +319,86 @@ fun WidgetsScreen(
                                 onDismissRequest = { showMenu = false },
                                 gapDp = 4
                             ) {
+                                // Sample widget preview
+                                val previewCornerDp = if (widgetRoundedCornersEnabled)
+                                    widgetCornerRadius / 100f * WIDGET_MAX_CORNER_RADIUS_DP
+                                else 0f
+                                val previewPaddingDp = widgetPadding / 100f * com.bearinmind.launcher314.data.WIDGET_MAX_PADDING_DP
+                                val previewTextScale = widgetFontScale / 100f
+                                // Outer wrapper: reserves space for "+" markers that sit at grid intersections
+                                val markerHalf = 6.dp
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                                        .height(80.dp + markerHalf * 2)
+                                ) {
+                                    // "+" markers at grid intersection points (corners + mid-points for 2x1)
+                                    val markerColor = Color.White.copy(alpha = 0.5f)
+                                    val markerFontSize = 10.sp
+                                    val markerSize = 12.dp
+                                    // Top row
+                                    Box(modifier = Modifier.align(Alignment.TopStart).size(markerSize), contentAlignment = Alignment.Center) {
+                                        Text("+", color = markerColor, fontSize = markerFontSize)
+                                    }
+                                    Box(modifier = Modifier.align(Alignment.TopCenter).size(markerSize), contentAlignment = Alignment.Center) {
+                                        Text("+", color = markerColor, fontSize = markerFontSize)
+                                    }
+                                    Box(modifier = Modifier.align(Alignment.TopEnd).size(markerSize), contentAlignment = Alignment.Center) {
+                                        Text("+", color = markerColor, fontSize = markerFontSize)
+                                    }
+                                    // Bottom row
+                                    Box(modifier = Modifier.align(Alignment.BottomStart).size(markerSize), contentAlignment = Alignment.Center) {
+                                        Text("+", color = markerColor, fontSize = markerFontSize)
+                                    }
+                                    Box(modifier = Modifier.align(Alignment.BottomCenter).size(markerSize), contentAlignment = Alignment.Center) {
+                                        Text("+", color = markerColor, fontSize = markerFontSize)
+                                    }
+                                    Box(modifier = Modifier.align(Alignment.BottomEnd).size(markerSize), contentAlignment = Alignment.Center) {
+                                        Text("+", color = markerColor, fontSize = markerFontSize)
+                                    }
+
+                                    // Widget area: inset by markerHalf so content sits between markers
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(markerHalf)
+                                    ) {
+                                        // Widget content with user padding and corner radius
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(previewPaddingDp.dp)
+                                                .clip(RoundedCornerShape(previewCornerDp.dp))
+                                                .background(Color.White.copy(alpha = 0.12f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            val appIcon = remember {
+                                                context.packageManager.getApplicationIcon(context.packageName)
+                                            }
+                                            Image(
+                                                painter = com.google.accompanist.drawablepainter.rememberDrawablePainter(appIcon),
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .align(Alignment.CenterStart)
+                                                    .offset(x = 12.dp)
+                                            )
+                                            Text(
+                                                text = "Launcher314",
+                                                color = Color.White.copy(alpha = 0.7f),
+                                                fontSize = (13f * previewTextScale).sp,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
+                                                modifier = Modifier
+                                                    .align(Alignment.CenterStart)
+                                                    .offset(x = 56.dp)
+                                                    .padding(end = 56.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
                                 // Rounded corners toggle
                                 DropdownMenuItem(
                                     text = { Text("Rounded corners") },
@@ -379,6 +462,24 @@ fun WidgetsScreen(
                                             // Recreate all widget views with new font scale
                                             WidgetManager.recreateAllWidgetViews(context)
                                         }
+                                    )
+                                }
+
+                                // Widget padding slider
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp)
+                                        .padding(bottom = 4.dp)
+                                ) {
+                                    ThumbDragHorizontalSlider(
+                                        currentValue = widgetPadding,
+                                        config = SliderConfigs.widgetPadding,
+                                        onValueChange = { newVal ->
+                                            widgetPadding = newVal
+                                            setWidgetPaddingPercent(context, newVal.roundToInt())
+                                        },
+                                        onValueChangeFinished = { }
                                     )
                                 }
                             }

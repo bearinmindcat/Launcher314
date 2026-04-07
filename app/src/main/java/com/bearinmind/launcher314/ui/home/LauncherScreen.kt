@@ -90,6 +90,11 @@ import com.bearinmind.launcher314.data.getGlobalIconShape
 import com.bearinmind.launcher314.data.getGlobalIconBgColor
 import com.bearinmind.launcher314.data.getDockEnabled
 import com.bearinmind.launcher314.data.getDoubleTapLockEnabled
+import com.bearinmind.launcher314.data.getWidgetPaddingPercent
+import com.bearinmind.launcher314.data.getWidgetRoundedCornersEnabled
+import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
+import com.bearinmind.launcher314.data.WIDGET_MAX_PADDING_DP
+import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import com.bearinmind.launcher314.services.AppDrawerAccessibilityService
 import com.bearinmind.launcher314.ui.drawer.CreateFolderDialog
 import androidx.compose.ui.text.TextRange
@@ -164,8 +169,12 @@ import com.bearinmind.launcher314.data.getScrollbarColor
 import com.bearinmind.launcher314.data.getScrollbarIntensity
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.Widgets
+import kotlin.math.roundToInt
+import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
+import com.bearinmind.launcher314.ui.components.SliderConfigs
 import androidx.compose.ui.viewinterop.AndroidView
 import android.view.View
 import android.view.ViewGroup
@@ -496,6 +505,9 @@ fun LauncherScreen(
     var customizingFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.HomeFolder?>(null) }
     var customizingDockFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.DockFolder?>(null) }
     var placedWidgets by remember { mutableStateOf<List<PlacedWidget>>(emptyList()) }
+    var globalWidgetPaddingPercent by remember { mutableIntStateOf(getWidgetPaddingPercent(appContext)) }
+    var widgetRoundedCornersEnabled by remember { mutableStateOf(getWidgetRoundedCornersEnabled(appContext)) }
+    var widgetCornerRadiusPercent by remember { mutableIntStateOf(getWidgetCornerRadiusPercent(appContext)) }
     var isLoading by remember { mutableStateOf(true) }
 
     // Edit mode and drag state
@@ -660,6 +672,10 @@ fun LauncherScreen(
         iconSizePercent = getHomeIconSizePercent(context)
         iconTextSizePercent = getIconTextSizePercent(context)
         selectedFontFamily = FontManager.getSelectedFontFamily(context)
+        // Refresh widget settings (may have changed in Widgets screen)
+        globalWidgetPaddingPercent = getWidgetPaddingPercent(appContext)
+        widgetRoundedCornersEnabled = getWidgetRoundedCornersEnabled(appContext)
+        widgetCornerRadiusPercent = getWidgetCornerRadiusPercent(appContext)
         // Clear Coil memory cache so fresh icons load
         coil.Coil.imageLoader(context).memoryCache?.clear()
     }
@@ -2044,8 +2060,11 @@ fun LauncherScreen(
                                     // Check if this cell is hovered by:
                                     // - App drag (hoveredGridCell)
                                     // - Widget drop target (hoveredWidgetCells) — but NOT during widget-over-widget (stacking)
+                                    //   and only on the correct page (drag target page or resize widget's page)
+                                    val widgetHoverPage = if (widgetResizeState.isResizing) widgetResizeState.resizingWidget?.page ?: 0
+                                        else pagerState.targetPage
                                     val isHovered = hoveredGridCell == index ||
-                                                    (hoveredWidgetCells.contains(index) && !isWidgetOverWidget)
+                                                    (hoveredWidgetCells.contains(index) && !isWidgetOverWidget && page == widgetHoverPage)
                                     // Any item dragging includes both apps and widgets
                                     // Exclude drop animation so "+" markers disappear instantly on release
                                     val isAnyDragging = (draggedItemIndex != null && !isDropAnimating) || (widgetDragState.draggedWidget != null && !isWidgetDropAnimating)
@@ -2065,7 +2084,8 @@ fun LauncherScreen(
                                         // Only on the SOURCE page — on other pages, same indices are different cells
                                         hoveredWidgetCells.contains(index) && widgetOriginalCells.contains(index) && page == widgetDragSourcePage -> true
                                         // Widget resize/drag - non-original cells show red if overlapping other apps
-                                        hoveredWidgetCells.contains(index) -> isWidgetDropTargetValid
+                                        // Only on the correct page (target page for drag, widget page for resize)
+                                        hoveredWidgetCells.contains(index) && page == widgetHoverPage -> isWidgetDropTargetValid
                                         // App being dragged and hovering over this occupied cell - INVALID (red)
                                         hoveredGridCell == index && draggedItemIndex != null -> false
                                         // Not hovered - default to true (no indicator shown anyway)
@@ -2703,9 +2723,19 @@ fun LauncherScreen(
                                             // Apply blue tint when another widget is hovering over this one (stack target)
                                             val showWidgetBlueTint = isOtherWidgetHoveringOverThis
 
+                                            // Calculate effective padding and corner radius for this widget
+                                            val effectivePaddingPercent = if (widget.borderless) 0
+                                                else (widget.paddingPercent ?: globalWidgetPaddingPercent)
+                                            val effectivePaddingDp = (effectivePaddingPercent / 100f * WIDGET_MAX_PADDING_DP).dp
+                                            val effectiveCornerRadiusDp = if (widget.borderless) 0f
+                                                else if (widgetRoundedCornersEnabled) {
+                                                    widgetCornerRadiusPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
+                                                } else 0f
+
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxSize()
+                                                    .padding(effectivePaddingDp)
                                                     .graphicsLayer {
                                                         // Render to offscreen buffer so blend mode works on widget content
                                                         compositingStrategy = CompositingStrategy.Offscreen
@@ -2808,11 +2838,11 @@ fun LauncherScreen(
                                                                     }
                                                                 }
                                                             }
-                                                            .clip(RoundedCornerShape(12.dp))
+                                                            .clip(RoundedCornerShape(effectiveCornerRadiusDp.dp))
                                                             .then(
                                                                 if (stackChromeAlpha > 0f) Modifier
                                                                     .background(Color.Black.copy(alpha = 0.4f * stackChromeAlpha))
-                                                                    .border(1.dp, Color(0xFF888888).copy(alpha = stackChromeAlpha), RoundedCornerShape(12.dp))
+                                                                    .border(1.dp, Color(0xFF888888).copy(alpha = stackChromeAlpha), RoundedCornerShape(effectiveCornerRadiusDp.dp))
                                                                 else Modifier
                                                             )
                                                     ) {
@@ -2824,6 +2854,7 @@ fun LauncherScreen(
                                                             WidgetHostView(
                                                                 placedWidget = stackWidgets[stackPage],
                                                                 modifier = Modifier.fillMaxSize(),
+                                                                cornerRadiusDp = effectiveCornerRadiusDp,
                                                                 onLongPress = {},
                                                                 onRemove = {
                                                                     WidgetManager.removePlacedWidget(context, stackWidgets[stackPage].appWidgetId)
@@ -2860,6 +2891,7 @@ fun LauncherScreen(
                                                     WidgetHostView(
                                                         placedWidget = widget,
                                                         modifier = Modifier.fillMaxSize(),
+                                                        cornerRadiusDp = effectiveCornerRadiusDp,
                                                         onLongPress = {},
                                                         onRemove = {
                                                             WidgetManager.removePlacedWidget(context, widget.appWidgetId)
@@ -2929,6 +2961,63 @@ fun LauncherScreen(
                                                                 }
                                                             )
 
+                                                            // Borderless toggle
+                                                            DropdownMenuItem(
+                                                                text = { Text("Borderless") },
+                                                                onClick = {
+                                                                    val newBorderless = !widget.borderless
+                                                                    placedWidgets = placedWidgets.map {
+                                                                        if (it.appWidgetId == widget.appWidgetId) {
+                                                                            it.copy(borderless = newBorderless)
+                                                                        } else it
+                                                                    }
+                                                                    WidgetManager.savePlacedWidgets(context, placedWidgets)
+                                                                    // Update Android View corner radius
+                                                                    WidgetManager.getWidgetView(widget.appWidgetId)?.applyRoundedCorners(context, forceBorderless = newBorderless)
+                                                                },
+                                                                leadingIcon = {
+                                                                    Icon(
+                                                                        imageVector = Icons.Outlined.CropFree,
+                                                                        contentDescription = null
+                                                                    )
+                                                                },
+                                                                trailingIcon = {
+                                                                    Switch(
+                                                                        checked = widget.borderless,
+                                                                        onCheckedChange = null,
+                                                                        modifier = Modifier.height(20.dp)
+                                                                    )
+                                                                }
+                                                            )
+
+                                                            // Per-widget padding slider
+                                                            if (!widget.borderless) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .padding(horizontal = 16.dp)
+                                                                        .padding(bottom = 4.dp)
+                                                                ) {
+                                                                    ThumbDragHorizontalSlider(
+                                                                        currentValue = (widget.paddingPercent ?: globalWidgetPaddingPercent).toFloat(),
+                                                                        config = SliderConfigs.widgetPadding,
+                                                                        onValueChange = { newVal ->
+                                                                            val newPercent = newVal.roundToInt()
+                                                                            val perWidgetValue = if (newPercent == globalWidgetPaddingPercent) null else newPercent
+                                                                            placedWidgets = placedWidgets.map {
+                                                                                if (it.appWidgetId == widget.appWidgetId) {
+                                                                                    it.copy(paddingPercent = perWidgetValue)
+                                                                                } else it
+                                                                            }
+                                                                            WidgetManager.savePlacedWidgets(context, placedWidgets)
+                                                                        },
+                                                                        onValueChangeFinished = { }
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            Divider()
+
                                                             // Remove option
                                                             DropdownMenuItem(
                                                                 text = { Text(if (widget.stackId != null) "Remove from stack" else "Remove widget") },
@@ -2980,8 +3069,8 @@ fun LauncherScreen(
                             }
 
                             // Widget resize overlay - shows preview outline with draggable handles
-                            // Only render on the page where the widget lives (page 0 for now)
-                            if (page == 0 && widgetResizeState.isResizing && widgetResizeState.resizingWidget != null) {
+                            // Only render on the page where the widget lives
+                            if (page == (widgetResizeState.resizingWidget?.page ?: 0) && widgetResizeState.isResizing && widgetResizeState.resizingWidget != null) {
                                 val resizingWidget = widgetResizeState.resizingWidget!!
 
                                 // Calculate occupied cells as (column, row) pairs (excluding the resizing widget's cells)

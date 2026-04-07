@@ -461,6 +461,26 @@ fun setWidgetFontScalePercent(context: Context, percent: Int) {
 }
 
 // ============================================================================
+// WIDGET PADDING
+// ============================================================================
+
+private const val KEY_WIDGET_PADDING_PERCENT = "widget_padding_percent"
+private const val DEFAULT_WIDGET_PADDING_PERCENT = 0
+
+/** Max padding in dp (100% maps to this value) */
+const val WIDGET_MAX_PADDING_DP = 16f
+
+fun getWidgetPaddingPercent(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_WIDGET_PADDING_PERCENT, DEFAULT_WIDGET_PADDING_PERCENT)
+}
+
+fun setWidgetPaddingPercent(context: Context, percent: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_WIDGET_PADDING_PERCENT, percent).apply()
+}
+
+// ============================================================================
 // HIDDEN APPS
 // ============================================================================
 

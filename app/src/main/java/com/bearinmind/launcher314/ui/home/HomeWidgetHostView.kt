@@ -28,6 +28,7 @@ import com.bearinmind.launcher314.ui.widgets.WidgetManager
 fun WidgetHostView(
     placedWidget: PlacedWidget,
     modifier: Modifier = Modifier,
+    cornerRadiusDp: Float = 12f,
     onLongPress: () -> Unit = {},
     onRemove: () -> Unit = {}
 ) {
@@ -55,7 +56,7 @@ fun WidgetHostView(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(cornerRadiusDp.dp))
                 .onGloballyPositioned { coords ->
                     val widthDp = with(density) { coords.size.width.toDp().value.toInt() }
                     val heightDp = with(density) { coords.size.height.toDp().value.toInt() }
@@ -102,7 +103,7 @@ fun WidgetHostView(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(cornerRadiusDp.dp))
                 .background(Color.White.copy(alpha = 0.1f)),
             contentAlignment = Alignment.Center
         ) {
