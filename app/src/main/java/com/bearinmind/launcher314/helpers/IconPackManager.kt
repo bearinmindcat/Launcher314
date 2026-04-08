@@ -187,6 +187,30 @@ object IconPackManager {
 
     // ========== Icon Caching ==========
 
+    /**
+     * Find the drawable name for a package from the appfilter map.
+     * Tries exact ComponentInfo match first, then falls back to package-name prefix match.
+     */
+    private fun findDrawableForPackage(
+        appFilterMap: Map<String, String>,
+        pkgName: String,
+        activityName: String
+    ): String? {
+        // 1. Exact ComponentInfo match
+        val componentInfo = "ComponentInfo{$pkgName/$activityName}"
+        appFilterMap[componentInfo]?.let { return it }
+
+        // 2. Package-name prefix match — find any key containing this package
+        val prefix = "ComponentInfo{$pkgName/"
+        appFilterMap.keys.firstOrNull { it.startsWith(prefix) }?.let {
+            return appFilterMap[it]
+        }
+
+        // 3. Package name as drawable name (e.g., com.foo.bar → com_foo_bar)
+        // Some icon packs name drawables after the package
+        return null
+    }
+
     fun cacheIconPackIcons(context: Context, iconPackPackage: String): Int {
         val pm = context.packageManager
         val appFilterMap = parseAppFilter(context, iconPackPackage)
@@ -208,9 +232,7 @@ object IconPackManager {
             val pkgName = activityInfo.packageName
             val activityName = activityInfo.name
 
-            // Build ComponentInfo string matching icon pack format
-            val componentInfo = "ComponentInfo{$pkgName/$activityName}"
-            val drawableName = appFilterMap[componentInfo] ?: continue
+            val drawableName = findDrawableForPackage(appFilterMap, pkgName, activityName) ?: continue
 
             try {
                 val drawableResId = iconPackResources.getIdentifier(
@@ -252,8 +274,7 @@ object IconPackManager {
             val resolveInfo = pm.resolveActivity(launchIntent, 0) ?: return
             val activityName = resolveInfo.activityInfo.name
 
-            val componentInfo = "ComponentInfo{$packageName/$activityName}"
-            val drawableName = appFilterMap[componentInfo] ?: return
+            val drawableName = findDrawableForPackage(appFilterMap, packageName, activityName) ?: return
 
             val drawableResId = iconPackResources.getIdentifier(
                 drawableName, "drawable", selectedPack
@@ -286,6 +307,67 @@ object IconPackManager {
 
         val iconPackFile = File(getIconPackCacheDir(context), "$packageName.png")
         return if (iconPackFile.exists()) iconPackFile.absolutePath else systemIconPath
+    }
+
+    // ========== Icon Pack Browsing ==========
+
+    data class IconPackDrawable(
+        val drawableName: String,
+        val drawableResId: Int
+    )
+
+    /**
+     * Load all unique drawable icons from the active icon pack's appfilter.xml.
+     * Returns a list of (drawableName, resId) pairs for display in a grid browser.
+     */
+    fun getIconPackDrawables(context: Context): List<IconPackDrawable> {
+        val selectedPack = getSelectedIconPack(context)
+        if (selectedPack.isEmpty()) return emptyList()
+
+        return try {
+            val pm = context.packageManager
+            val appFilterMap = parseAppFilter(context, selectedPack)
+            val iconPackResources = pm.getResourcesForApplication(selectedPack)
+
+            appFilterMap.values.distinct().mapNotNull { drawableName ->
+                val resId = iconPackResources.getIdentifier(drawableName, "drawable", selectedPack)
+                if (resId != 0) IconPackDrawable(drawableName, resId) else null
+            }.sortedBy { it.drawableName }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Load a specific drawable from the active icon pack by name.
+     */
+    fun loadIconPackDrawable(context: Context, drawableName: String): Drawable? {
+        val selectedPack = getSelectedIconPack(context)
+        if (selectedPack.isEmpty()) return null
+
+        return try {
+            val pm = context.packageManager
+            val iconPackResources = pm.getResourcesForApplication(selectedPack)
+            val resId = iconPackResources.getIdentifier(drawableName, "drawable", selectedPack)
+            if (resId == 0) return null
+            @Suppress("DEPRECATION")
+            iconPackResources.getDrawable(resId, null)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Save a specific icon pack drawable as a custom icon for a package.
+     * Returns the saved file path.
+     */
+    fun saveIconPackDrawableForApp(context: Context, packageName: String, drawableName: String): String? {
+        val drawable = loadIconPackDrawable(context, drawableName) ?: return null
+        val bitmap = drawableToBitmap(drawable)
+        val outFile = File(getIconPackCacheDir(context), "$packageName.png")
+        saveBitmapToFile(bitmap, outFile)
+        bitmap.recycle()
+        return outFile.absolutePath
     }
 
     // ========== Directory Helpers ==========

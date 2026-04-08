@@ -22,9 +22,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontFamily
 import com.bearinmind.launcher314.helpers.FontManager
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Clear
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -75,6 +78,9 @@ import com.bearinmind.launcher314.ui.components.SliderConfigs
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
 import java.io.File
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val PRESET_COLORS = listOf(
     null to "None",
@@ -123,7 +129,9 @@ fun AppCustomizeDialog(
     var labelColorIntensity by remember { mutableStateOf(
         (currentCustomization?.labelColorIntensity ?: 100).toFloat()
     ) }
+    var selectedIconPackName by remember { mutableStateOf(currentCustomization?.customIconPackName) }
     var showFontScreen by remember { mutableStateOf(false) }
+    var showIconPackBrowser by remember { mutableStateOf(false) }
 
     // Version counter to bust Coil cache when the same file path is overwritten
     var customIconVersion by remember { mutableStateOf(0) }
@@ -165,6 +173,7 @@ fun AppCustomizeDialog(
                     val outFile = File(getCustomIconsDir(context), "${appInfo.packageName}.png")
                     saveBitmapToFile(scaled, outFile)
                     customIconPath = outFile.absolutePath
+                    selectedIconPackName = null
                     customIconVersion++
                     if (cropped !== rotated) cropped.recycle()
                     if (rotated !== original) rotated.recycle()
@@ -412,6 +421,7 @@ fun AppCustomizeDialog(
                                     tintBackgroundOnly = false
                                     selectedSizePercent = globalIconSizePercent.toFloat().coerceIn(SliderConfigs.perAppIconSize.minValue, SliderConfigs.perAppIconSize.maxValue)
                                     customIconPath = null
+                                    selectedIconPackName = null
                                     selectedTextSizePercent = globalIconTextSizePercent.toFloat().coerceIn(SliderConfigs.iconTextSize.minValue, SliderConfigs.iconTextSize.maxValue)
                                     selectedFontId = null
                                     val iconFile = File(getCustomIconsDir(context), "${appInfo.packageName}.png")
@@ -693,6 +703,47 @@ fun AppCustomizeDialog(
                                         onCheckedChange = { tintBackgroundOnly = it }
                                     )
                                 }
+
+                                // Icon Pack button — shows per-app pack if set, else global pack
+                                val displayPackName = selectedIconPackName
+                                    ?: com.bearinmind.launcher314.helpers.IconPackManager.getSelectedIconPackName(context)
+                                val installedPacks = remember {
+                                    com.bearinmind.launcher314.helpers.IconPackManager.getInstalledIconPacks(context)
+                                }
+                                // Find icon path: match per-app pack name to installed packs, else use global
+                                val displayPackIconPath = remember(selectedIconPackName) {
+                                    if (selectedIconPackName != null) {
+                                        installedPacks.find { it.displayName == selectedIconPackName }?.iconPath
+                                    } else {
+                                        com.bearinmind.launcher314.helpers.IconPackManager.getSelectedIconPackIconPath(context)
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp)
+                                ) {
+                                    Button(
+                                        onClick = { showIconPackBrowser = true },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color.White.copy(alpha = 0.05f),
+                                            contentColor = Color.White.copy(alpha = 0.87f)
+                                        ),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        if (displayPackIconPath != null) {
+                                            AsyncImage(
+                                                model = File(displayPackIconPath),
+                                                contentDescription = displayPackName,
+                                                contentScale = ContentScale.Fit,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
+                                        Text(text = displayPackName)
+                                    }
+                                }
                             }
                         }
                         3 -> {
@@ -901,7 +952,8 @@ fun AppCustomizeDialog(
                                 iconTextSizePercent = selectedTextSizePercent.roundToInt().takeIf { it != globalIconTextSizePercent },
                                 labelFontId = selectedFontId,
                                 labelColor = selectedLabelColor,
-                                labelColorIntensity = if (selectedLabelColor != null) labelColorIntensity.roundToInt().takeIf { it != 100 } else null
+                                labelColorIntensity = if (selectedLabelColor != null) labelColorIntensity.roundToInt().takeIf { it != 100 } else null,
+                                customIconPackName = selectedIconPackName
                             )
                             onSave(newCustomization)
                         },
@@ -932,6 +984,312 @@ fun AppCustomizeDialog(
             )
         }
     }
+
+    // Icon pack picker — select a pack and apply its icon to THIS app only
+    if (showIconPackBrowser) {
+        Dialog(
+            onDismissRequest = { showIconPackBrowser = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            PerAppIconPackPicker(
+                context = context,
+                packageName = appInfo.packageName,
+                onIconApplied = { path, packName ->
+                    customIconPath = path.ifEmpty { null }
+                    selectedIconPackName = packName
+                    customIconVersion++
+                    showIconPackBrowser = false
+                },
+                onDismiss = { showIconPackBrowser = false }
+            )
+        }
+    }
+}
+
+/**
+ * Per-app icon pack picker — same UI as the settings IconPacksScreen,
+ * but selecting a pack applies its icon to only the specified app.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PerAppIconPackPicker(
+    context: Context,
+    packageName: String,
+    onIconApplied: (path: String, packName: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var searchQuery by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var loadingMessage by remember { mutableStateOf("") }
+
+    val installedPacks = remember { com.bearinmind.launcher314.helpers.IconPackManager.getInstalledIconPacks(context) }
+    val filteredPacks = remember(searchQuery, installedPacks) {
+        if (searchQuery.isBlank()) installedPacks
+        else installedPacks.filter { it.displayName.contains(searchQuery, ignoreCase = true) }
+    }
+    val showSystemIcons = searchQuery.isBlank() ||
+        "system icons".contains(searchQuery, ignoreCase = true)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF121212))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+        ) {
+            // Search bar — exact same style as IconPacksScreen
+            TextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                placeholder = {
+                    Text("Search Icon Packs", color = Color.White.copy(alpha = 0.6f))
+                },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Filled.Clear,
+                                contentDescription = "Clear search"
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(28.dp),
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                    focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    cursorColor = Color.White
+                )
+            )
+
+            // Pack list — exact same layout as IconPacksScreen
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    bottom = WindowInsets.navigationBars
+                        .asPaddingValues()
+                        .calculateBottomPadding()
+                )
+            ) {
+                // System Icons (default) — reset to system icon for this app
+                if (showSystemIcons) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .clickable {
+                                    // Delete custom icon and all cached variants
+                                    val iconFile = File(getCustomIconsDir(context), "$packageName.png")
+                                    if (iconFile.exists()) iconFile.delete()
+                                    // Delete icon pack cache for this app so it falls back to system
+                                    val packCacheFile = File(context.cacheDir, "icon_pack_cache/$packageName.png")
+                                    if (packCacheFile.exists()) packCacheFile.delete()
+                                    // Clear shaped caches
+                                    listOf("global_shaped_icons", "bg_color_shaped_icons", "shaped_exp_icons",
+                                        "shaped_bg_tinted_icons", "bg_tinted_icons", "foreground_icons").forEach { dir ->
+                                        File(context.filesDir, dir).listFiles()?.filter {
+                                            it.name.startsWith(packageName)
+                                        }?.forEach { it.delete() }
+                                    }
+                                    File(context.cacheDir, "app_icons").listFiles()?.filter {
+                                        it.name.startsWith(packageName)
+                                    }?.forEach { it.delete() }
+                                    onIconApplied("", null)
+                                }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Checkbox(
+                                checked = false,
+                                onCheckedChange = null,
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = MaterialTheme.colorScheme.primary,
+                                    uncheckedColor = Color(0xFF3A3A3A),
+                                    checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            )
+                            Text(
+                                text = "System Icons (Default)",
+                                fontSize = 16.sp,
+                                color = Color.White.copy(alpha = 0.87f),
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Divider(color = Color.White.copy(alpha = 0.1f))
+                    }
+                }
+
+                items(filteredPacks.size) { index ->
+                    val pack = filteredPacks[index]
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clickable {
+                                isLoading = true
+                                loadingMessage = "Applying ${pack.displayName}..."
+                                scope.launch(Dispatchers.IO) {
+                                    val pm = context.packageManager
+                                    val appFilterMap = com.bearinmind.launcher314.helpers.IconPackManager.parseAppFilter(context, pack.packageName)
+                                    val iconPackResources = pm.getResourcesForApplication(pack.packageName)
+
+                                    val launchIntent = pm.getLaunchIntentForPackage(packageName)
+                                    val resolveInfo = if (launchIntent != null) pm.resolveActivity(launchIntent, 0) else null
+                                    val activityName = resolveInfo?.activityInfo?.name ?: ""
+
+                                    val drawableName = findDrawableForApp(appFilterMap, packageName, activityName)
+
+                                    if (drawableName != null) {
+                                        val drawableResId = iconPackResources.getIdentifier(drawableName, "drawable", pack.packageName)
+                                        if (drawableResId != 0) {
+                                            @Suppress("DEPRECATION")
+                                            val drawable = iconPackResources.getDrawable(drawableResId, null)
+                                            if (drawable != null) {
+                                                val bitmap = com.bearinmind.launcher314.data.drawableToBitmap(drawable)
+                                                val outFile = File(getCustomIconsDir(context), "$packageName.png")
+                                                com.bearinmind.launcher314.data.saveBitmapToFile(bitmap, outFile)
+                                                bitmap.recycle()
+                                                withContext(Dispatchers.Main) {
+                                                    isLoading = false
+                                                    onIconApplied(outFile.absolutePath, pack.displayName)
+                                                }
+                                                return@launch
+                                            }
+                                        }
+                                    }
+
+                                    withContext(Dispatchers.Main) {
+                                        isLoading = false
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "No icon found for this app in ${pack.displayName}",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Checkbox(
+                            checked = false,
+                            onCheckedChange = null,
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = Color(0xFF3A3A3A),
+                                checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        )
+                        Text(
+                            text = pack.displayName,
+                            fontSize = 16.sp,
+                            color = Color.White.copy(alpha = 0.87f),
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        // Icon pack preview icon (tappable to open the app)
+                        if (pack.iconPath.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clickable {
+                                        val launchIntent = context.packageManager.getLaunchIntentForPackage(pack.packageName)
+                                        if (launchIntent != null) context.startActivity(launchIntent)
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AsyncImage(
+                                    model = File(pack.iconPath),
+                                    contentDescription = "Open ${pack.displayName}",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                Icon(
+                                    imageVector = Icons.Outlined.OpenInNew,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .align(Alignment.TopEnd)
+                                )
+                            }
+                        }
+                    }
+                    Divider(color = Color.White.copy(alpha = 0.1f))
+                }
+
+                if (installedPacks.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No icon packs installed.\nInstall icon packs from the Play Store or F-Droid that support ADW/Nova launcher themes.",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Loading overlay
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(loadingMessage, color = Color.White, fontSize = 14.sp)
+                }
+            }
+        }
+    }
+}
+
+/** Find drawable name for a package from appfilter map with fallback matching */
+private fun findDrawableForApp(
+    appFilterMap: Map<String, String>,
+    pkgName: String,
+    activityName: String
+): String? {
+    // Exact ComponentInfo match
+    val componentInfo = "ComponentInfo{$pkgName/$activityName}"
+    appFilterMap[componentInfo]?.let { return it }
+    // Package-name prefix match
+    val prefix = "ComponentInfo{$pkgName/"
+    appFilterMap.keys.firstOrNull { it.startsWith(prefix) }?.let {
+        return appFilterMap[it]
+    }
+    return null
 }
 
 @Composable
