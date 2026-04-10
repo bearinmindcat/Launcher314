@@ -7,6 +7,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -557,15 +559,12 @@ fun LauncherWithDrawer(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(swipeDownEnabled) {
-                    // Track whether this gesture started when the drawer was closed.
-                    // Prevents Layer 1 from interfering with Layer 2's closing gesture.
                     var gestureOwnedByLayer1 = false
                     var isSwipeDown = false
                     var totalDragAmount = 0f
 
                     detectVerticalDragGestures(
                         onDragStart = {
-                            // Only own gestures that start when drawer is closed and no folder is open
                             gestureOwnedByLayer1 = swipeUpY.value > screenHeight * 0.9f && !isFolderOpen
                             isSwipeDown = false
                             totalDragAmount = 0f
@@ -574,7 +573,6 @@ fun LauncherWithDrawer(
                             if (!gestureOwnedByLayer1) return@detectVerticalDragGestures
                             totalDragAmount += dragAmount
 
-                            // Detect swipe direction early
                             if (totalDragAmount > 50f && !isSwipeDown && swipeDownEnabled) {
                                 isSwipeDown = true
                             }
@@ -594,7 +592,6 @@ fun LauncherWithDrawer(
                             if (!gestureOwnedByLayer1) return@detectVerticalDragGestures
 
                             if (isSwipeDown && totalDragAmount > actionThreshold) {
-                                // Swipe down detected — expand notification or quick settings
                                 val mode = com.bearinmind.launcher314.data.getSwipeDownMode(context)
                                 if (mode == 1) {
                                     com.bearinmind.launcher314.helpers.NotificationPanelHelper.expandQuickSettings(context)
@@ -606,7 +603,6 @@ fun LauncherWithDrawer(
 
                             coroutineScope.launch {
                                 if (swipeUpY.value < screenHeight - actionThreshold) {
-                                    // Open drawer with spring animation
                                     swipeUpY.animateTo(
                                         targetValue = 0f,
                                         animationSpec = spring(
@@ -615,7 +611,6 @@ fun LauncherWithDrawer(
                                         )
                                     )
                                 } else {
-                                    // Close with tween animation
                                     swipeUpY.animateTo(
                                         targetValue = screenHeight,
                                         animationSpec = tween(

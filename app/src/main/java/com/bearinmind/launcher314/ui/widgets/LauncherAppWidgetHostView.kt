@@ -146,7 +146,10 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                 if (abs(actionDownCoords.x - currentCoords.x) > moveGestureThreshold ||
                     abs(actionDownCoords.y - currentCoords.y) > moveGestureThreshold) {
                     resetTouches()
-                    return true
+                    // Don't intercept — let child widget handle scrolling
+                    // Also tell parent not to intercept so drawer doesn't open
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    return false
                 }
             }
 
