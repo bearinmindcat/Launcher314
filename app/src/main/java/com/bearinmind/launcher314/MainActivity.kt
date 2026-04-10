@@ -475,25 +475,30 @@ class MainActivity : ComponentActivity() {
         val iconsDir = java.io.File(filesDir, "shortcut_icons")
         if (!iconsDir.exists()) iconsDir.mkdirs()
 
-        // Save shortcut metadata
+        // Save shortcut metadata.
+        // IMPORTANT: ShortcutInfo from a PinItemRequest does NOT expose its intent —
+        // shortcutInfo.intent / .intents are null for security. To launch correctly,
+        // we save (package, shortcutId, userHandle) and use LauncherApps.startShortcut()
+        // later, which lets the system resolve the real intent (e.g., the browser's
+        // URL-launch intent for "Add to Home Screen" PWA shortcuts).
         val name = shortcutInfo.shortLabel?.toString() ?: shortcutInfo.longLabel?.toString() ?: "Shortcut"
-        // Try getIntent first, fall back to getIntents (plural)
-        val launchIntent = try {
-            shortcutInfo.intent ?: shortcutInfo.getIntents()?.lastOrNull()
-        } catch (_: Exception) { null }
+        val publisherPackage = shortcutInfo.`package`
+        val publisherShortcutId = shortcutInfo.id
+        val userSerial = try {
+            getSystemService(android.os.UserManager::class.java)
+                ?.getSerialNumberForUser(shortcutInfo.userHandle) ?: 0L
+        } catch (_: Exception) { 0L }
 
+        // Meta format (line-based, backward-compatible):
+        //   line 0: display name
+        //   line 1: legacy launch intent URI (empty when from PinItemRequest)
+        //   line 2: publisher package
+        //   line 3: publisher shortcut id
+        //   line 4: user serial number
         val metaFile = java.io.File(iconsDir, "$shortcutId.meta")
-        if (launchIntent != null) {
-            metaFile.writeText("$name\n${launchIntent.toUri(Intent.URI_INTENT_SCHEME)}")
-        } else {
-            // Even without an intent, save the shortcut with package info so we can try to launch it
-            val pkg = shortcutInfo.`package`
-            val fallbackIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                `package` = pkg
-            }
-            metaFile.writeText("$name\n${fallbackIntent.toUri(Intent.URI_INTENT_SCHEME)}")
-        }
+        metaFile.writeText(
+            "$name\n\n$publisherPackage\n$publisherShortcutId\n$userSerial"
+        )
 
         // Save icon — try to get the shortcut's actual icon via LauncherApps
         try {

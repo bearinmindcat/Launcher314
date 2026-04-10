@@ -31,7 +31,7 @@ data class PlacedWidget(
     val stackId: String? = null,  // Non-null when widget is part of a stack
     val stackOrder: Int = 0,      // Order within the stack (0 = first/primary)
     val paddingPercent: Int? = null,  // Per-widget padding override (null = use global)
-    val borderless: Boolean = false   // When true: padding=0, corner radius=0
+    val fontScalePercent: Int? = null // Per-widget text size override (null = use global)
 ) {
     // Compatibility aliases
     val gridColumn: Int get() = startColumn
@@ -234,10 +234,29 @@ object WidgetManager {
      * Called when the user changes the rounded corners toggle or radius.
      */
     fun refreshAllWidgetCorners(context: Context) {
-        val placed = loadPlacedWidgets(context)
-        for ((id, view) in widgetViews) {
-            val pw = placed.find { it.appWidgetId == id }
-            view.applyRoundedCorners(context, forceBorderless = pw?.borderless == true)
+        for ((_, view) in widgetViews) {
+            view.applyRoundedCorners(context)
+        }
+    }
+
+    /**
+     * Recreate a single widget view (needed when its per-widget font scale changes).
+     * The new view will use the updated Context from LauncherAppWidgetHost.
+     */
+    fun recreateWidgetView(context: Context, appWidgetId: Int): LauncherAppWidgetHostView? {
+        val host = appWidgetHost ?: return null
+        val manager = appWidgetManager ?: return null
+        val providerInfo = manager.getAppWidgetInfo(appWidgetId) ?: return null
+        widgetViews.remove(appWidgetId)
+        return try {
+            val view = host.createView(context, appWidgetId, providerInfo) as? LauncherAppWidgetHostView
+            if (view != null) {
+                widgetViews[appWidgetId] = view
+            }
+            view
+        } catch (e: Exception) {
+            android.util.Log.e("WidgetManager", "Failed to recreate widget view for id=$appWidgetId", e)
+            null
         }
     }
 

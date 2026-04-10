@@ -169,7 +169,6 @@ import com.bearinmind.launcher314.data.getScrollbarColor
 import com.bearinmind.launcher314.data.getScrollbarIntensity
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.Widgets
 import kotlin.math.roundToInt
@@ -507,6 +506,7 @@ fun LauncherScreen(
     var customizingDockFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.DockFolder?>(null) }
     var placedWidgets by remember { mutableStateOf<List<PlacedWidget>>(emptyList()) }
     var globalWidgetPaddingPercent by remember { mutableIntStateOf(getWidgetPaddingPercent(appContext)) }
+    var globalWidgetFontScalePercent by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getWidgetFontScalePercent(appContext)) }
     var widgetRoundedCornersEnabled by remember { mutableStateOf(getWidgetRoundedCornersEnabled(appContext)) }
     var widgetCornerRadiusPercent by remember { mutableIntStateOf(getWidgetCornerRadiusPercent(appContext)) }
     var isLoading by remember { mutableStateOf(true) }
@@ -675,6 +675,7 @@ fun LauncherScreen(
         selectedFontFamily = FontManager.getSelectedFontFamily(context)
         // Refresh widget settings (may have changed in Widgets screen)
         globalWidgetPaddingPercent = getWidgetPaddingPercent(appContext)
+        globalWidgetFontScalePercent = com.bearinmind.launcher314.data.getWidgetFontScalePercent(appContext)
         widgetRoundedCornersEnabled = getWidgetRoundedCornersEnabled(appContext)
         widgetCornerRadiusPercent = getWidgetCornerRadiusPercent(appContext)
         // Clear Coil memory cache so fresh icons load
@@ -2725,13 +2726,11 @@ fun LauncherScreen(
                                             val showWidgetBlueTint = isOtherWidgetHoveringOverThis
 
                                             // Calculate effective padding and corner radius for this widget
-                                            val effectivePaddingPercent = if (widget.borderless) 0
-                                                else (widget.paddingPercent ?: globalWidgetPaddingPercent)
+                                            val effectivePaddingPercent = widget.paddingPercent ?: globalWidgetPaddingPercent
                                             val effectivePaddingDp = (effectivePaddingPercent / 100f * WIDGET_MAX_PADDING_DP).dp
-                                            val effectiveCornerRadiusDp = if (widget.borderless) 0f
-                                                else if (widgetRoundedCornersEnabled) {
-                                                    widgetCornerRadiusPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
-                                                } else 0f
+                                            val effectiveCornerRadiusDp = if (widgetRoundedCornersEnabled) {
+                                                widgetCornerRadiusPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
+                                            } else 0f
 
                                             Box(
                                                 modifier = Modifier
@@ -2962,59 +2961,72 @@ fun LauncherScreen(
                                                                 }
                                                             )
 
-                                                            // Borderless toggle
-                                                            DropdownMenuItem(
-                                                                text = { Text("Borderless") },
-                                                                onClick = {
-                                                                    val newBorderless = !widget.borderless
-                                                                    placedWidgets = placedWidgets.map {
-                                                                        if (it.appWidgetId == widget.appWidgetId) {
-                                                                            it.copy(borderless = newBorderless)
-                                                                        } else it
+                                                            // Per-widget text size slider
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .padding(horizontal = 16.dp)
+                                                                    .padding(bottom = 4.dp)
+                                                            ) {
+                                                                ThumbDragHorizontalSlider(
+                                                                    currentValue = (widget.fontScalePercent ?: globalWidgetFontScalePercent).toFloat(),
+                                                                    config = SliderConfigs.widgetTextSize,
+                                                                    onValueChange = { newVal ->
+                                                                        val newPercent = newVal.roundToInt()
+                                                                        val perWidgetValue = if (newPercent == globalWidgetFontScalePercent) null else newPercent
+                                                                        placedWidgets = placedWidgets.map {
+                                                                            if (it.appWidgetId == widget.appWidgetId) {
+                                                                                it.copy(fontScalePercent = perWidgetValue)
+                                                                            } else it
+                                                                        }
+                                                                        WidgetManager.savePlacedWidgets(context, placedWidgets)
+                                                                    },
+                                                                    onValueChangeFinished = {
+                                                                        // Recreate this widget's view so the new font scale takes effect
+                                                                        WidgetManager.recreateWidgetView(context, widget.appWidgetId)
+                                                                    },
+                                                                    onDoubleTap = {
+                                                                        placedWidgets = placedWidgets.map {
+                                                                            if (it.appWidgetId == widget.appWidgetId) {
+                                                                                it.copy(fontScalePercent = null)
+                                                                            } else it
+                                                                        }
+                                                                        WidgetManager.savePlacedWidgets(context, placedWidgets)
+                                                                        WidgetManager.recreateWidgetView(context, widget.appWidgetId)
                                                                     }
-                                                                    WidgetManager.savePlacedWidgets(context, placedWidgets)
-                                                                    // Update Android View corner radius
-                                                                    WidgetManager.getWidgetView(widget.appWidgetId)?.applyRoundedCorners(context, forceBorderless = newBorderless)
-                                                                },
-                                                                leadingIcon = {
-                                                                    Icon(
-                                                                        imageVector = Icons.Outlined.CropFree,
-                                                                        contentDescription = null
-                                                                    )
-                                                                },
-                                                                trailingIcon = {
-                                                                    Switch(
-                                                                        checked = widget.borderless,
-                                                                        onCheckedChange = null,
-                                                                        modifier = Modifier.height(20.dp)
-                                                                    )
-                                                                }
-                                                            )
+                                                                )
+                                                            }
 
                                                             // Per-widget padding slider
-                                                            if (!widget.borderless) {
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .fillMaxWidth()
-                                                                        .padding(horizontal = 16.dp)
-                                                                        .padding(bottom = 4.dp)
-                                                                ) {
-                                                                    ThumbDragHorizontalSlider(
-                                                                        currentValue = (widget.paddingPercent ?: globalWidgetPaddingPercent).toFloat(),
-                                                                        config = SliderConfigs.widgetPadding,
-                                                                        onValueChange = { newVal ->
-                                                                            val newPercent = newVal.roundToInt()
-                                                                            val perWidgetValue = if (newPercent == globalWidgetPaddingPercent) null else newPercent
-                                                                            placedWidgets = placedWidgets.map {
-                                                                                if (it.appWidgetId == widget.appWidgetId) {
-                                                                                    it.copy(paddingPercent = perWidgetValue)
-                                                                                } else it
-                                                                            }
-                                                                            WidgetManager.savePlacedWidgets(context, placedWidgets)
-                                                                        },
-                                                                        onValueChangeFinished = { }
-                                                                    )
-                                                                }
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .padding(horizontal = 16.dp)
+                                                                    .padding(bottom = 4.dp)
+                                                            ) {
+                                                                ThumbDragHorizontalSlider(
+                                                                    currentValue = (widget.paddingPercent ?: globalWidgetPaddingPercent).toFloat(),
+                                                                    config = SliderConfigs.widgetPadding,
+                                                                    onValueChange = { newVal ->
+                                                                        val newPercent = newVal.roundToInt()
+                                                                        val perWidgetValue = if (newPercent == globalWidgetPaddingPercent) null else newPercent
+                                                                        placedWidgets = placedWidgets.map {
+                                                                            if (it.appWidgetId == widget.appWidgetId) {
+                                                                                it.copy(paddingPercent = perWidgetValue)
+                                                                            } else it
+                                                                        }
+                                                                        WidgetManager.savePlacedWidgets(context, placedWidgets)
+                                                                    },
+                                                                    onValueChangeFinished = { },
+                                                                    onDoubleTap = {
+                                                                        placedWidgets = placedWidgets.map {
+                                                                            if (it.appWidgetId == widget.appWidgetId) {
+                                                                                it.copy(paddingPercent = null)
+                                                                            } else it
+                                                                        }
+                                                                        WidgetManager.savePlacedWidgets(context, placedWidgets)
+                                                                    }
+                                                                )
                                                             }
 
                                                             Divider()
@@ -3055,10 +3067,33 @@ fun LauncherScreen(
                                                                         placedWidgets = WidgetManager.loadPlacedWidgets(context)
                                                                     },
                                                                     leadingIcon = {
-                                                                        Icon(
-                                                                            imageVector = Icons.Outlined.Delete,
-                                                                            contentDescription = null
-                                                                        )
+                                                                        // Three small trashcans arranged in a triangle.
+                                                                        // Total footprint matches a standard 24dp icon so it
+                                                                        // visually balances "Remove from stack" above it.
+                                                                        Box(modifier = Modifier.size(24.dp)) {
+                                                                            val small = 13.dp
+                                                                            Icon(
+                                                                                imageVector = Icons.Outlined.Delete,
+                                                                                contentDescription = null,
+                                                                                modifier = Modifier
+                                                                                    .size(small)
+                                                                                    .align(Alignment.TopCenter)
+                                                                            )
+                                                                            Icon(
+                                                                                imageVector = Icons.Outlined.Delete,
+                                                                                contentDescription = null,
+                                                                                modifier = Modifier
+                                                                                    .size(small)
+                                                                                    .align(Alignment.BottomStart)
+                                                                            )
+                                                                            Icon(
+                                                                                imageVector = Icons.Outlined.Delete,
+                                                                                contentDescription = null,
+                                                                                modifier = Modifier
+                                                                                    .size(small)
+                                                                                    .align(Alignment.BottomEnd)
+                                                                            )
+                                                                        }
                                                                     }
                                                                 )
                                                             }

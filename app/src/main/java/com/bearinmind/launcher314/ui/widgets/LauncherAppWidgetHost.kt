@@ -22,16 +22,20 @@ class LauncherAppWidgetHost(
         appWidgetId: Int,
         appWidget: AppWidgetProviderInfo?
     ): AppWidgetHostView {
-        val scaledContext = createScaledContext(context)
+        val scaledContext = createScaledContext(context, appWidgetId)
         return LauncherAppWidgetHostView(scaledContext)
     }
 
     /**
      * Create a Context with modified fontScale for widget text sizing.
-     * Multiplies with the system fontScale to preserve accessibility settings.
+     * Per-widget override (PlacedWidget.fontScalePercent) takes precedence over the
+     * global setting. Multiplies with the system fontScale to preserve accessibility.
      */
-    private fun createScaledContext(context: Context): Context {
-        val scalePercent = getWidgetFontScalePercent(context)
+    private fun createScaledContext(context: Context, appWidgetId: Int): Context {
+        val perWidget = WidgetManager.loadPlacedWidgets(context)
+            .find { it.appWidgetId == appWidgetId }
+            ?.fontScalePercent
+        val scalePercent = perWidget ?: getWidgetFontScalePercent(context)
         if (scalePercent == 100) return context
 
         val multiplier = scalePercent / 100f

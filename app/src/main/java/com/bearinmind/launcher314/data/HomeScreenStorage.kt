@@ -99,20 +99,46 @@ fun saveBitmapToFile(bitmap: Bitmap, file: File) {
 }
 
 fun launchApp(context: Context, packageName: String) {
-    // Handle shortcuts (e.g., "Add to Home Screen" from Firefox)
+    // Handle shortcuts (e.g., "Add to Home Screen" from Brave/Firefox/Chrome)
     if (packageName.startsWith("shortcut_")) {
         val metaFile = java.io.File(context.filesDir, "shortcut_icons/$packageName.meta")
         if (metaFile.exists()) {
-            try {
-                val lines = metaFile.readLines()
-                if (lines.size >= 2) {
+            val lines = metaFile.readLines()
+
+            // Preferred path: PinItemRequest shortcuts are launched via LauncherApps.startShortcut().
+            // Meta format (modern): name, "", publisherPackage, publisherShortcutId, userSerial
+            if (lines.size >= 4 && lines[2].isNotBlank() && lines[3].isNotBlank()) {
+                try {
+                    val launcherApps = context.getSystemService(android.content.pm.LauncherApps::class.java)
+                    val userManager = context.getSystemService(android.os.UserManager::class.java)
+                    val userSerial = lines.getOrNull(4)?.toLongOrNull() ?: 0L
+                    val userHandle = userManager?.getUserForSerialNumber(userSerial)
+                        ?: android.os.Process.myUserHandle()
+                    launcherApps?.startShortcut(
+                        lines[2],          // publisher package
+                        lines[3],          // publisher shortcut id
+                        null,              // sourceBounds
+                        null,              // startActivity options
+                        userHandle
+                    )
+                    return
+                } catch (e: Exception) {
+                    android.util.Log.e("LaunchApp", "startShortcut failed for $packageName", e)
+                    // fall through to legacy URI launch
+                }
+            }
+
+            // Legacy path: shortcuts saved via INSTALL_SHORTCUT broadcast had the
+            // intent URI on line 1.
+            if (lines.size >= 2 && lines[1].isNotBlank()) {
+                try {
                     val launchIntent = Intent.parseUri(lines[1], Intent.URI_INTENT_SCHEME)
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(launchIntent)
                     return
+                } catch (e: Exception) {
+                    android.util.Log.e("LaunchApp", "Failed to launch legacy shortcut $packageName", e)
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("LaunchApp", "Failed to launch shortcut $packageName", e)
             }
         }
         return
