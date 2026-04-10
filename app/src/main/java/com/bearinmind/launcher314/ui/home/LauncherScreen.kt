@@ -505,6 +505,9 @@ fun LauncherScreen(
     var customizingFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.HomeFolder?>(null) }
     var customizingDockFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.DockFolder?>(null) }
     var placedWidgets by remember { mutableStateOf<List<PlacedWidget>>(emptyList()) }
+    // Per-widget refresh counter — bump after WidgetManager.recreateWidgetView() so
+    // WidgetHostView re-fetches the new view instance from cache.
+    var widgetViewRefreshKeys by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
     var globalWidgetPaddingPercent by remember { mutableIntStateOf(getWidgetPaddingPercent(appContext)) }
     var globalWidgetFontScalePercent by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getWidgetFontScalePercent(appContext)) }
     var widgetRoundedCornersEnabled by remember { mutableStateOf(getWidgetRoundedCornersEnabled(appContext)) }
@@ -2855,6 +2858,7 @@ fun LauncherScreen(
                                                                 placedWidget = stackWidgets[stackPage],
                                                                 modifier = Modifier.fillMaxSize(),
                                                                 cornerRadiusDp = effectiveCornerRadiusDp,
+                                                                viewRefreshKey = widgetViewRefreshKeys[stackWidgets[stackPage].appWidgetId] ?: 0,
                                                                 onLongPress = {},
                                                                 onRemove = {
                                                                     WidgetManager.removePlacedWidget(context, stackWidgets[stackPage].appWidgetId)
@@ -2892,6 +2896,7 @@ fun LauncherScreen(
                                                         placedWidget = widget,
                                                         modifier = Modifier.fillMaxSize(),
                                                         cornerRadiusDp = effectiveCornerRadiusDp,
+                                                        viewRefreshKey = widgetViewRefreshKeys[widget.appWidgetId] ?: 0,
                                                         onLongPress = {},
                                                         onRemove = {
                                                             WidgetManager.removePlacedWidget(context, widget.appWidgetId)
@@ -2982,8 +2987,11 @@ fun LauncherScreen(
                                                                         WidgetManager.savePlacedWidgets(context, placedWidgets)
                                                                     },
                                                                     onValueChangeFinished = {
-                                                                        // Recreate this widget's view so the new font scale takes effect
+                                                                        // Recreate this widget's view so the new font scale takes effect,
+                                                                        // then bump the refresh key so WidgetHostView re-fetches it.
                                                                         WidgetManager.recreateWidgetView(context, widget.appWidgetId)
+                                                                        widgetViewRefreshKeys = widgetViewRefreshKeys +
+                                                                            (widget.appWidgetId to ((widgetViewRefreshKeys[widget.appWidgetId] ?: 0) + 1))
                                                                     },
                                                                     onDoubleTap = {
                                                                         placedWidgets = placedWidgets.map {
@@ -2993,6 +3001,8 @@ fun LauncherScreen(
                                                                         }
                                                                         WidgetManager.savePlacedWidgets(context, placedWidgets)
                                                                         WidgetManager.recreateWidgetView(context, widget.appWidgetId)
+                                                                        widgetViewRefreshKeys = widgetViewRefreshKeys +
+                                                                            (widget.appWidgetId to ((widgetViewRefreshKeys[widget.appWidgetId] ?: 0) + 1))
                                                                     }
                                                                 )
                                                             }
@@ -3028,8 +3038,6 @@ fun LauncherScreen(
                                                                     }
                                                                 )
                                                             }
-
-                                                            Divider()
 
                                                             // Remove option
                                                             DropdownMenuItem(

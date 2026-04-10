@@ -29,14 +29,17 @@ fun WidgetHostView(
     placedWidget: PlacedWidget,
     modifier: Modifier = Modifier,
     cornerRadiusDp: Float = 12f,
+    viewRefreshKey: Int = 0,
     onLongPress: () -> Unit = {},
     onRemove: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
-    // Get or create widget view (with crash protection)
-    // Uses cached view when available to avoid content flash during pager re-composition
-    val widgetView = remember(placedWidget.appWidgetId) {
+    // Get or create widget view (with crash protection).
+    // Uses cached view when available to avoid content flash during pager re-composition.
+    // viewRefreshKey is bumped by the parent after WidgetManager.recreateWidgetView() so
+    // we re-fetch the freshly-rebuilt view (e.g., after a per-widget font scale change).
+    val widgetView = remember(placedWidget.appWidgetId, viewRefreshKey) {
         try {
             WidgetManager.getOrCreateWidgetView(context, placedWidget.appWidgetId)
         } catch (e: Exception) {
@@ -69,34 +72,39 @@ fun WidgetHostView(
                     }
                 }
         ) {
-            AndroidView(
-                factory = { ctx ->
-                    try {
-                        // Remove from parent if already attached
-                        (widgetView.parent as? ViewGroup)?.removeView(widgetView)
-                        widgetView.apply {
-                            longPressListener = { _, _ ->
+            // key() forces AndroidView to tear down + re-create when viewRefreshKey
+            // changes, so the new widget view (with the new font-scaled Context) actually
+            // gets attached to the screen.
+            key(viewRefreshKey) {
+                AndroidView(
+                    factory = { ctx ->
+                        try {
+                            // Remove from parent if already attached
+                            (widgetView.parent as? ViewGroup)?.removeView(widgetView)
+                            widgetView.apply {
+                                longPressListener = { _, _ ->
+                                    onLongPress()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("WidgetHostView", "Widget factory crashed", e)
+                            factoryCrashed = true
+                            // Return a blank view as fallback
+                            android.view.View(ctx)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    update = { _ ->
+                        try {
+                            widgetView.longPressListener = { _, _ ->
                                 onLongPress()
                             }
+                        } catch (e: Exception) {
+                            // Ignore update errors
                         }
-                    } catch (e: Exception) {
-                        android.util.Log.e("WidgetHostView", "Widget factory crashed", e)
-                        factoryCrashed = true
-                        // Return a blank view as fallback
-                        android.view.View(ctx)
                     }
-                },
-                modifier = Modifier.fillMaxSize(),
-                update = { _ ->
-                    try {
-                        widgetView.longPressListener = { _, _ ->
-                            onLongPress()
-                        }
-                    } catch (e: Exception) {
-                        // Ignore update errors
-                    }
-                }
-            )
+                )
+            }
         }
     } else {
         // Widget view couldn't be created - show placeholder
