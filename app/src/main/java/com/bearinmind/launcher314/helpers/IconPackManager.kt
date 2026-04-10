@@ -302,11 +302,15 @@ object IconPackManager {
     // ========== Icon Resolution ==========
 
     fun resolveIconPath(context: Context, packageName: String, systemIconPath: String): String {
+        // Always check icon_pack_cache first — per-app icon pack selections
+        // write here even when no global pack is set
+        val iconPackFile = File(getIconPackCacheDir(context), "$packageName.png")
+        if (iconPackFile.exists()) return iconPackFile.absolutePath
+
         val selectedPack = getSelectedIconPack(context)
         if (selectedPack.isEmpty()) return systemIconPath
 
-        val iconPackFile = File(getIconPackCacheDir(context), "$packageName.png")
-        return if (iconPackFile.exists()) iconPackFile.absolutePath else systemIconPath
+        return systemIconPath
     }
 
     // ========== Icon Pack Browsing ==========

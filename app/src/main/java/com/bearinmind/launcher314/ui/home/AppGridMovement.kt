@@ -535,13 +535,10 @@ fun DraggableGridCell(
                                     ?: cell.appInfo.customization?.iconShape
                                     ?: globalIconShape
                             } else null
-                            // globalIconBgIntensity forces this block to re-evaluate when intensity changes
-                            val displayIconPath = remember(globalIconBgIntensity, globalIconBgColor, bgColorEffectiveShape) {
-                                if (useBgColorIcon && bgColorEffectiveShape != null) {
-                                    try { getOrGenerateBgColorShapedIcon(gridContext, cell.appInfo.packageName, bgColorEffectiveShape, globalIconBgColor!!, globalIconBgIntensity) }
-                                    catch (_: Exception) { finalIconModelPath }
-                                } else finalIconModelPath
-                            }
+                            val displayIconPath = if (useBgColorIcon && bgColorEffectiveShape != null) {
+                                try { getOrGenerateBgColorShapedIcon(gridContext, cell.appInfo.packageName, bgColorEffectiveShape, globalIconBgColor!!, globalIconBgIntensity) }
+                                catch (_: Exception) { finalIconModelPath }
+                            } else finalIconModelPath
                             val isBgColorIcon = displayIconPath != finalIconModelPath
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -565,8 +562,13 @@ fun DraggableGridCell(
                                         clip = false
                                     }
                             ) {
+                                val iconFile = File(displayIconPath)
                                 AsyncImage(
-                                    model = File(displayIconPath),
+                                    model = coil.request.ImageRequest.Builder(gridContext)
+                                        .data(iconFile)
+                                        .memoryCacheKey("${displayIconPath}_${iconFile.lastModified()}")
+                                        .diskCacheKey("${displayIconPath}_${iconFile.lastModified()}")
+                                        .build(),
                                     contentDescription = cell.appInfo.name,
                                     contentScale = if (isBgColorIcon) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                                     colorFilter = if ((isDragging && !isHoverTargetValid) || (isHovered && !isValidDropTarget)) {
@@ -1765,12 +1767,10 @@ fun DockSlot(
                         ?: appInfo?.customization?.iconShape
                         ?: globalIconShape
                 } else null
-                val dockDisplayIconPath = remember(globalIconBgIntensity, globalIconBgColor, dockBgColorEffectiveShape) {
-                    if (dockUseBgColorIcon && dockBgColorEffectiveShape != null && appInfo != null) {
-                        try { getOrGenerateBgColorShapedIcon(dockContext, appInfo.packageName, dockBgColorEffectiveShape, globalIconBgColor!!, globalIconBgIntensity) }
-                        catch (_: Exception) { dockFinalIconModelPath }
-                    } else dockFinalIconModelPath
-                }
+                val dockDisplayIconPath = if (dockUseBgColorIcon && dockBgColorEffectiveShape != null && appInfo != null) {
+                    try { getOrGenerateBgColorShapedIcon(dockContext, appInfo.packageName, dockBgColorEffectiveShape, globalIconBgColor!!, globalIconBgIntensity) }
+                    catch (_: Exception) { dockFinalIconModelPath }
+                } else dockFinalIconModelPath
                 val dockIsBgColorIcon = dockDisplayIconPath != dockFinalIconModelPath
                 Box(contentAlignment = Alignment.Center) {
                     AsyncImage(

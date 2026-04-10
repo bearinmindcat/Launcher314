@@ -501,6 +501,7 @@ fun LauncherScreen(
     var allAvailableApps by remember { mutableStateOf<List<HomeAppInfo>>(emptyList()) }
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(appContext) }
     var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
+    var iconCacheVersion by remember { mutableIntStateOf(0) }
     var customizingApp by remember { mutableStateOf<HomeAppInfo?>(null) }
     var customizingFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.HomeFolder?>(null) }
     var customizingDockFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.DockFolder?>(null) }
@@ -4205,10 +4206,34 @@ fun LauncherScreen(
             globalIconBgColor = globalIconBgColor,
             onSave = { newCustomization ->
                 appCustomizations = setCustomization(context, appCustomizations, app.packageName, newCustomization)
+                iconCacheVersion++
+                // Reload app list so iconPath re-resolves (picks up icon_pack_cache changes)
+                dropScope.launch {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val freshApps = loadAvailableApps(context)
+                        val debugApp = freshApps.find { it.packageName == app.packageName }
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            allAvailableApps = freshApps
+                            coil.Coil.imageLoader(context).memoryCache?.clear()
+                            coil.Coil.imageLoader(context).diskCache?.clear()
+                            android.widget.Toast.makeText(context, "iconPath: ${debugApp?.iconPath?.takeLast(50)}", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
                 customizingApp = null
             },
             onReset = {
                 appCustomizations = removeCustomization(context, appCustomizations, app.packageName)
+                dropScope.launch {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val freshApps = loadAvailableApps(context)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            allAvailableApps = freshApps
+                            coil.Coil.imageLoader(context).memoryCache?.clear()
+                            coil.Coil.imageLoader(context).diskCache?.clear()
+                        }
+                    }
+                }
                 customizingApp = null
             },
             onDismiss = { customizingApp = null }

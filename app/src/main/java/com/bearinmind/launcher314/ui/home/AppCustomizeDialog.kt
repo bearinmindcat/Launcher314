@@ -214,8 +214,18 @@ fun AppCustomizeDialog(
                 // Effective shape: per-app overrides global
                 val effectiveShapeName = selectedShapeExp ?: globalIconShape
 
+                // Resolve current icon path — picks up icon_pack_cache changes
+                val currentIconPath = remember(customIconVersion, selectedIconPackName, customIconPath) {
+                    if (customIconPath != null) customIconPath!!
+                    else {
+                        val packCache = File(context.cacheDir, "icon_pack_cache/${appInfo.packageName}.png")
+                        if (packCache.exists()) packCache.absolutePath
+                        else appInfo.iconPath
+                    }
+                }
+
                 // Generate shaped EXP preview bitmap (plain shape, no tint baked in)
-                val shapeExpPreviewBitmap = remember(effectiveShapeName, globalIconBgColor) {
+                val shapeExpPreviewBitmap = remember(effectiveShapeName, globalIconBgColor, customIconVersion, selectedIconPackName) {
                     effectiveShapeName?.let {
                         try {
                             if (globalIconBgColor != null) {
@@ -230,7 +240,7 @@ fun AppCustomizeDialog(
                 }
 
                 // Shaped + bg-only tint combined bitmap
-                val shapedBgTintPreviewBitmap = remember(effectiveShapeName, selectedTintColor, tintIntensity, tintBackgroundOnly) {
+                val shapedBgTintPreviewBitmap = remember(effectiveShapeName, selectedTintColor, tintIntensity, tintBackgroundOnly, customIconVersion, selectedIconPackName) {
                     if (effectiveShapeName != null && tintBackgroundOnly && selectedTintColor != null) {
                         try {
                             val path = generateShapedBgTintedIcon(context, appInfo.packageName, effectiveShapeName, selectedTintColor!!.toInt(), tintIntensity / 100f)
@@ -240,7 +250,7 @@ fun AppCustomizeDialog(
                 }
 
                 // Background-only tint (no shape): generate a bitmap with tinted bg + untinted fg
-                val bgTintPreviewBitmap = remember(selectedTintColor, tintIntensity, tintBackgroundOnly, effectiveShapeName) {
+                val bgTintPreviewBitmap = remember(selectedTintColor, tintIntensity, tintBackgroundOnly, effectiveShapeName, customIconVersion, selectedIconPackName) {
                     if (tintBackgroundOnly && selectedTintColor != null && effectiveShapeName == null) {
                         try {
                             val path = generateBgTintedIcon(context, appInfo.packageName, selectedTintColor!!.toInt(), tintIntensity / 100f)
@@ -333,7 +343,11 @@ fun AppCustomizeDialog(
                             )
                         } else {
                             AsyncImage(
-                                model = File(appInfo.iconPath),
+                                model = coil.request.ImageRequest.Builder(context)
+                                    .data(File(currentIconPath))
+                                    .memoryCacheKey("${currentIconPath}_${customIconVersion}")
+                                    .diskCacheKey("${currentIconPath}_${customIconVersion}")
+                                    .build(),
                                 contentDescription = appInfo.name,
                                 contentScale = if (previewShape != null) ContentScale.Crop else ContentScale.Fit,
                                 colorFilter = previewTint,
@@ -1108,6 +1122,7 @@ private fun PerAppIconPackPicker(
                                     File(context.cacheDir, "app_icons").listFiles()?.filter {
                                         it.name.startsWith(packageName)
                                     }?.forEach { it.delete() }
+                                    android.widget.Toast.makeText(context, "Reset to system icon", android.widget.Toast.LENGTH_SHORT).show()
                                     onIconApplied("", null)
                                 }
                                 .padding(horizontal = 16.dp),
@@ -1146,33 +1161,86 @@ private fun PerAppIconPackPicker(
                                 isLoading = true
                                 loadingMessage = "Applying ${pack.displayName}..."
                                 scope.launch(Dispatchers.IO) {
+                                    try {
                                     val pm = context.packageManager
+
+                                    // Use EXACTLY the same approach as global cacheIconPackIcons:
+                                    // just call it for this single package
                                     val appFilterMap = com.bearinmind.launcher314.helpers.IconPackManager.parseAppFilter(context, pack.packageName)
                                     val iconPackResources = pm.getResourcesForApplication(pack.packageName)
 
-                                    val launchIntent = pm.getLaunchIntentForPackage(packageName)
-                                    val resolveInfo = if (launchIntent != null) pm.resolveActivity(launchIntent, 0) else null
-                                    val activityName = resolveInfo?.activityInfo?.name ?: ""
+                                    // Query all launcher activities (same as cacheIconPackIcons)
+                                    val launchIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                                        addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                                    }
+                                    val resolveInfoList = pm.queryIntentActivities(launchIntent, 0)
 
-                                    val drawableName = findDrawableForApp(appFilterMap, packageName, activityName)
+                                    // Find ALL activities for this package (some apps have multiple)
+                                    val matchingActivities = resolveInfoList.filter {
+                                        it.activityInfo.packageName == packageName
+                                    }
 
-                                    if (drawableName != null) {
-                                        val drawableResId = iconPackResources.getIdentifier(drawableName, "drawable", pack.packageName)
-                                        if (drawableResId != 0) {
-                                            @Suppress("DEPRECATION")
-                                            val drawable = iconPackResources.getDrawable(drawableResId, null)
-                                            if (drawable != null) {
-                                                val bitmap = com.bearinmind.launcher314.data.drawableToBitmap(drawable)
-                                                val outFile = File(getCustomIconsDir(context), "$packageName.png")
-                                                com.bearinmind.launcher314.data.saveBitmapToFile(bitmap, outFile)
-                                                bitmap.recycle()
-                                                withContext(Dispatchers.Main) {
-                                                    isLoading = false
-                                                    onIconApplied(outFile.absolutePath, pack.displayName)
-                                                }
-                                                return@launch
-                                            }
+                                    var found = false
+                                    for (ri in matchingActivities) {
+                                        val activityInfo = ri.activityInfo
+                                        val activityName = activityInfo.name
+                                        val componentInfo = "ComponentInfo{$packageName/$activityName}"
+
+                                        // Try exact match first, then prefix match
+                                        var drawableName = appFilterMap[componentInfo]
+                                        if (drawableName == null) {
+                                            val prefix = "ComponentInfo{$packageName/"
+                                            val matchKey = appFilterMap.keys.firstOrNull { it.startsWith(prefix) }
+                                            if (matchKey != null) drawableName = appFilterMap[matchKey]
                                         }
+
+                                        if (drawableName == null) continue
+
+                                        val drawableResId = iconPackResources.getIdentifier(drawableName, "drawable", pack.packageName)
+                                        if (drawableResId == 0) continue
+
+                                        @Suppress("DEPRECATION")
+                                        val drawable = iconPackResources.getDrawable(drawableResId, null) ?: continue
+
+                                        val bitmap = com.bearinmind.launcher314.data.drawableToBitmap(drawable)
+
+                                        // Save to icon_pack_cache — exact same location as global cacheIconPackIcons
+                                        val cacheDir = File(context.cacheDir, "icon_pack_cache")
+                                        if (!cacheDir.exists()) cacheDir.mkdirs()
+                                        val cacheFile = File(cacheDir, "$packageName.png")
+                                        com.bearinmind.launcher314.data.saveBitmapToFile(bitmap, cacheFile)
+                                        bitmap.recycle()
+
+                                        // Remove custom icon so hasCustomIcon=false
+                                        val customFile = File(getCustomIconsDir(context), "$packageName.png")
+                                        if (customFile.exists()) customFile.delete()
+
+                                        // Clear ALL derived caches for this package so they regenerate
+                                        listOf("app_icons").forEach { dir ->
+                                            File(context.cacheDir, dir).listFiles()?.filter {
+                                                it.name.startsWith(packageName)
+                                            }?.forEach { it.delete() }
+                                        }
+                                        listOf("global_shaped_icons", "bg_color_shaped_icons",
+                                            "shaped_exp_icons", "shaped_bg_tinted_icons",
+                                            "bg_tinted_icons", "foreground_icons").forEach { dir ->
+                                            File(context.filesDir, dir).listFiles()?.filter {
+                                                it.name.startsWith(packageName)
+                                            }?.forEach { it.delete() }
+                                        }
+
+                                        found = true
+                                        withContext(Dispatchers.Main) {
+                                            isLoading = false
+                                            android.widget.Toast.makeText(context, "Applied $drawableName from ${pack.displayName}", android.widget.Toast.LENGTH_SHORT).show()
+                                            onIconApplied("", pack.displayName)
+                                        }
+                                        break
+                                    }
+
+                                    if (found) return@launch
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("PerAppIconPack", "Error: ${e.message}", e)
                                     }
 
                                     withContext(Dispatchers.Main) {
