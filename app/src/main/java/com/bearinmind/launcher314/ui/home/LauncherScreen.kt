@@ -645,8 +645,9 @@ fun LauncherScreen(
     var folderCreationHoverJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var folderCreationTargetIndex by remember { mutableStateOf<Int?>(null) }
     var showFolderCreationIndicator by remember { mutableStateOf(false) }
-    // Folder receive animation — which cell index is playing the "pulse" animation on drop
+    // Folder receive animation — which cell/dock slot is playing the "pulse" animation on drop
     var folderReceiveAnimIndex by remember { mutableStateOf<Int?>(null) }
+    var folderReceiveDockSlot by remember { mutableStateOf<Int?>(null) }
 
     // Launcher settings menu (shown on long-press of empty area)
     var showLauncherSettingsMenu by remember { mutableStateOf(false) }
@@ -994,7 +995,7 @@ fun LauncherScreen(
         return null
     }
 
-    // Handle drop from grid to dock (only empty dock slots allowed)
+    // Handle drop from grid to dock
     fun handleDropToDock(fromGridIndex: Int, toDockSlot: Int, fromPage: Int = currentPage) {
         val existingDockApp = dockApps.find { it.position == toDockSlot }
         val existingDockFolder = dockFolders.find { it.position == toDockSlot }
@@ -1004,15 +1005,42 @@ fun LauncherScreen(
         val sourceAppInfo = sourceHomeApp?.let { ha ->
             allAvailableApps.find { it.packageName == ha.packageName }
         }
+        if (sourceAppInfo == null) return
 
-        if (sourceAppInfo != null && existingDockApp == null && existingDockFolder == null) {
-            val updatedGridApps = homeApps.filter { !(it.position == fromGridIndex && it.page == fromPage) }
+        val updatedGridApps = homeApps.filter { !(it.position == fromGridIndex && it.page == fromPage) }
+
+        if (existingDockApp == null && existingDockFolder == null) {
+            // Empty slot → place app
             val updatedDockApps = dockApps + DockApp(sourceAppInfo.packageName, toDockSlot)
-
             homeApps = updatedGridApps
             dockApps = updatedDockApps
             dropScope.launch(Dispatchers.IO) {
                 saveHomeScreenData(context, HomeScreenData(apps = updatedGridApps, dockApps = updatedDockApps, folders = homeFolders, dockFolders = dockFolders))
+            }
+        } else if (existingDockFolder != null) {
+            // Dock folder → add app to folder
+            val updatedDockFolders = dockFolders.map { f ->
+                if (f.id == existingDockFolder.id) f.copy(appPackageNames = addAppToFolder(f.appPackageNames, sourceAppInfo.packageName))
+                else f
+            }
+            homeApps = updatedGridApps
+            dockFolders = updatedDockFolders
+            dropScope.launch(Dispatchers.IO) {
+                saveHomeScreenData(context, HomeScreenData(apps = updatedGridApps, dockApps = dockApps, folders = homeFolders, dockFolders = updatedDockFolders))
+            }
+        } else if (existingDockApp != null) {
+            // Dock app → create new dock folder
+            val updatedDockApps = dockApps.filter { it.position != toDockSlot }
+            val newFolder = DockFolder(
+                name = "Folder",
+                position = toDockSlot,
+                appPackageNames = listOf(existingDockApp.packageName, sourceAppInfo.packageName)
+            )
+            homeApps = updatedGridApps
+            dockApps = updatedDockApps
+            dockFolders = dockFolders + newFolder
+            dropScope.launch(Dispatchers.IO) {
+                saveHomeScreenData(context, HomeScreenData(apps = updatedGridApps, dockApps = updatedDockApps, folders = homeFolders, dockFolders = dockFolders + newFolder))
             }
         }
     }
@@ -1237,12 +1265,16 @@ fun LauncherScreen(
         // Check if this drop targets a folder (create new or add to existing)
         // Both cases use the same shrink+fade overlay animation
         val isDraggingAFolder = draggedFolderData != null
-        val willCreateFolder = if (targetGridIndex != null && currentDraggedIndex != null &&
-            !isDraggingAFolder &&
-            (targetGridIndex != currentDraggedIndex || dragSourcePage != intendedPage)) {
-            val dropCells = buildGridCellsForPage(intendedPage)
-            val targetCell = dropCells.getOrNull(targetGridIndex)
-            targetCell is HomeGridCell.App || targetCell is HomeGridCell.Folder
+        val willCreateFolder = if (currentDraggedIndex != null && !isDraggingAFolder) {
+            if (targetGridIndex != null && (targetGridIndex != currentDraggedIndex || dragSourcePage != intendedPage)) {
+                val dropCells = buildGridCellsForPage(intendedPage)
+                val targetCell = dropCells.getOrNull(targetGridIndex)
+                targetCell is HomeGridCell.App || targetCell is HomeGridCell.Folder
+            } else if (targetDockSlot != null) {
+                val existDockApp = dockApps.find { it.position == targetDockSlot }
+                val existDockFolder = dockFolders.find { it.position == targetDockSlot }
+                existDockApp != null || existDockFolder != null
+            } else false
         } else false
 
         hoveredDockSlot = null
@@ -1268,14 +1300,16 @@ fun LauncherScreen(
                 val existingDockApp = dockApps.find { it.position == targetDockSlot }
                 val existingDockFolder = dockFolders.find { it.position == targetDockSlot }
                 val isSlotEmpty = existingDockApp == null && existingDockFolder == null
-                val isValid = isSlotEmpty && dockPos != null
+                // Valid: empty slot for any drag, or occupied slot for single app drag (folder add / folder create)
+                val isDraggingApp = draggedFolderData == null
+                val isValid = dockPos != null && (isSlotEmpty || (isDraggingApp && (existingDockFolder != null || existingDockApp != null)))
                 targetOffset = if (isValid && dockPos != null) {
                     Offset(dockPos.x - originalPos.x, dockPos.y - originalPos.y)
                 } else Offset.Zero
                 if (isValid) {
                     val srcPage = dragSourcePage
                     if (draggedFolderData != null) {
-                        // Grid folder → dock
+                        // Grid folder → dock (empty slot only)
                         val folderData = draggedFolderData!!
                         dropAction = {
                             val newDockFolder = DockFolder(
@@ -1289,6 +1323,7 @@ fun LauncherScreen(
                             saveAllData()
                         }
                     } else {
+                        // handleDropToDock now handles empty, folder, and app-on-app cases
                         dropAction = { handleDropToDock(currentDraggedIndex, targetDockSlot, srcPage) }
                     }
                 }
@@ -1326,9 +1361,10 @@ fun LauncherScreen(
 
             dropTargetIsDock = targetDockSlot != null && dropAction != null
             dropCreatesFolder = willCreateFolder && dropAction != null
-            // Start folder receive pulse animation on the target cell
-            if (willCreateFolder && dropAction != null && targetGridIndex != null) {
-                folderReceiveAnimIndex = targetGridIndex
+            // Start folder receive pulse animation on the target cell/dock slot
+            if (willCreateFolder && dropAction != null) {
+                if (targetGridIndex != null) folderReceiveAnimIndex = targetGridIndex
+                if (targetDockSlot != null) folderReceiveDockSlot = targetDockSlot
             }
 
             if (dropAction == null && dragOffset.getDistance() < 1f) {
@@ -1375,6 +1411,7 @@ fun LauncherScreen(
                     hoveredGridCell = null
                     showFolderCreationIndicator = false
                     folderReceiveAnimIndex = null
+                    folderReceiveDockSlot = null
                     if (dropCreatesFolder) {
                         dropCreatesFolder = false
                     }
@@ -1573,9 +1610,14 @@ fun LauncherScreen(
         hoveredDockSlot = targetDockSlot
         hoveredGridCell = if (targetDockSlot == null) findCellIndex(centerPos) else null
         if (targetDockSlot != null) {
-            isHoveredDockSlotValid = dockApps.find { it.position == targetDockSlot } == null
+            val draggingFolder = draggedFolderData != null
+            val existDockApp = dockApps.find { it.position == targetDockSlot }
+            val existDockFolder = dockFolders.find { it.position == targetDockSlot }
+            val isSlotEmpty = existDockApp == null && existDockFolder == null
+            isHoveredDockSlotValid = isSlotEmpty ||
+                (!draggingFolder && (existDockFolder != null || existDockApp != null))
             isHoveredCellValid = true
-            showFolderCreationIndicator = false
+            showFolderCreationIndicator = !draggingFolder && existDockApp != null && existDockFolder == null
         } else if (hoveredGridCell != null) {
             val pageCells = buildGridCellsForPage(pagerState.targetPage)
             val targetCell = pageCells.getOrNull(hoveredGridCell!!)
@@ -1872,6 +1914,21 @@ fun LauncherScreen(
             } else false
         } else false
 
+        // Determine if dropping onto an existing folder (dock or grid)
+        val dropsOntoFolder = if (item is com.bearinmind.launcher314.data.AppInfo) {
+            if (targetDockSlot != null) dockFolders.find { it.position == targetDockSlot } != null
+            else if (targetGridCell != null) {
+                val pageCells = buildGridCellsForPage(intendedPage)
+                pageCells.getOrNull(targetGridCell) is HomeGridCell.Folder
+            } else false
+        } else false
+
+        // Start folder receive pulse animation on the target cell/dock slot
+        if ((createsFolder || dropsOntoFolder) && dropAction != null) {
+            if (targetGridCell != null) folderReceiveAnimIndex = targetGridCell
+            if (targetDockSlot != null) folderReceiveDockSlot = targetDockSlot
+        }
+
         // Animate the drop (same pattern as normal grid/dock drops)
         dropTargetIsDock = targetDockSlot != null
         dropCreatesFolder = createsFolder
@@ -1887,6 +1944,8 @@ fun LauncherScreen(
             dropAnimProgress.snapTo(0f)
             dropAnimProgress.animateTo(1f, tween(durationMillis = 400, easing = FastOutSlowInEasing))
             capturedAction?.invoke()
+            folderReceiveAnimIndex = null
+            folderReceiveDockSlot = null
             isDropAnimating = false
             cleanupExternalDrag()
         }
@@ -2157,9 +2216,9 @@ fun LauncherScreen(
                                         // Empty cell - always valid drop target (blue)
                                         cell is HomeGridCell.Empty -> true
                                         // Folder cell - valid drop target only for APP drags (not folder drags)
-                                        cell is HomeGridCell.Folder && hoveredGridCell == index && draggedItemIndex != null && !isDraggingAFolder -> true
+                                        cell is HomeGridCell.Folder && hoveredGridCell == index && (draggedItemIndex != null || externalDragActive) && !isDraggingAFolder -> true
                                         // App cell hovered by another app - valid (creates folder), not for folder drags
-                                        cell is HomeGridCell.App && hoveredGridCell == index && draggedItemIndex != null && draggedItemIndex != index && !isDraggingAFolder -> true
+                                        cell is HomeGridCell.App && hoveredGridCell == index && (draggedItemIndex != null || externalDragActive) && draggedItemIndex != index && !isDraggingAFolder -> true
                                         // Widget resize/drag - original cells are always valid (blue, not red)
                                         // Only on the SOURCE page — on other pages, same indices are different cells
                                         hoveredWidgetCells.contains(index) && widgetOriginalCells.contains(index) && page == widgetDragSourcePage -> true
@@ -2231,7 +2290,7 @@ fun LauncherScreen(
                                             hoverCornerRadius = gridHoverCornerRadius,
                                             folderPreviewDraggedIconPath = if (hoveredGridCell == index && !isDraggingAFolder && (
                                                 showFolderCreationIndicator ||
-                                                (cell is HomeGridCell.Folder && (draggedItemIndex != null || dragFromFolderApp != null) && draggedItemIndex != index)
+                                                (cell is HomeGridCell.Folder && (draggedItemIndex != null || dragFromFolderApp != null || externalDragActive) && draggedItemIndex != index)
                                             )) draggedAppInfo?.iconPath else null,
                                             isReceivingDrop = folderReceiveAnimIndex == index,
                                             folderCustomization = if (cell is HomeGridCell.Folder) appCustomizations.customizations["folder_${cell.folder.id}"] else null,
@@ -3393,13 +3452,16 @@ fun LauncherScreen(
                     } ?: emptyList()
                     val slotOccupied = appInfo != null || dockFolder != null
                     val isDockSlotDragging = draggedFromDock && draggedItemIndex == slot
-                    val isSlotDropTarget = hoveredDockSlot == slot && draggedItemIndex != null &&
+                    val isSlotDropTarget = hoveredDockSlot == slot && (draggedItemIndex != null || externalDragActive) &&
                         !(draggedFromDock && draggedItemIndex == slot) // Don't highlight self as drop target
                     // isSlotHovered includes original slot - shows hover indicator when dragging back over it
-                    val isSlotHovered = hoveredDockSlot == slot && draggedItemIndex != null
+                    val isSlotHovered = hoveredDockSlot == slot && (draggedItemIndex != null || externalDragActive)
                     // Valid drop target: original position OR empty slot
-                    // Invalid (red): slot already has an app or folder
-                    val isSlotValidDropTarget = isDockSlotDragging || !slotOccupied
+                    // Allow dropping single apps on folders/apps (to add to folder or create folder)
+                    // Works for internal drags (grid→dock, dock→dock) and external drags (drawer→dock)
+                    val isDraggingSingleApp = draggedFolderData == null && externalDragItemState !is com.bearinmind.launcher314.data.AppFolder
+                    val canDropOnOccupied = isDraggingSingleApp && slotOccupied && !isDockSlotDragging
+                    val isSlotValidDropTarget = isDockSlotDragging || !slotOccupied || canDropOnOccupied
 
                     // Check if a dragged widget overlaps this dock slot (widgets can't be placed on dock)
                     val isWidgetOverDockSlot = isWidgetBeingDragged && !isWidgetDropAnimating && run {
@@ -3452,6 +3514,10 @@ fun LauncherScreen(
                             dragOffset = if (isDockSlotDragging) dragOffset else Offset.Zero,
                             folderData = dockFolder,
                             folderPreviewApps = dockFolderPreviewApps,
+                            folderPreviewDraggedIconPath = if (dockFolder != null && hoveredDockSlot == slot &&
+                                draggedFolderData == null && (draggedItemIndex != null || externalDragActive || dragFromFolderApp != null)
+                            ) draggedAppInfo?.iconPath else null,
+                            isReceivingDrop = folderReceiveDockSlot == slot,
                             // Proportional sizing
                             markerHalfSizeParam = dockMarkerHalfSize,
                             hoverCornerRadius = dockHoverCornerRadius,
@@ -3524,12 +3590,14 @@ fun LauncherScreen(
                                     showFolderCreationIndicator = !isDraggingFolder && targetCell is HomeGridCell.App
                                     isHoveredDockSlotValid = true // Not hovering dock
                                 } else if (targetDockSlot != null) {
-                                    // Hovering over dock - check if slot is empty or original
+                                    // Hovering over dock - check if slot is valid
                                     val dockSlotApp = dockApps.find { it.position == targetDockSlot }
                                     val dockSlotFolder = dockFolders.find { it.position == targetDockSlot }
-                                    isHoveredDockSlotValid = targetDockSlot == slot || (dockSlotApp == null && dockSlotFolder == null)
+                                    val dockSlotEmpty = dockSlotApp == null && dockSlotFolder == null
+                                    isHoveredDockSlotValid = targetDockSlot == slot || dockSlotEmpty ||
+                                        (!isDraggingFolder && (dockSlotFolder != null || dockSlotApp != null))
                                     isHoveredCellValid = true // Not hovering grid
-                                    showFolderCreationIndicator = false
+                                    showFolderCreationIndicator = !isDraggingFolder && dockSlotApp != null && dockSlotFolder == null && targetDockSlot != slot
                                 } else {
                                     isHoveredCellValid = true
                                     isHoveredDockSlotValid = true
@@ -3663,6 +3731,13 @@ fun LauncherScreen(
                                     // Dock source: true = going to dock (no text), false = going to grid (text fades in)
                                     dropTargetIsDock = !(targetGridIndex != null && dropAction != null)
 
+                                    // Start folder receive pulse on dock target if dropping on folder/app
+                                    if (dropAction != null && !isDraggingDockFolder && targetDockSlot != null) {
+                                        val targetHasContent = dockApps.any { it.position == targetDockSlot } ||
+                                            dockFolders.any { it.position == targetDockSlot }
+                                        if (targetHasContent) folderReceiveDockSlot = targetDockSlot
+                                    }
+
                                     // Animate overlay to target, then execute drop atomically
                                     dropStartOffset = dragOffset
                                     dropTargetOffset = targetOffset
@@ -3679,6 +3754,7 @@ fun LauncherScreen(
                                         )
                                         // All state changes in same frame: drop + overlay removal = seamless
                                         capturedAction?.invoke()
+                                        folderReceiveDockSlot = null
                                         draggedItemIndex = null
                                         dragOffset = Offset.Zero
                                         draggedFromDock = false
@@ -4470,6 +4546,12 @@ fun LauncherScreen(
                         .mapNotNull { pkg -> allAvailableApps.find { it.packageName == pkg }?.iconPath }
                     escapeCloseAnim.snapTo(1f)
                     escapeCloseAnim.animateTo(0f, tween(500, easing = FastOutSlowInEasing))
+                    // FIX: Without this, lastOpenedFolder was never nulled after escape drag
+                    // because finishedListener ran while escapedToHomeGrid was still true.
+                    // The folder overlay stayed in the tree with stale remember() cache.
+                    if (openHomeFolder == null) {
+                        lastOpenedFolder = null
+                    }
                 }
             }
     }
@@ -4559,15 +4641,20 @@ fun LauncherScreen(
         val folderDropScope = rememberCoroutineScope()
 
         // Position-based cell map: cellIndex → packageName (supports empty cells between apps, filters hidden)
-        var folderCellMap by remember(folder.id) {
-            mutableStateOf(folder.appPackageNames.withIndex()
-                .filter { it.value.isNotEmpty() && it.value !in hiddenApps }
-                .associate { it.index to it.value })
-        }
-        LaunchedEffect(folder.appPackageNames) {
-            folderCellMap = folder.appPackageNames.withIndex()
+        // FIX: Keyed on appPackageNames too — previously only folder.id, so re-opening
+        // the same folder after removing an app showed stale cached data.
+        val baseFolderCellMap = remember(folder.id, folder.appPackageNames, hiddenApps) {
+            folder.appPackageNames.withIndex()
                 .filter { it.value.isNotEmpty() && it.value !in hiddenApps }
                 .associate { it.index to it.value }
+        }
+        // Mutable overlay for drag reordering within the folder (resets when folder data changes)
+        var folderCellMap by remember(folder.id, folder.appPackageNames) {
+            mutableStateOf(baseFolderCellMap)
+        }
+        // Sync when folder data changes externally (e.g., app removed via escape drag)
+        LaunchedEffect(baseFolderCellMap) {
+            folderCellMap = baseFolderCellMap
         }
         // Resolve package names to HomeAppInfo for rendering
         val folderApps = remember(folderCellMap, allAvailableApps) {
@@ -4921,16 +5008,23 @@ fun LauncherScreen(
                                                         }
 
                                                         // Set up home grid drag via outer-scope function
-                                                        val folderGridPos = cellPositions[folder.position]
+                                                        // FIX: Dock folders have position=-1, so cellPositions[-1] was null.
+                                                        // Use dockPositions instead for correct drag overlay positioning.
+                                                        val folderOriginPos = if (isDockFolder) {
+                                                            val df = dockFolders.find { it.id == folder.id }
+                                                            if (df != null) dockPositions[df.position] else null
+                                                        } else {
+                                                            cellPositions[folder.position]
+                                                        }
                                                         val currentAbsPos = cellPos + dragOffset
-                                                        val escapeDragOff = if (folderGridPos != null) {
-                                                            currentAbsPos - folderGridPos
+                                                        val escapeDragOff = if (folderOriginPos != null) {
+                                                            currentAbsPos - folderOriginPos
                                                         } else Offset.Zero
                                                         setupFolderEscapeDrag(
                                                             app = escapedApp,
                                                             folderId = folder.id,
                                                             folderPage = folder.page,
-                                                            originPos = folderGridPos,
+                                                            originPos = folderOriginPos,
                                                             escapeDragOffset = escapeDragOff
                                                         )
 

@@ -1570,6 +1570,8 @@ fun DockSlot(
     globalIconShape: String? = null, // Global icon shape (EXP method) applied when no per-app shape
     globalIconBgColor: Int? = null, // Global icon background color (drawn behind icon within shape)
     globalIconBgIntensity: Int = 100,
+    folderPreviewDraggedIconPath: String? = null, // When non-null, shows dragged app icon in folder add preview
+    isReceivingDrop: Boolean = false, // When true, plays a pulse scale animation on the dock folder
     onRenameDockFolder: (() -> Unit)? = null,
     homeFolders: List<com.bearinmind.launcher314.data.HomeFolder> = emptyList(),
     onAddToFolder: (com.bearinmind.launcher314.data.HomeFolder) -> Unit = {},
@@ -1617,7 +1619,11 @@ fun DockSlot(
         // Dock slot hover indicator - uses TileColorOnHover.kt
         // Only show background indicator for valid drop targets (blue)
         // Invalid targets show red icon tint instead (no red background)
-        DockSlotHoverIndicator(isHovered = isHovered && isValidDropTarget, isValidDropTarget = isValidDropTarget, markerHalfSize = markerHalfSize, cornerRadius = hoverCornerRadius)
+        // Suppress when folder preview is showing (same pattern as grid folders)
+        val showDockFolderPreview = folderData != null && folderPreviewDraggedIconPath != null
+        if (!showDockFolderPreview) {
+            DockSlotHoverIndicator(isHovered = isHovered && isValidDropTarget, isValidDropTarget = isValidDropTarget, markerHalfSize = markerHalfSize, cornerRadius = hoverCornerRadius)
+        }
 
 
         if (appInfo != null && folderData == null) {
@@ -1936,6 +1942,10 @@ fun DockSlot(
                 }
         } else if (folderData != null) {
             // Dock folder content - 2x2 mini icon grid
+            // FIX: pointerInput(Unit) captures onTap once and never updates it.
+            // Without rememberUpdatedState, tapping a dock folder after removing an app
+            // would open with stale appPackageNames (showing removed apps).
+            val currentOnTap by rememberUpdatedState(onTap)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1997,7 +2007,7 @@ fun DockSlot(
                                 isDockFingerDown = false
                                 val upEvent = currentEvent.changes.firstOrNull()
                                 if (upEvent != null && !upEvent.pressed) {
-                                    onTap()
+                                    currentOnTap()
                                 }
                             }
                         }
@@ -2011,17 +2021,48 @@ fun DockSlot(
                     ColorFilter.tint(Color(0xFFFF6B6B).copy(alpha = 0.6f), androidx.compose.ui.graphics.BlendMode.SrcAtop)
                 } else null
 
+                // Folder add preview animation — shows dragged app icon in next empty slot
+                val dockFolderAddProgress by animateFloatAsState(
+                    targetValue = if (folderPreviewDraggedIconPath != null) 1f else 0f,
+                    animationSpec = if (folderPreviewDraggedIconPath != null) tween(durationMillis = 300) else snap(),
+                    label = "dockFolderAddProgress"
+                )
+                // The next empty slot index to show the preview in
+                val nextEmptySlot = folderPreviewApps.size.coerceAtMost(3)
+
+                // Subtle scale pulse when accepting a dragged app (matches grid folder behavior)
+                val dockFolderAcceptScale = if (dockFolderAddProgress > 0f) {
+                    1f + 0.08f * dockFolderAddProgress
+                } else iconScale
+
+                // Receive animation: pulse from 1.0 → 1.1 → 1.0 when a drop lands on this folder
+                val dockReceiveScale by animateFloatAsState(
+                    targetValue = if (isReceivingDrop) 1.1f else 1f,
+                    animationSpec = tween(durationMillis = 200),
+                    label = "dockFolderReceiveScale"
+                )
+                val dockCombinedScale = dockFolderAcceptScale * dockReceiveScale
+
+                val effectiveFolderClip = getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)
+
                 Box(
                     modifier = Modifier
                         .size(folderBoxSize)
-                        .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
-                        .background(Color(0xFF1A1A1A))
-                        .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                         .graphicsLayer {
-                            scaleX = iconScale
-                            scaleY = iconScale
-                            clip = true
+                            scaleX = dockCombinedScale
+                            scaleY = dockCombinedScale
+                            clip = false
                         },
+                    contentAlignment = Alignment.Center
+                ) {
+                // Background + border
+                Box(modifier = Modifier.matchParentSize().background(Color(0xFF1A1A1A), effectiveFolderClip))
+                // Clipped content layer
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .padding(1.dp)
+                        .graphicsLayer { clip = true; shape = effectiveFolderClip },
                     contentAlignment = Alignment.Center
                 ) {
                     if (folderPreviewApps.isNotEmpty()) {
@@ -2045,7 +2086,14 @@ fun DockSlot(
                                         colorFilter = folderInvalidTint,
                                         modifier = Modifier.size(miniIconSize).clip(miniClip)
                                     )
-                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
+                                } ?: if (nextEmptySlot == 0 && dockFolderAddProgress > 0f && folderPreviewDraggedIconPath != null) {
+                                    AsyncImage(
+                                        model = File(folderPreviewDraggedIconPath),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.size(miniIconSize).clip(miniClip).graphicsLayer { alpha = dockFolderAddProgress }
+                                    )
+                                } else Spacer(modifier = Modifier.size(miniIconSize))
                                 folderPreviewApps.getOrNull(1)?.let { app ->
                                     val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
                                         resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
@@ -2057,7 +2105,14 @@ fun DockSlot(
                                         colorFilter = folderInvalidTint,
                                         modifier = Modifier.size(miniIconSize).clip(miniClip)
                                     )
-                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
+                                } ?: if (nextEmptySlot == 1 && dockFolderAddProgress > 0f && folderPreviewDraggedIconPath != null) {
+                                    AsyncImage(
+                                        model = File(folderPreviewDraggedIconPath),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.size(miniIconSize).clip(miniClip).graphicsLayer { alpha = dockFolderAddProgress }
+                                    )
+                                } else Spacer(modifier = Modifier.size(miniIconSize))
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                                 folderPreviewApps.getOrNull(2)?.let { app ->
@@ -2071,7 +2126,14 @@ fun DockSlot(
                                         colorFilter = folderInvalidTint,
                                         modifier = Modifier.size(miniIconSize).clip(miniClip)
                                     )
-                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
+                                } ?: if (nextEmptySlot == 2 && dockFolderAddProgress > 0f && folderPreviewDraggedIconPath != null) {
+                                    AsyncImage(
+                                        model = File(folderPreviewDraggedIconPath),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.size(miniIconSize).clip(miniClip).graphicsLayer { alpha = dockFolderAddProgress }
+                                    )
+                                } else Spacer(modifier = Modifier.size(miniIconSize))
                                 folderPreviewApps.getOrNull(3)?.let { app ->
                                     val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
                                         resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
@@ -2083,7 +2145,14 @@ fun DockSlot(
                                         colorFilter = folderInvalidTint,
                                         modifier = Modifier.size(miniIconSize).clip(miniClip)
                                     )
-                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
+                                } ?: if (nextEmptySlot == 3 && dockFolderAddProgress > 0f && folderPreviewDraggedIconPath != null) {
+                                    AsyncImage(
+                                        model = File(folderPreviewDraggedIconPath),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.size(miniIconSize).clip(miniClip).graphicsLayer { alpha = dockFolderAddProgress }
+                                    )
+                                } else Spacer(modifier = Modifier.size(miniIconSize))
                             }
                         }
                     }
@@ -2097,7 +2166,10 @@ fun DockSlot(
                                 .background(Color.Black)
                         )
                     }
-                }
+                } // end clipped content Box
+                // Border overlay on top
+                Box(modifier = Modifier.matchParentSize().border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, effectiveFolderClip))
+                } // end outer scale Box
             }
 
             // Dock folder context menu
