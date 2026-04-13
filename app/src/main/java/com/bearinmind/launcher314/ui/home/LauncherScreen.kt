@@ -1667,18 +1667,24 @@ fun LauncherScreen(
         hoveredDockSlot = targetDockSlot
         hoveredGridCell = if (targetDockSlot == null) findCellIndex(fingerPos) else null
 
+        val draggingFolder = externalDragItemState is com.bearinmind.launcher314.data.AppFolder
         if (targetDockSlot != null) {
             val existingDockApp = dockApps.find { it.position == targetDockSlot }
             val existingDockFolder = dockFolders.find { it.position == targetDockSlot }
-            isHoveredDockSlotValid = existingDockApp == null && existingDockFolder == null
+            val isSlotEmpty = existingDockApp == null && existingDockFolder == null
+            // Allow drop on empty slot, or on existing dock folder/app if dragging a single app
+            isHoveredDockSlotValid = isSlotEmpty ||
+                (!draggingFolder && (existingDockFolder != null || existingDockApp != null))
             isHoveredCellValid = true
-            showFolderCreationIndicator = false
+            showFolderCreationIndicator = !draggingFolder && existingDockApp != null && existingDockFolder == null
         } else if (hoveredGridCell != null) {
             val pageCells = buildGridCellsForPage(pagerState.targetPage)
             val targetCell = pageCells.getOrNull(hoveredGridCell!!)
-            isHoveredCellValid = targetCell is HomeGridCell.Empty
+            isHoveredCellValid = targetCell is HomeGridCell.Empty ||
+                (!draggingFolder && (targetCell is HomeGridCell.App ||
+                    targetCell is HomeGridCell.Folder))
             isHoveredDockSlotValid = true
-            showFolderCreationIndicator = false
+            showFolderCreationIndicator = !draggingFolder && targetCell is HomeGridCell.App
         } else {
             isHoveredCellValid = true
             isHoveredDockSlotValid = true
@@ -1733,24 +1739,52 @@ fun LauncherScreen(
             val existingDockApp = dockApps.find { it.position == targetDockSlot }
             val existingDockFolder = dockFolders.find { it.position == targetDockSlot }
             val isSlotEmpty = existingDockApp == null && existingDockFolder == null
-            if (isSlotEmpty && dockPos != null) {
+            if (dockPos != null) {
                 targetOffset = Offset(dockPos.x - originalPos.x, dockPos.y - originalPos.y)
-                dropAction = {
-                    when (item) {
-                        is com.bearinmind.launcher314.data.AppInfo -> {
-                            dockApps = dockApps + DockApp(
-                                packageName = item.packageName,
-                                position = targetDockSlot
-                            )
-                            saveAllData()
+                if (isSlotEmpty) {
+                    dropAction = {
+                        when (item) {
+                            is com.bearinmind.launcher314.data.AppInfo -> {
+                                dockApps = dockApps + DockApp(
+                                    packageName = item.packageName,
+                                    position = targetDockSlot
+                                )
+                                saveAllData()
+                            }
+                            is com.bearinmind.launcher314.data.AppFolder -> {
+                                dockFolders = dockFolders + DockFolder(
+                                    name = item.name,
+                                    position = targetDockSlot,
+                                    appPackageNames = item.appPackageNames
+                                )
+                                saveDockFolders(dockFolders)
+                            }
                         }
-                        is com.bearinmind.launcher314.data.AppFolder -> {
-                            dockFolders = dockFolders + DockFolder(
-                                name = item.name,
-                                position = targetDockSlot,
-                                appPackageNames = item.appPackageNames
-                            )
-                            saveDockFolders(dockFolders)
+                    }
+                } else if (item is com.bearinmind.launcher314.data.AppInfo && existingDockFolder != null) {
+                    // App dropped on existing dock folder → add to folder
+                    dropAction = {
+                        val updatedDockFolders = dockFolders.map { f ->
+                            if (f.id == existingDockFolder.id) {
+                                f.copy(appPackageNames = addAppToFolder(f.appPackageNames, item.packageName))
+                            } else f
+                        }
+                        dockFolders = updatedDockFolders
+                        saveDockFolders(updatedDockFolders)
+                    }
+                } else if (item is com.bearinmind.launcher314.data.AppInfo && existingDockApp != null) {
+                    // App dropped on existing dock app → create new dock folder
+                    dropAction = {
+                        val updatedDockApps = dockApps.filter { it.position != targetDockSlot }
+                        val newFolder = DockFolder(
+                            name = "Folder",
+                            position = targetDockSlot,
+                            appPackageNames = listOf(existingDockApp.packageName, item.packageName)
+                        )
+                        dockApps = updatedDockApps
+                        dockFolders = dockFolders + newFolder
+                        dropScope.launch(Dispatchers.IO) {
+                            saveHomeScreenData(context, HomeScreenData(apps = homeApps, dockApps = updatedDockApps, folders = homeFolders, dockFolders = dockFolders + newFolder))
                         }
                     }
                 }
@@ -1758,16 +1792,17 @@ fun LauncherScreen(
         } else if (targetGridCell != null) {
             val pageCells = buildGridCellsForPage(intendedPage)
             val targetCell = pageCells.getOrNull(targetGridCell)
+            val targetPos = cellPositions[targetGridCell] ?: run {
+                val tRow = targetGridCell / gridColumns
+                val tCol = targetGridCell % gridColumns
+                Offset(
+                    gridAreaOffset.x + tCol * cellSize.width,
+                    gridAreaOffset.y + tRow * cellSize.height
+                )
+            }
+            targetOffset = Offset(targetPos.x - originalPos.x, targetPos.y - originalPos.y)
+
             if (targetCell is HomeGridCell.Empty) {
-                val targetPos = cellPositions[targetGridCell] ?: run {
-                    val tRow = targetGridCell / gridColumns
-                    val tCol = targetGridCell % gridColumns
-                    Offset(
-                        gridAreaOffset.x + tCol * cellSize.width,
-                        gridAreaOffset.y + tRow * cellSize.height
-                    )
-                }
-                targetOffset = Offset(targetPos.x - originalPos.x, targetPos.y - originalPos.y)
                 dropAction = {
                     when (item) {
                         is com.bearinmind.launcher314.data.AppInfo -> {
@@ -1788,6 +1823,34 @@ fun LauncherScreen(
                         }
                     }
                 }
+            } else if (item is com.bearinmind.launcher314.data.AppInfo && targetCell is HomeGridCell.Folder) {
+                // App dropped on existing grid folder → add to folder
+                dropAction = {
+                    val updatedFolders = homeFolders.map { folder ->
+                        if (folder.id == targetCell.folder.id) {
+                            folder.copy(appPackageNames = addAppToFolder(folder.appPackageNames, item.packageName))
+                        } else folder
+                    }
+                    homeFolders = updatedFolders
+                    saveHomeFolders(updatedFolders)
+                }
+            } else if (item is com.bearinmind.launcher314.data.AppInfo && targetCell is HomeGridCell.App) {
+                // App dropped on existing grid app → create new folder
+                dropAction = {
+                    val updatedApps = homeApps.toMutableList()
+                    updatedApps.removeAll { it.position == targetGridCell && it.page == intendedPage }
+                    val newFolder = HomeFolder(
+                        name = "Folder",
+                        position = targetGridCell,
+                        page = intendedPage,
+                        appPackageNames = listOf(targetCell.appInfo.packageName, item.packageName)
+                    )
+                    homeApps = updatedApps
+                    homeFolders = homeFolders + newFolder
+                    dropScope.launch(Dispatchers.IO) {
+                        saveHomeScreenData(context, HomeScreenData(apps = updatedApps, dockApps = dockApps, folders = homeFolders, dockFolders = dockFolders))
+                    }
+                }
             }
         }
 
@@ -1797,9 +1860,21 @@ fun LauncherScreen(
             return
         }
 
+        // Determine if this drop creates a new folder (app on app)
+        val createsFolder = if (item is com.bearinmind.launcher314.data.AppInfo) {
+            if (targetDockSlot != null) {
+                val existingDockApp = dockApps.find { it.position == targetDockSlot }
+                val existingDockFolder = dockFolders.find { it.position == targetDockSlot }
+                existingDockApp != null && existingDockFolder == null
+            } else if (targetGridCell != null) {
+                val pageCells = buildGridCellsForPage(intendedPage)
+                pageCells.getOrNull(targetGridCell) is HomeGridCell.App
+            } else false
+        } else false
+
         // Animate the drop (same pattern as normal grid/dock drops)
         dropTargetIsDock = targetDockSlot != null
-        dropCreatesFolder = false
+        dropCreatesFolder = createsFolder
         dropStartOffset = dragOffset
         dropTargetOffset = targetOffset
         isDropAnimating = true
