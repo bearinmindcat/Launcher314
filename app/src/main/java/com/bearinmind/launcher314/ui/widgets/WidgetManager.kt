@@ -436,6 +436,11 @@ object WidgetManager {
         val widgets = loadPlacedWidgets(context).filter { it.appWidgetId != appWidgetId }
         savePlacedWidgets(context, widgets)
         deleteWidgetId(appWidgetId)
+        // FIX: Clean the cached LauncherAppWidgetHostView alongside the host-ID deletion
+        // so a leftover orphan view can't be re-parented into a sibling widget's container
+        // during recomposition (caused the "removed widget takes over another widget's slot"
+        // bug). Matches the cleanup order used by removeFromStack().
+        removeWidgetView(appWidgetId)
     }
 
     /**
