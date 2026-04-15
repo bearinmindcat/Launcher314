@@ -565,7 +565,15 @@ fun LauncherWithDrawer(
 
                     detectVerticalDragGestures(
                         onDragStart = {
-                            gestureOwnedByLayer1 = swipeUpY.value > screenHeight * 0.9f && !isFolderOpen
+                            // FIX: Skip ownership when a widget is currently being touched.
+                            // Compose detectVerticalDragGestures can exceed its touchSlop on
+                            // a single fast MotionEvent and claim the gesture before the
+                            // widget's MOVE handler blocks the parent. The shared flag is
+                            // set on widget DOWN so we bail out here regardless of timing.
+                            val widgetTouched = com.bearinmind.launcher314.ui.widgets.WidgetTouchState.isWidgetTouchActive
+                            gestureOwnedByLayer1 = swipeUpY.value > screenHeight * 0.9f &&
+                                !isFolderOpen &&
+                                !widgetTouched
                             isSwipeDown = false
                             totalDragAmount = 0f
                         },

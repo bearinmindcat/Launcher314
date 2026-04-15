@@ -16,6 +16,18 @@ import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import kotlin.math.abs
 
 /**
+ * Shared state: true whenever the user is actively touching a widget.
+ * LauncherWithDrawer's full-screen vertical-drag detector reads this and
+ * skips ownership when a widget is being touched — so fast vertical swipes
+ * on widgets beat the drawer/notifications gesture even when the drawer's
+ * touchSlop would otherwise claim them on the first MotionEvent.
+ */
+object WidgetTouchState {
+    @Volatile
+    var isWidgetTouchActive: Boolean = false
+}
+
+/**
  * Custom AppWidgetHostView that handles touch events for the launcher.
  * Based on Fossify Launcher's MyAppWidgetHostView implementation.
  *
@@ -81,6 +93,14 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
     /** Set to true to ignore all touch events (e.g., during resize) */
     var ignoreTouches = false
 
+    /**
+     * True when this widget is part of a widget stack (wrapped by HorizontalPager).
+     * When true we DON'T block parent on DOWN so the Compose HorizontalPager can see
+     * the DOWN event and track horizontal swipes. When false (single widget) we can
+     * safely block on DOWN for rock-solid vertical-scroll protection.
+     */
+    var isInStack: Boolean = false
+
     /** Callback when long-press is detected. Passes raw screen coordinates. */
     var longPressListener: ((x: Float, y: Float) -> Unit)? = null
 
@@ -119,11 +139,19 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                // Immediately tell parent not to intercept — prevents drawer from
-                // stealing initial touch events during fast widget scrolling.
-                // If long-press is confirmed, we intercept ourselves.
-                parent?.requestDisallowInterceptTouchEvent(true)
-                // Start long-press detection
+                // FIX: Set the shared widget-touch flag so LauncherWithDrawer's drawer
+                // gesture detector skips ownership. This is the primary defense against
+                // fast vertical swipes being stolen by drawer/notifications, since the
+                // Compose drawer detector can claim on a single large MotionEvent before
+                // our own MOVE handler has a chance to block.
+                WidgetTouchState.isWidgetTouchActive = true
+                // FIX: For single widgets, block parent on DOWN — rock-solid protection
+                // against ancestor gestures stealing the widget's own scroll (e.g. calendar).
+                // For stack widgets, DON'T block — the parent HorizontalPager needs to
+                // see the DOWN event to track horizontal swipes between widgets.
+                if (!isInStack) {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
                 longPressHandler.postDelayed(
                     longPressRunnable,
                     ViewConfiguration.getLongPressTimeout().toLong()
@@ -139,19 +167,28 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                 currentCoords.x = event.rawX
                 currentCoords.y = event.rawY
 
-                // If finger moved beyond threshold, cancel long-press
-                if (abs(actionDownCoords.x - currentCoords.x) > moveGestureThreshold ||
-                    abs(actionDownCoords.y - currentCoords.y) > moveGestureThreshold) {
-                    resetTouches()
-                    // Don't intercept — let child widget handle scrolling
-                    // Also tell parent not to intercept so drawer doesn't open
+                val dx = abs(actionDownCoords.x - currentCoords.x)
+                val dy = abs(actionDownCoords.y - currentCoords.y)
+
+                // FIX: For stack widgets, block parent once any vertical motion is present
+                // UNLESS motion is strongly horizontal (dx > dy * 1.5). Relaxed from strict
+                // "dy > dx" so that slightly-diagonal vertical swipes (common for scroll)
+                // still trigger the block — previously required surgical precision.
+                // Strong horizontal motion still passes through so the stack pager works.
+                if (isInStack && dy > 2f && dx < dy * 1.5f) {
                     parent?.requestDisallowInterceptTouchEvent(true)
+                }
+
+                // If finger moved beyond threshold, cancel long-press
+                if (dx > moveGestureThreshold || dy > moveGestureThreshold) {
+                    resetTouches()
                     return false
                 }
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 resetTouches()
+                WidgetTouchState.isWidgetTouchActive = false
             }
         }
 

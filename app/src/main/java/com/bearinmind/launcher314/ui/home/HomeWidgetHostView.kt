@@ -30,6 +30,7 @@ fun WidgetHostView(
     modifier: Modifier = Modifier,
     cornerRadiusDp: Float = 12f,
     viewRefreshKey: Int = 0,
+    isInStack: Boolean = false,
     onLongPress: () -> Unit = {},
     onRemove: () -> Unit = {}
 ) {
@@ -82,6 +83,7 @@ fun WidgetHostView(
                             // Remove from parent if already attached
                             (widgetView.parent as? ViewGroup)?.removeView(widgetView)
                             widgetView.apply {
+                                this.isInStack = isInStack
                                 longPressListener = { _, _ ->
                                     onLongPress()
                                 }
@@ -96,6 +98,7 @@ fun WidgetHostView(
                     modifier = Modifier.fillMaxSize(),
                     update = { _ ->
                         try {
+                            widgetView.isInStack = isInStack
                             widgetView.longPressListener = { _, _ ->
                                 onLongPress()
                             }

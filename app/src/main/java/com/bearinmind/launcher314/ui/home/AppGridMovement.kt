@@ -92,21 +92,45 @@ import androidx.compose.ui.unit.TextUnit
  * DraggableGridCell - A single cell in the home screen grid
  * Supports tap, long-press context menu, and drag-and-drop
  */
-/** Resolve the shaped icon path for a mini icon inside a folder preview. */
+/** Resolve the shaped icon path for a mini icon inside a folder preview.
+ *  Respects per-app customizations (custom icon, shape, bg tint) — same priority as grid cells. */
 internal fun resolveMiniIconPath(
     context: android.content.Context,
     packageName: String,
     fallbackPath: String,
     globalIconShape: String?,
     globalIconBgColor: Int?,
-    globalIconBgIntensity: Int
+    globalIconBgIntensity: Int,
+    customization: com.bearinmind.launcher314.data.AppCustomization? = null
 ): String {
-    if (globalIconShape == null) return fallbackPath
+    // Per-app custom icon takes highest priority
+    if (customization?.customIconPath != null && java.io.File(customization.customIconPath).exists()) {
+        return customization.customIconPath
+    }
+    // Per-app shape override
+    val perAppShape = customization?.iconShapeExp ?: customization?.iconShape
+    val effectiveShape = perAppShape ?: globalIconShape
+    // Per-app bg-only tint
+    val hasBgTint = customization?.iconTintBackgroundOnly == true && customization.iconTintColor != null
+    if (hasBgTint && effectiveShape != null) {
+        val tintColor = customization!!.iconTintColor!!.toInt()
+        val tintAlpha = (customization.iconTintIntensity ?: 100) / 100f
+        return try {
+            generateShapedBgTintedIcon(context, packageName, effectiveShape, tintColor, tintAlpha)
+        } catch (_: Exception) { fallbackPath }
+    }
+    if (effectiveShape == null) return fallbackPath
     return try {
         if (globalIconBgColor != null) {
-            getOrGenerateBgColorShapedIcon(context, packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+            getOrGenerateBgColorShapedIcon(context, packageName, effectiveShape, globalIconBgColor, globalIconBgIntensity)
+        } else if (perAppShape != null) {
+            // Per-app shape without global bg color — use exp shaped icon
+            java.io.File(getShapedExpDir(context), "$packageName.png").let {
+                if (it.exists()) it.absolutePath
+                else getOrGenerateGlobalShapedIcon(context, packageName, effectiveShape)
+            }
         } else {
-            getOrGenerateGlobalShapedIcon(context, packageName, globalIconShape)
+            getOrGenerateGlobalShapedIcon(context, packageName, effectiveShape)
         }
     } catch (_: Exception) { fallbackPath }
 }
@@ -1181,7 +1205,7 @@ fun DraggableGridCell(
                                     val padding = contentSize * 0.12f
                                     val spacing = contentSize * 0.05f
                                     val miniIconSize = (contentSize - padding * 2 - spacing) / 2
-                                    val miniClip = if (globalIconShape != null) getIconShape(globalIconShape) ?: RoundedCornerShape(miniIconSize * 0.2f) else RoundedCornerShape(miniIconSize * 0.2f)
+                                    val defaultMiniClip = if (globalIconShape != null) getIconShape(globalIconShape) ?: RoundedCornerShape(miniIconSize * 0.2f) else RoundedCornerShape(miniIconSize * 0.2f)
 
                                     Column(
                                         modifier = Modifier.padding(padding),
@@ -1190,17 +1214,22 @@ fun DraggableGridCell(
                                         Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                                             // Slot 0
                                             cell.previewApps.getOrNull(0)?.let { app ->
-                                                val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                                    resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                                val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                                    resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                                 }
+                                                val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                                val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                                    val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                                    ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                                } else null
                                                 AsyncImage(
                                                     model = File(p),
                                                     contentDescription = null,
                                                     contentScale = ContentScale.Fit,
-                                                    colorFilter = folderInvalidTint,
+                                                    colorFilter = folderInvalidTint ?: perAppTint,
                                                     modifier = Modifier
                                                         .size(miniIconSize)
-                                                        .clip(miniClip)
+                                                        .clip(perAppClip)
                                                 )
                                             } ?: if (addSlotIndex == 0 && folderAddProgress > 0f && effectiveFolderDraggedIconPath != null) {
                                                 AsyncImage(
@@ -1209,7 +1238,7 @@ fun DraggableGridCell(
                                                     contentScale = ContentScale.Fit,
                                                     modifier = Modifier
                                                         .size(miniIconSize)
-                                                        .clip(miniClip)
+                                                        .clip(defaultMiniClip)
                                                         .graphicsLayer { alpha = folderAddProgress }
                                                 )
                                             } else {
@@ -1217,17 +1246,22 @@ fun DraggableGridCell(
                                             }
                                             // Slot 1
                                             cell.previewApps.getOrNull(1)?.let { app ->
-                                                val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                                    resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                                val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                                    resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                                 }
+                                                val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                                val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                                    val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                                    ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                                } else null
                                                 AsyncImage(
                                                     model = File(p),
                                                     contentDescription = null,
                                                     contentScale = ContentScale.Fit,
-                                                    colorFilter = folderInvalidTint,
+                                                    colorFilter = folderInvalidTint ?: perAppTint,
                                                     modifier = Modifier
                                                         .size(miniIconSize)
-                                                        .clip(miniClip)
+                                                        .clip(perAppClip)
                                                 )
                                             } ?: if (addSlotIndex == 1 && folderAddProgress > 0f && effectiveFolderDraggedIconPath != null) {
                                                 AsyncImage(
@@ -1236,7 +1270,7 @@ fun DraggableGridCell(
                                                     contentScale = ContentScale.Fit,
                                                     modifier = Modifier
                                                         .size(miniIconSize)
-                                                        .clip(miniClip)
+                                                        .clip(defaultMiniClip)
                                                         .graphicsLayer { alpha = folderAddProgress }
                                                 )
                                             } else {
@@ -1246,17 +1280,22 @@ fun DraggableGridCell(
                                         Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                                             // Slot 2
                                             cell.previewApps.getOrNull(2)?.let { app ->
-                                                val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                                    resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                                val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                                    resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                                 }
+                                                val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                                val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                                    val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                                    ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                                } else null
                                                 AsyncImage(
                                                     model = File(p),
                                                     contentDescription = null,
                                                     contentScale = ContentScale.Fit,
-                                                    colorFilter = folderInvalidTint,
+                                                    colorFilter = folderInvalidTint ?: perAppTint,
                                                     modifier = Modifier
                                                         .size(miniIconSize)
-                                                        .clip(miniClip)
+                                                        .clip(perAppClip)
                                                 )
                                             } ?: if (addSlotIndex == 2 && folderAddProgress > 0f && effectiveFolderDraggedIconPath != null) {
                                                 AsyncImage(
@@ -1265,7 +1304,7 @@ fun DraggableGridCell(
                                                     contentScale = ContentScale.Fit,
                                                     modifier = Modifier
                                                         .size(miniIconSize)
-                                                        .clip(miniClip)
+                                                        .clip(defaultMiniClip)
                                                         .graphicsLayer { alpha = folderAddProgress }
                                                 )
                                             } else {
@@ -1276,9 +1315,10 @@ fun DraggableGridCell(
                                                 // Crossfade: existing app fades out, dragged app fades in
                                                 Box(modifier = Modifier.size(miniIconSize)) {
                                                     cell.previewApps.getOrNull(3)?.let { app ->
-                                                        val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                                            resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                                        val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                                            resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                                         }
+                                                        val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
                                                         AsyncImage(
                                                             model = File(p),
                                                             contentDescription = null,
@@ -1286,7 +1326,7 @@ fun DraggableGridCell(
                                                             colorFilter = folderInvalidTint,
                                                             modifier = Modifier
                                                                 .size(miniIconSize)
-                                                                .clip(miniClip)
+                                                                .clip(perAppClip)
                                                                 .graphicsLayer { alpha = 1f - folderAddProgress }
                                                         )
                                                     }
@@ -1302,17 +1342,22 @@ fun DraggableGridCell(
                                                 }
                                             } else {
                                                 cell.previewApps.getOrNull(3)?.let { app ->
-                                                    val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                                        resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                                    val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                                        resolveMiniIconPath(cellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                                     }
+                                                    val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                                    val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                                        val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                                        ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                                    } else null
                                                     AsyncImage(
                                                         model = File(p),
                                                         contentDescription = null,
                                                         contentScale = ContentScale.Fit,
-                                                        colorFilter = folderInvalidTint,
+                                                        colorFilter = folderInvalidTint ?: perAppTint,
                                                         modifier = Modifier
                                                             .size(miniIconSize)
-                                                            .clip(miniClip)
+                                                            .clip(perAppClip)
                                                     )
                                                 } ?: if (addSlotIndex == 3 && folderAddProgress > 0f && effectiveFolderDraggedIconPath != null) {
                                                     AsyncImage(
@@ -1321,7 +1366,7 @@ fun DraggableGridCell(
                                                         contentScale = ContentScale.Fit,
                                                         modifier = Modifier
                                                             .size(miniIconSize)
-                                                            .clip(miniClip)
+                                                            .clip(defaultMiniClip)
                                                             .graphicsLayer { alpha = folderAddProgress }
                                                     )
                                                 } else {
@@ -1572,6 +1617,7 @@ fun DockSlot(
     globalIconBgIntensity: Int = 100,
     folderPreviewDraggedIconPath: String? = null, // When non-null, shows dragged app icon in folder add preview
     isReceivingDrop: Boolean = false, // When true, plays a pulse scale animation on the dock folder
+    folderCustomization: com.bearinmind.launcher314.data.AppCustomization? = null, // Per-folder customization (shape, border, label)
     onRenameDockFolder: (() -> Unit)? = null,
     homeFolders: List<com.bearinmind.launcher314.data.HomeFolder> = emptyList(),
     onAddToFolder: (com.bearinmind.launcher314.data.HomeFolder) -> Unit = {},
@@ -2043,7 +2089,14 @@ fun DockSlot(
                 )
                 val dockCombinedScale = dockFolderAcceptScale * dockReceiveScale
 
-                val effectiveFolderClip = getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)
+                // Per-folder shape override: folder customization > global shape > rounded corner
+                val effectiveDockFolderShapeName = folderCustomization?.iconShapeExp ?: globalIconShape
+                val effectiveFolderClip = getIconShape(effectiveDockFolderShapeName) ?: RoundedCornerShape(folderCornerRadius)
+
+                val dockFolderBorderColor = if (folderCustomization?.iconTintColor != null) {
+                    val intensity = (folderCustomization.iconTintIntensity ?: 100) / 100f
+                    Color(folderCustomization.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
+                } else com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current
 
                 Box(
                     modifier = Modifier
@@ -2069,88 +2122,108 @@ fun DockSlot(
                         val padding = folderBoxSize * 0.12f
                         val spacing = folderBoxSize * 0.05f
                         val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
-                        val miniClip = if (globalIconShape != null) getIconShape(globalIconShape) ?: RoundedCornerShape(miniIconSize * 0.2f) else RoundedCornerShape(miniIconSize * 0.2f)
+                        val defaultMiniClip = if (globalIconShape != null) getIconShape(globalIconShape) ?: RoundedCornerShape(miniIconSize * 0.2f) else RoundedCornerShape(miniIconSize * 0.2f)
                         Column(
                             modifier = Modifier.padding(padding),
                             verticalArrangement = Arrangement.spacedBy(spacing)
                         ) {
                             Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                                 folderPreviewApps.getOrNull(0)?.let { app ->
-                                    val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                        resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                    val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                        resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                     }
+                                    val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                    val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                        val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                        ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                    } else null
                                     AsyncImage(
                                         model = File(p),
                                         contentDescription = null,
                                         contentScale = ContentScale.Fit,
-                                        colorFilter = folderInvalidTint,
-                                        modifier = Modifier.size(miniIconSize).clip(miniClip)
+                                        colorFilter = folderInvalidTint ?: perAppTint,
+                                        modifier = Modifier.size(miniIconSize).clip(perAppClip)
                                     )
                                 } ?: if (nextEmptySlot == 0 && dockFolderAddProgress > 0f && folderPreviewDraggedIconPath != null) {
                                     AsyncImage(
                                         model = File(folderPreviewDraggedIconPath),
                                         contentDescription = null,
                                         contentScale = ContentScale.Fit,
-                                        modifier = Modifier.size(miniIconSize).clip(miniClip).graphicsLayer { alpha = dockFolderAddProgress }
+                                        modifier = Modifier.size(miniIconSize).clip(defaultMiniClip).graphicsLayer { alpha = dockFolderAddProgress }
                                     )
                                 } else Spacer(modifier = Modifier.size(miniIconSize))
                                 folderPreviewApps.getOrNull(1)?.let { app ->
-                                    val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                        resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                    val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                        resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                     }
+                                    val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                    val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                        val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                        ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                    } else null
                                     AsyncImage(
                                         model = File(p),
                                         contentDescription = null,
                                         contentScale = ContentScale.Fit,
-                                        colorFilter = folderInvalidTint,
-                                        modifier = Modifier.size(miniIconSize).clip(miniClip)
+                                        colorFilter = folderInvalidTint ?: perAppTint,
+                                        modifier = Modifier.size(miniIconSize).clip(perAppClip)
                                     )
                                 } ?: if (nextEmptySlot == 1 && dockFolderAddProgress > 0f && folderPreviewDraggedIconPath != null) {
                                     AsyncImage(
                                         model = File(folderPreviewDraggedIconPath),
                                         contentDescription = null,
                                         contentScale = ContentScale.Fit,
-                                        modifier = Modifier.size(miniIconSize).clip(miniClip).graphicsLayer { alpha = dockFolderAddProgress }
+                                        modifier = Modifier.size(miniIconSize).clip(defaultMiniClip).graphicsLayer { alpha = dockFolderAddProgress }
                                     )
                                 } else Spacer(modifier = Modifier.size(miniIconSize))
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                                 folderPreviewApps.getOrNull(2)?.let { app ->
-                                    val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                        resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                    val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                        resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                     }
+                                    val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                    val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                        val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                        ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                    } else null
                                     AsyncImage(
                                         model = File(p),
                                         contentDescription = null,
                                         contentScale = ContentScale.Fit,
-                                        colorFilter = folderInvalidTint,
-                                        modifier = Modifier.size(miniIconSize).clip(miniClip)
+                                        colorFilter = folderInvalidTint ?: perAppTint,
+                                        modifier = Modifier.size(miniIconSize).clip(perAppClip)
                                     )
                                 } ?: if (nextEmptySlot == 2 && dockFolderAddProgress > 0f && folderPreviewDraggedIconPath != null) {
                                     AsyncImage(
                                         model = File(folderPreviewDraggedIconPath),
                                         contentDescription = null,
                                         contentScale = ContentScale.Fit,
-                                        modifier = Modifier.size(miniIconSize).clip(miniClip).graphicsLayer { alpha = dockFolderAddProgress }
+                                        modifier = Modifier.size(miniIconSize).clip(defaultMiniClip).graphicsLayer { alpha = dockFolderAddProgress }
                                     )
                                 } else Spacer(modifier = Modifier.size(miniIconSize))
                                 folderPreviewApps.getOrNull(3)?.let { app ->
-                                    val p = remember(app.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
-                                        resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity)
+                                    val p = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                        resolveMiniIconPath(dockCellContext, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
                                     }
+                                    val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                    val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                        val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                        ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                    } else null
                                     AsyncImage(
                                         model = File(p),
                                         contentDescription = null,
                                         contentScale = ContentScale.Fit,
-                                        colorFilter = folderInvalidTint,
-                                        modifier = Modifier.size(miniIconSize).clip(miniClip)
+                                        colorFilter = folderInvalidTint ?: perAppTint,
+                                        modifier = Modifier.size(miniIconSize).clip(perAppClip)
                                     )
                                 } ?: if (nextEmptySlot == 3 && dockFolderAddProgress > 0f && folderPreviewDraggedIconPath != null) {
                                     AsyncImage(
                                         model = File(folderPreviewDraggedIconPath),
                                         contentDescription = null,
                                         contentScale = ContentScale.Fit,
-                                        modifier = Modifier.size(miniIconSize).clip(miniClip).graphicsLayer { alpha = dockFolderAddProgress }
+                                        modifier = Modifier.size(miniIconSize).clip(defaultMiniClip).graphicsLayer { alpha = dockFolderAddProgress }
                                     )
                                 } else Spacer(modifier = Modifier.size(miniIconSize))
                             }
@@ -2168,7 +2241,7 @@ fun DockSlot(
                     }
                 } // end clipped content Box
                 // Border overlay on top
-                Box(modifier = Modifier.matchParentSize().border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, effectiveFolderClip))
+                Box(modifier = Modifier.matchParentSize().border(1.dp, dockFolderBorderColor, effectiveFolderClip))
                 } // end outer scale Box
             }
 

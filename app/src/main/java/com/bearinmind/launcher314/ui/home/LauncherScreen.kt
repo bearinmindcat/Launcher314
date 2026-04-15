@@ -376,6 +376,125 @@ private fun OverlayAppContent(
     }
 }
 
+/** Folder drag overlay — renders the 2x2 mini icon preview with per-app and per-folder customizations. */
+@Composable
+private fun OverlayFolderContent(
+    context: android.content.Context,
+    folderData: HomeFolder,
+    folderCust: AppCustomization?,
+    previewApps: List<HomeAppInfo>,
+    iconSizeDp: Int,
+    gridIconTextSpacer: Dp,
+    gridAppNameFont: TextUnit,
+    selectedFontFamily: FontFamily?,
+    textAlpha: Float,
+    globalIconShape: String?,
+    globalIconBgColor: Int?,
+    globalIconBgIntensity: Int,
+    isInvalid: Boolean,
+    showLabel: Boolean
+) {
+    val folderName = folderCust?.customLabel ?: folderData.name
+    val folderOverlayTint = if (isInvalid) {
+        ColorFilter.tint(Color(0xFFFF6B6B).copy(alpha = 0.6f), BlendMode.SrcAtop)
+    } else null
+    Column(
+        modifier = Modifier
+            .wrapContentHeight(unbounded = true)
+            .graphicsLayer { clip = false },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val folderBoxSize = iconSizeDp.dp
+        val folderCornerRadius = (iconSizeDp * 0.29f).dp
+        val folderBoxBg = if (isInvalid) Color(0xFF4A1A1A) else Color(0xFF1A1A1A)
+        val folderShape = getIconShape(folderCust?.iconShapeExp ?: globalIconShape) ?: RoundedCornerShape(folderCornerRadius)
+        val folderBorderColor = if (folderCust?.iconTintColor != null) {
+            val intensity = (folderCust.iconTintIntensity ?: 100) / 100f
+            Color(folderCust.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
+        } else com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current
+        Box(modifier = Modifier.size(folderBoxSize), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.matchParentSize().background(folderBoxBg, folderShape))
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(1.dp)
+                    .graphicsLayer { clip = true; shape = folderShape },
+                contentAlignment = Alignment.Center
+            ) {
+                if (previewApps.isNotEmpty()) {
+                    val padding = folderBoxSize * 0.08f
+                    val spacing = folderBoxSize * 0.04f
+                    val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
+                    val defaultMiniClip = if (globalIconShape != null) getIconShape(globalIconShape) ?: RoundedCornerShape(miniIconSize * 0.2f) else RoundedCornerShape(miniIconSize * 0.2f)
+                    Column(
+                        modifier = Modifier.padding(padding),
+                        verticalArrangement = Arrangement.spacedBy(spacing)
+                    ) {
+                        for (row in 0..1) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                                for (col in 0..1) {
+                                    val slotIdx = row * 2 + col
+                                    previewApps.getOrNull(slotIdx)?.let { app ->
+                                        val miniPath = remember(app.packageName, app.customization, globalIconShape, globalIconBgColor, globalIconBgIntensity) {
+                                            resolveMiniIconPath(context, app.packageName, app.iconPath, globalIconShape, globalIconBgColor, globalIconBgIntensity, app.customization)
+                                        }
+                                        val perAppClip = app.customization?.let { c -> getIconShape(c.iconShapeExp ?: c.iconShape) } ?: defaultMiniClip
+                                        val perAppTint = if (app.customization?.iconTintBackgroundOnly != true) app.customization?.iconTintColor?.let { tc ->
+                                            val i = (app.customization.iconTintIntensity ?: 100) / 100f
+                                            ColorFilter.tint(Color(tc.toInt()).copy(alpha = i), parseBlendMode(app.customization.iconTintBlendMode))
+                                        } else null
+                                        AsyncImage(
+                                            model = File(miniPath),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Fit,
+                                            colorFilter = folderOverlayTint ?: perAppTint,
+                                            modifier = Modifier.size(miniIconSize).clip(perAppClip)
+                                        )
+                                    } ?: Spacer(modifier = Modifier.size(miniIconSize))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Box(modifier = Modifier.matchParentSize().border(1.dp, folderBorderColor, folderShape))
+        }
+        val folderHideLabel = folderCust?.hideLabel ?: false
+        if (!folderHideLabel && showLabel) {
+            Spacer(modifier = Modifier.height(gridIconTextSpacer))
+            val folderLabelColor = if (isInvalid) Color(0xFFFF6B6B)
+                else if (folderCust?.labelColor != null) {
+                    val li = (folderCust.labelColorIntensity ?: 100) / 100f
+                    Color(folderCust.labelColor).copy(alpha = li.coerceIn(0f, 1f))
+                } else Color.White
+            val folderFontSize = folderCust?.iconTextSizePercent?.let { gridAppNameFont * it / 100f } ?: gridAppNameFont
+            val folderFontFamily = folderCust?.labelFontId?.let { id ->
+                FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                    ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+            } ?: selectedFontFamily ?: FontFamily.Default
+            Text(
+                text = folderName,
+                fontSize = folderFontSize,
+                fontFamily = folderFontFamily,
+                color = folderLabelColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = textAlpha },
+                style = MaterialTheme.typography.bodySmall.copy(
+                    shadow = androidx.compose.ui.graphics.Shadow(
+                        color = Color.Black,
+                        offset = Offset(1f, 1f),
+                        blurRadius = 3f
+                    )
+                )
+            )
+        }
+    }
+}
+
 /**
  * LauncherScreen - A home screen with drag and drop app placement
  */
@@ -765,8 +884,12 @@ fun LauncherScreen(
             if (folder.position < totalCells) {
                 val currentCell = cells[folder.position]
                 if (currentCell is HomeGridCell.Empty) {
+                    // Apply per-app customizations so folder mini icons show custom icons/shapes/tints
                     val previewApps = folder.appPackageNames.filter { it.isNotEmpty() && it !in hiddenApps }.take(4).mapNotNull { pkg ->
-                        allAvailableApps.find { it.packageName == pkg }
+                        allAvailableApps.find { it.packageName == pkg }?.let { info ->
+                            val cust = appCustomizations.customizations[pkg]
+                            if (cust != null) info.copy(customization = cust) else info
+                        }
                     }
                     cells[folder.position] = HomeGridCell.Folder(folder, previewApps, folder.position)
                 }
@@ -2993,6 +3116,7 @@ fun LauncherScreen(
                                                                 modifier = Modifier.fillMaxSize(),
                                                                 cornerRadiusDp = effectiveCornerRadiusDp,
                                                                 viewRefreshKey = widgetViewRefreshKeys[stackWidgets[stackPage].appWidgetId] ?: 0,
+                                                                isInStack = true,
                                                                 onLongPress = {},
                                                                 onRemove = {
                                                                     WidgetManager.removePlacedWidget(context, stackWidgets[stackPage].appWidgetId)
@@ -3447,8 +3571,12 @@ fun LauncherScreen(
                         }
                     }
                     val dockFolder = dockFolders.find { it.position == slot }
+                    // Apply per-app customizations so dock folder mini icons show custom icons/shapes/tints
                     val dockFolderPreviewApps = dockFolder?.appPackageNames?.filter { it.isNotEmpty() && it !in hiddenApps }?.take(4)?.mapNotNull { pkg ->
-                        allAvailableApps.find { it.packageName == pkg }
+                        allAvailableApps.find { it.packageName == pkg }?.let { info ->
+                            val cust = appCustomizations.customizations[pkg]
+                            if (cust != null) info.copy(customization = cust) else info
+                        }
                     } ?: emptyList()
                     val slotOccupied = appInfo != null || dockFolder != null
                     val isDockSlotDragging = draggedFromDock && draggedItemIndex == slot
@@ -3518,6 +3646,7 @@ fun LauncherScreen(
                                 draggedFolderData == null && (draggedItemIndex != null || externalDragActive || dragFromFolderApp != null)
                             ) draggedAppInfo?.iconPath else null,
                             isReceivingDrop = folderReceiveDockSlot == slot,
+                            folderCustomization = dockFolder?.let { appCustomizations.customizations["folder_${it.id}"] },
                             // Proportional sizing
                             markerHalfSizeParam = dockMarkerHalfSize,
                             hoverCornerRadius = dockHoverCornerRadius,
@@ -4064,108 +4193,27 @@ fun LauncherScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         if (draggedFolderData != null) {
-                            // ---- Folder drag overlay: 2x2 preview grid ----
-                            val folderName = draggedFolderData!!.name
-                            // Red tint when hovering over an invalid target
                             val folderOverlayInvalid = when {
                                 hoveredDockSlot != null -> !isHoveredDockSlotValid
                                 hoveredGridCell != null -> !isHoveredCellValid
                                 else -> false
                             }
-                            val folderOverlayTint = if (folderOverlayInvalid) {
-                                ColorFilter.tint(Color(0xFFFF6B6B).copy(alpha = 0.6f), BlendMode.SrcAtop)
-                            } else null
-                            Column(
-                                modifier = Modifier
-                                    .wrapContentHeight(unbounded = true)
-                                    .graphicsLayer { clip = false },
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                val folderBoxSize = iconSizeDp.dp
-                                val folderCornerRadius = (iconSizeDp * 0.29f).dp
-                                val folderBoxBg = if (folderOverlayInvalid) Color(0xFF4A1A1A) else Color(0xFF1A1A1A)
-                                Box(
-                                    modifier = Modifier
-                                        .size(folderBoxSize)
-                                        .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
-                                        .background(folderBoxBg),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (draggedFolderPreviewApps.isNotEmpty()) {
-                                        val padding = folderBoxSize * 0.08f
-                                        val spacing = folderBoxSize * 0.04f
-                                        val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
-                                        Column(
-                                            modifier = Modifier.padding(padding),
-                                            verticalArrangement = Arrangement.spacedBy(spacing)
-                                        ) {
-                                            Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                                                draggedFolderPreviewApps.getOrNull(0)?.let { app ->
-                                                    AsyncImage(
-                                                        model = File(app.iconPath),
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Fit,
-                                                        colorFilter = folderOverlayTint,
-                                                        modifier = Modifier.size(miniIconSize).clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                                    )
-                                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                                draggedFolderPreviewApps.getOrNull(1)?.let { app ->
-                                                    AsyncImage(
-                                                        model = File(app.iconPath),
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Fit,
-                                                        colorFilter = folderOverlayTint,
-                                                        modifier = Modifier.size(miniIconSize).clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                                    )
-                                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                            }
-                                            Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                                                draggedFolderPreviewApps.getOrNull(2)?.let { app ->
-                                                    AsyncImage(
-                                                        model = File(app.iconPath),
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Fit,
-                                                        colorFilter = folderOverlayTint,
-                                                        modifier = Modifier.size(miniIconSize).clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                                    )
-                                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                                draggedFolderPreviewApps.getOrNull(3)?.let { app ->
-                                                    AsyncImage(
-                                                        model = File(app.iconPath),
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Fit,
-                                                        colorFilter = folderOverlayTint,
-                                                        modifier = Modifier.size(miniIconSize).clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                                    )
-                                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                            }
-                                        }
-                                    }
-                                }
-                                // Only show folder name text during drop animation (same as app text behavior)
-                                if (!isDropAnimating || !dropTargetIsDock) {
-                                    Spacer(modifier = Modifier.height(gridIconTextSpacer))
-                                    Text(
-                                        text = folderName,
-                                        fontSize = gridAppNameFont,
-                                        fontFamily = selectedFontFamily ?: FontFamily.Default,
-                                        color = if (folderOverlayInvalid) Color(0xFFFF6B6B) else Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .graphicsLayer { alpha = textAlpha },
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            shadow = androidx.compose.ui.graphics.Shadow(
-                                                color = Color.Black,
-                                                offset = Offset(1f, 1f),
-                                                blurRadius = 3f
-                                            )
-                                        )
-                                    )
-                                }
-                            }
+                            OverlayFolderContent(
+                                context = context,
+                                folderData = draggedFolderData!!,
+                                folderCust = appCustomizations.customizations["folder_${draggedFolderData!!.id}"],
+                                previewApps = draggedFolderPreviewApps,
+                                iconSizeDp = iconSizeDp,
+                                gridIconTextSpacer = gridIconTextSpacer,
+                                gridAppNameFont = gridAppNameFont,
+                                selectedFontFamily = selectedFontFamily,
+                                textAlpha = textAlpha,
+                                globalIconShape = globalIconShape,
+                                globalIconBgColor = globalIconBgColor,
+                                globalIconBgIntensity = globalIconBgIntensity,
+                                isInvalid = folderOverlayInvalid,
+                                showLabel = !isDropAnimating || !dropTargetIsDock
+                            )
                         } else if (appInfo != null) {
                             // ---- Normal app drag overlay ----
                             OverlayAppContent(context, appInfo, iconSizeDp, iconSizePercent, gridIconTextSpacer, gridAppNameFont, selectedFontFamily, textAlpha, globalIconShape, showLabel = !isDropAnimating || !dropTargetIsDock, globalIconBgColor = globalIconBgColor)
@@ -4235,106 +4283,27 @@ fun LauncherScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         if (draggedFolderData != null) {
-                            // ---- Dock folder drag overlay: 2x2 preview grid ----
-                            val folderName = draggedFolderData!!.name
                             val folderOverlayInvalid = when {
                                 hoveredDockSlot != null -> !isHoveredDockSlotValid
                                 hoveredGridCell != null -> !isHoveredCellValid
                                 else -> false
                             }
-                            val folderOverlayTint = if (folderOverlayInvalid) {
-                                ColorFilter.tint(Color(0xFFFF6B6B).copy(alpha = 0.6f), BlendMode.SrcAtop)
-                            } else null
-                            Column(
-                                modifier = Modifier
-                                    .wrapContentHeight(unbounded = true)
-                                    .graphicsLayer { clip = false },
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                val folderBoxSize = iconSizeDp.dp
-                                val folderCornerRadius = (iconSizeDp * 0.29f).dp
-                                val folderBoxBg = if (folderOverlayInvalid) Color(0xFF4A1A1A) else Color(0xFF1A1A1A)
-                                Box(
-                                    modifier = Modifier
-                                        .size(folderBoxSize)
-                                        .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
-                                        .background(folderBoxBg),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (draggedFolderPreviewApps.isNotEmpty()) {
-                                        val padding = folderBoxSize * 0.08f
-                                        val spacing = folderBoxSize * 0.04f
-                                        val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
-                                        Column(
-                                            modifier = Modifier.padding(padding),
-                                            verticalArrangement = Arrangement.spacedBy(spacing)
-                                        ) {
-                                            Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                                                draggedFolderPreviewApps.getOrNull(0)?.let { app ->
-                                                    AsyncImage(
-                                                        model = File(app.iconPath),
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Fit,
-                                                        colorFilter = folderOverlayTint,
-                                                        modifier = Modifier.size(miniIconSize).clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                                    )
-                                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                                draggedFolderPreviewApps.getOrNull(1)?.let { app ->
-                                                    AsyncImage(
-                                                        model = File(app.iconPath),
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Fit,
-                                                        colorFilter = folderOverlayTint,
-                                                        modifier = Modifier.size(miniIconSize).clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                                    )
-                                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                            }
-                                            Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                                                draggedFolderPreviewApps.getOrNull(2)?.let { app ->
-                                                    AsyncImage(
-                                                        model = File(app.iconPath),
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Fit,
-                                                        colorFilter = folderOverlayTint,
-                                                        modifier = Modifier.size(miniIconSize).clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                                    )
-                                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                                draggedFolderPreviewApps.getOrNull(3)?.let { app ->
-                                                    AsyncImage(
-                                                        model = File(app.iconPath),
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Fit,
-                                                        colorFilter = folderOverlayTint,
-                                                        modifier = Modifier.size(miniIconSize).clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                                    )
-                                                } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                            }
-                                        }
-                                    }
-                                }
-                                if (!isDropAnimating || !dropTargetIsDock) {
-                                    Spacer(modifier = Modifier.height(gridIconTextSpacer))
-                                    Text(
-                                        text = folderName,
-                                        fontSize = gridAppNameFont,
-                                        fontFamily = selectedFontFamily ?: FontFamily.Default,
-                                        color = if (folderOverlayInvalid) Color(0xFFFF6B6B) else Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .graphicsLayer { alpha = textAlpha },
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            shadow = androidx.compose.ui.graphics.Shadow(
-                                                color = Color.Black,
-                                                offset = Offset(1f, 1f),
-                                                blurRadius = 3f
-                                            )
-                                        )
-                                    )
-                                }
-                            }
+                            OverlayFolderContent(
+                                context = context,
+                                folderData = draggedFolderData!!,
+                                folderCust = appCustomizations.customizations["folder_${draggedFolderData!!.id}"],
+                                previewApps = draggedFolderPreviewApps,
+                                iconSizeDp = iconSizeDp,
+                                gridIconTextSpacer = gridIconTextSpacer,
+                                gridAppNameFont = gridAppNameFont,
+                                selectedFontFamily = selectedFontFamily,
+                                textAlpha = textAlpha,
+                                globalIconShape = globalIconShape,
+                                globalIconBgColor = globalIconBgColor,
+                                globalIconBgIntensity = globalIconBgIntensity,
+                                isInvalid = folderOverlayInvalid,
+                                showLabel = !isDropAnimating || !dropTargetIsDock
+                            )
                         } else if (appInfo != null) {
                             // ---- Normal dock app drag overlay ----
                             OverlayAppContent(context, appInfo, iconSizeDp, iconSizePercent, gridIconTextSpacer, gridAppNameFont, selectedFontFamily, textAlpha, globalIconShape, showLabel = !isDropAnimating || !dropTargetIsDock, globalIconBgColor = globalIconBgColor)
