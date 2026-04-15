@@ -9,7 +9,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.verticalDrag
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -559,46 +561,71 @@ fun LauncherWithDrawer(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(swipeDownEnabled) {
-                    var gestureOwnedByLayer1 = false
-                    var isSwipeDown = false
-                    var totalDragAmount = 0f
+                    // FIX: Custom gesture handler replacing detectVerticalDragGestures.
+                    // The built-in detector consumes events during its verticalDrag loop
+                    // even when we return early from onVerticalDrag, which stole events
+                    // from widgets underneath and caused stuttery vertical scrolling on
+                    // calendar widgets etc. Bailing at DOWN before any slop tracking or
+                    // consumption lets the widget receive a clean, uninterrupted event
+                    // stream.
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
 
-                    detectVerticalDragGestures(
-                        onDragStart = {
-                            // FIX: Skip ownership when a widget is currently being touched.
-                            // Compose detectVerticalDragGestures can exceed its touchSlop on
-                            // a single fast MotionEvent and claim the gesture before the
-                            // widget's MOVE handler blocks the parent. The shared flag is
-                            // set on widget DOWN so we bail out here regardless of timing.
-                            val widgetTouched = com.bearinmind.launcher314.ui.widgets.WidgetTouchState.isWidgetTouchActive
-                            gestureOwnedByLayer1 = swipeUpY.value > screenHeight * 0.9f &&
-                                !isFolderOpen &&
-                                !widgetTouched
-                            isSwipeDown = false
-                            totalDragAmount = 0f
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            if (!gestureOwnedByLayer1) return@detectVerticalDragGestures
-                            totalDragAmount += dragAmount
+                        // Bail early if a widget is being touched — never run any slop
+                        // tracking or consume any events. Just wait for the pointer to
+                        // be released so the gesture scope ends cleanly.
+                        if (com.bearinmind.launcher314.ui.widgets.WidgetTouchState.isWidgetTouchActive) {
+                            do {
+                                val e = awaitPointerEvent()
+                                if (e.changes.all { !it.pressed }) break
+                            } while (true)
+                            return@awaitEachGesture
+                        }
 
+                        // Bail if drawer already visible or a folder is open.
+                        if (swipeUpY.value <= screenHeight * 0.9f || isFolderOpen) {
+                            do {
+                                val e = awaitPointerEvent()
+                                if (e.changes.all { !it.pressed }) break
+                            } while (true)
+                            return@awaitEachGesture
+                        }
+
+                        // Own the gesture — replicate detectVerticalDragGestures logic.
+                        var overSlop = 0f
+                        val drag = awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
+                            change.consume()
+                            overSlop = over
+                        } ?: return@awaitEachGesture
+
+                        var isSwipeDown = false
+                        var totalDragAmount = overSlop
+
+                        // Process the slop-trigger event as the first drag.
+                        if (totalDragAmount > 50f && swipeDownEnabled) isSwipeDown = true
+                        if (!isSwipeDown) {
+                            coroutineScope.launch {
+                                swipeUpY.snapTo((swipeUpY.value + overSlop).coerceIn(0f, screenHeight))
+                            }
+                        }
+                        drag.consume()
+
+                        val success = verticalDrag(drag.id) { change ->
+                            val dy = change.positionChange().y
+                            totalDragAmount += dy
                             if (totalDragAmount > 50f && !isSwipeDown && swipeDownEnabled) {
                                 isSwipeDown = true
                             }
-
-                            if (isSwipeDown) {
-                                change.consume()
-                                return@detectVerticalDragGestures
+                            if (!isSwipeDown) {
+                                coroutineScope.launch {
+                                    swipeUpY.snapTo((swipeUpY.value + dy).coerceIn(0f, screenHeight))
+                                }
                             }
-
                             change.consume()
-                            coroutineScope.launch {
-                                val newValue = (swipeUpY.value + dragAmount).coerceIn(0f, screenHeight)
-                                swipeUpY.snapTo(newValue)
-                            }
-                        },
-                        onDragEnd = {
-                            if (!gestureOwnedByLayer1) return@detectVerticalDragGestures
+                        }
 
+                        if (success) {
+                            // onDragEnd equivalent
                             if (isSwipeDown && totalDragAmount > actionThreshold) {
                                 val mode = com.bearinmind.launcher314.data.getSwipeDownMode(context)
                                 if (mode == 1) {
@@ -606,44 +633,43 @@ fun LauncherWithDrawer(
                                 } else {
                                     com.bearinmind.launcher314.helpers.NotificationPanelHelper.expandNotificationPanel(context)
                                 }
-                                return@detectVerticalDragGestures
-                            }
-
-                            coroutineScope.launch {
-                                if (swipeUpY.value < screenHeight - actionThreshold) {
-                                    swipeUpY.animateTo(
-                                        targetValue = 0f,
-                                        animationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                            stiffness = Spring.StiffnessLow
+                            } else {
+                                coroutineScope.launch {
+                                    if (swipeUpY.value < screenHeight - actionThreshold) {
+                                        swipeUpY.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            )
                                         )
-                                    )
-                                } else {
+                                    } else {
+                                        swipeUpY.animateTo(
+                                            targetValue = screenHeight,
+                                            animationSpec = tween(
+                                                durationMillis = 300,
+                                                easing = FastOutSlowInEasing
+                                            )
+                                        )
+                                        showAppDrawer = false
+                                        homeRefreshTrigger++
+                                    }
+                                }
+                            }
+                        } else {
+                            // onDragCancel equivalent
+                            if (!isSwipeDown) {
+                                coroutineScope.launch {
                                     swipeUpY.animateTo(
                                         targetValue = screenHeight,
-                                        animationSpec = tween(
-                                            durationMillis = 300,
-                                            easing = FastOutSlowInEasing
-                                        )
+                                        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
                                     )
                                     showAppDrawer = false
                                     homeRefreshTrigger++
                                 }
                             }
-                        },
-                        onDragCancel = {
-                            if (!gestureOwnedByLayer1) return@detectVerticalDragGestures
-                            if (isSwipeDown) return@detectVerticalDragGestures
-                            coroutineScope.launch {
-                                swipeUpY.animateTo(
-                                    targetValue = screenHeight,
-                                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
-                                )
-                                showAppDrawer = false
-                                homeRefreshTrigger++
-                            }
                         }
-                    )
+                    }
                 }
                 .graphicsLayer {
                     alpha = if (drawerToHomeActive) homeScreenFadeInAlpha else pagerAlpha
