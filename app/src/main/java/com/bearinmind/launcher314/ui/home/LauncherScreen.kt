@@ -941,6 +941,22 @@ fun LauncherScreen(
         }
     }
 
+    // FIX: Exit widget resize mode as soon as the user swipes to a different page.
+    // The resize overlay is bound to a single page (the widget's page); if the user
+    // navigates away, resize can't be completed visually and the overlay/indicators
+    // become invisible but state-active. Auto-cancel in that case.
+    LaunchedEffect(pagerState.currentPage, widgetResizeState.isResizing) {
+        if (!widgetResizeState.isResizing) return@LaunchedEffect
+        val resizingPage = resizingWidgetFresh?.page ?: return@LaunchedEffect
+        if (pagerState.currentPage != resizingPage) {
+            hoveredWidgetCells = emptySet()
+            widgetOriginalCells = emptySet()
+            currentResizeDimensions = null
+            isWidgetDropTargetValid = true
+            widgetResizeState = WidgetResizeState()
+        }
+    }
+
     // Recalculate widget hover cells when the page changes during a widget drag.
     // Without this, the old hover state from the source page remains until the user moves.
     LaunchedEffect(pagerState.targetPage, widgetDragState.draggedWidget) {
