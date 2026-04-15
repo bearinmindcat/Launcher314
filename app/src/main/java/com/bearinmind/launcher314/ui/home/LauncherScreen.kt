@@ -746,6 +746,18 @@ fun LauncherScreen(
     // Widget resize state - for resizing widgets with preview outline
     var widgetResizeState by remember { mutableStateOf(WidgetResizeState()) }
 
+    // FIX: Always look up the CURRENT widget from placedWidgets by appWidgetId.
+    // The PlacedWidget stored in widgetResizeState.resizingWidget is a snapshot
+    // captured at the moment resize started — if the widget was moved to another
+    // page beforehand (or any state changed), the snapshot's .page field can be
+    // stale, causing the resize overlay and position indicators to render on the
+    // wrong screen. Fresh lookup ensures page-aware rendering everywhere.
+    val resizingWidgetFresh: com.bearinmind.launcher314.ui.widgets.PlacedWidget? =
+        widgetResizeState.resizingWidget?.appWidgetId?.let { id ->
+            placedWidgets.find { it.appWidgetId == id }
+        }
+    val resizingWidgetPage: Int = resizingWidgetFresh?.page ?: widgetResizeState.resizingWidget?.page ?: 0
+
     // Current resize dimensions - used to override widget visual size during resize
     var currentResizeDimensions by remember { mutableStateOf<ResizeDimensions?>(null) }
 
@@ -2253,6 +2265,22 @@ fun LauncherScreen(
                     }
                 )
             }
+            // FIX: Tap anywhere on the home screen background to exit widget resize
+            // mode. Previously resize mode persisted indefinitely (even across GitHub
+            // trips) because nothing outside the resize overlay dismissed it.
+            .pointerInput(widgetResizeState.isResizing) {
+                if (widgetResizeState.isResizing) {
+                    detectTapGestures(
+                        onTap = {
+                            hoveredWidgetCells = emptySet()
+                            widgetOriginalCells = emptySet()
+                            currentResizeDimensions = null
+                            isWidgetDropTargetValid = true
+                            widgetResizeState = WidgetResizeState()
+                        }
+                    )
+                }
+            }
     ) {
         // Background is transparent - system wallpaper shows through via theme
         // Main content - respects system bars (status bar & navigation bar)
@@ -2323,7 +2351,7 @@ fun LauncherScreen(
                                     // - App drag (hoveredGridCell)
                                     // - Widget drop target (hoveredWidgetCells) — but NOT during widget-over-widget (stacking)
                                     //   and only on the correct page (drag target page or resize widget's page)
-                                    val widgetHoverPage = if (widgetResizeState.isResizing) widgetResizeState.resizingWidget?.page ?: 0
+                                    val widgetHoverPage = if (widgetResizeState.isResizing) resizingWidgetPage
                                         else pagerState.targetPage
                                     val isHovered = hoveredGridCell == index ||
                                                     (hoveredWidgetCells.contains(index) && !isWidgetOverWidget && page == widgetHoverPage)
@@ -2343,8 +2371,11 @@ fun LauncherScreen(
                                         // App cell hovered by another app - valid (creates folder), not for folder drags
                                         cell is HomeGridCell.App && hoveredGridCell == index && (draggedItemIndex != null || externalDragActive) && draggedItemIndex != index && !isDraggingAFolder -> true
                                         // Widget resize/drag - original cells are always valid (blue, not red)
-                                        // Only on the SOURCE page — on other pages, same indices are different cells
-                                        hoveredWidgetCells.contains(index) && widgetOriginalCells.contains(index) && page == widgetDragSourcePage -> true
+                                        // Only on the SOURCE/resize page — on other pages, same indices are different cells.
+                                        // FIX: During resize, widgetDragSourcePage may be stale from a prior drag; use
+                                        // widgetHoverPage (which points at resizingWidgetPage during resize) so the
+                                        // "original cells" highlight only appears on the widget's actual page.
+                                        hoveredWidgetCells.contains(index) && widgetOriginalCells.contains(index) && page == widgetHoverPage -> true
                                         // Widget resize/drag - non-original cells show red if overlapping other apps
                                         // Only on the correct page (target page for drag, widget page for resize)
                                         hoveredWidgetCells.contains(index) && page == widgetHoverPage -> isWidgetDropTargetValid
@@ -2754,6 +2785,13 @@ fun LauncherScreen(
                                                         // Check bounds
                                                         if (startPosition.x < 0 || startPosition.x > size.width ||
                                                             startPosition.y < 0 || startPosition.y > size.height) {
+                                                            return@awaitEachGesture
+                                                        }
+
+                                                        // FIX: Block the widget's own long-press + drag handler while
+                                                        // any resize is active — previously the widget could still be
+                                                        // dragged during resize, leaving both overlays live at once.
+                                                        if (widgetResizeState.isResizing) {
                                                             return@awaitEachGesture
                                                         }
 
@@ -3371,9 +3409,11 @@ fun LauncherScreen(
                             }
 
                             // Widget resize overlay - shows preview outline with draggable handles
-                            // Only render on the page where the widget lives
-                            if (page == (widgetResizeState.resizingWidget?.page ?: 0) && widgetResizeState.isResizing && widgetResizeState.resizingWidget != null) {
-                                val resizingWidget = widgetResizeState.resizingWidget!!
+                            // Only render on the page where the widget lives.
+                            // FIX: Use fresh widget lookup (resizingWidgetFresh) so a post-drag page
+                            // change is reflected — previously the overlay could render on the old page.
+                            if (widgetResizeState.isResizing && resizingWidgetFresh != null && page == resizingWidgetFresh.page) {
+                                val resizingWidget = resizingWidgetFresh
 
                                 // Calculate occupied cells as (column, row) pairs (excluding the resizing widget's cells)
                                 val occupiedCellPairs = remember(gridCells, resizingWidget) {
