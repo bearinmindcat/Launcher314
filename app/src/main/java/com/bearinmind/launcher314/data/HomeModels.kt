@@ -61,7 +61,8 @@ data class HomeScreenApp(
 @Serializable
 data class DockApp(
     val packageName: String,
-    val position: Int // Dock position (0-4 typically)
+    val position: Int, // Dock position within a page (0-4 typically)
+    val page: Int = 0  // Which dock page this app is on (default 0 for backward compat)
 )
 
 // Data class for dock folders (bottom bar)
@@ -70,7 +71,8 @@ data class DockFolder(
     val id: String = java.util.UUID.randomUUID().toString(),
     val name: String,
     val position: Int,
-    val appPackageNames: List<String> = emptyList()
+    val appPackageNames: List<String> = emptyList(),
+    val page: Int = 0  // Which dock page this folder is on
 )
 
 // Data class for home screen folders

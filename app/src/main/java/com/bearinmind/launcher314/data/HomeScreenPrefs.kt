@@ -10,6 +10,7 @@ private const val HOME_KEY_ICON_SIZE = "home_icon_size"
 private const val HOME_KEY_ICON_SIZE_PERCENT = "home_icon_size_percent"
 private const val HOME_KEY_DOCK_COLUMNS = "home_dock_columns"
 private const val HOME_KEY_DOCK_ENABLED = "home_dock_enabled"
+private const val HOME_KEY_DOCK_PAGES = "home_dock_pages"
 
 // Grid columns (X)
 fun getHomeGridSize(context: Context): Int {
@@ -67,4 +68,16 @@ fun getDockEnabled(context: Context): Boolean {
 fun setDockEnabled(context: Context, enabled: Boolean) {
     val prefs = context.getSharedPreferences(HOME_PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putBoolean(HOME_KEY_DOCK_ENABLED, enabled).apply()
+}
+
+// Number of dock pages (default 1, max 5). When > 1, the dock becomes
+// a HorizontalPager and apps/folders carry a `page` field.
+fun getDockPages(context: Context): Int {
+    val prefs = context.getSharedPreferences(HOME_PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(HOME_KEY_DOCK_PAGES, 1).coerceIn(1, 5)
+}
+
+fun setDockPages(context: Context, pages: Int) {
+    val prefs = context.getSharedPreferences(HOME_PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(HOME_KEY_DOCK_PAGES, pages.coerceIn(1, 5)).apply()
 }

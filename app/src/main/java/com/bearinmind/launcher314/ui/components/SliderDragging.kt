@@ -829,6 +829,13 @@ object SliderConfigs {
         label = "Dock Columns"
     )
 
+    val dockPages = HorizontalSliderConfig(
+        minValue = 1f,
+        maxValue = 5f,
+        tickValues = listOf(1, 2, 3, 4, 5),
+        label = "Dock Pages"
+    )
+
     val iconTextSize = HorizontalSliderConfig(
         minValue = 50f,
         maxValue = 150f,

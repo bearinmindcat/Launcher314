@@ -559,6 +559,10 @@ fun LauncherScreen(
     // Dock settings - get from user preferences (needed for proportional sizing below)
     val dockSlots = getDockColumns(context)
     val isDockEnabled = getDockEnabled(context)
+    val dockPagesCount = com.bearinmind.launcher314.data.getDockPages(context)
+    // Current dock page driven by the dock HorizontalPager — used by drag-and-drop logic
+    // so dropping into the dock targets the page the user is currently viewing.
+    var currentDockPage by remember { mutableIntStateOf(0) }
 
     // ========== Proportional Sizing ==========
     // Compute cell dimensions and derive all sizes proportionally.
@@ -1148,8 +1152,9 @@ fun LauncherScreen(
 
     // Handle drop from grid to dock
     fun handleDropToDock(fromGridIndex: Int, toDockSlot: Int, fromPage: Int = currentPage) {
-        val existingDockApp = dockApps.find { it.position == toDockSlot }
-        val existingDockFolder = dockFolders.find { it.position == toDockSlot }
+        // Multi-page-dock-aware: target the currently visible dock page.
+        val existingDockApp = dockApps.find { it.position == toDockSlot && it.page == currentDockPage }
+        val existingDockFolder = dockFolders.find { it.position == toDockSlot && it.page == currentDockPage }
 
         // Find the source app from homeApps (page-aware)
         val sourceHomeApp = homeApps.find { it.position == fromGridIndex && it.page == fromPage }
@@ -1162,7 +1167,7 @@ fun LauncherScreen(
 
         if (existingDockApp == null && existingDockFolder == null) {
             // Empty slot → place app
-            val updatedDockApps = dockApps + DockApp(sourceAppInfo.packageName, toDockSlot)
+            val updatedDockApps = dockApps + DockApp(sourceAppInfo.packageName, toDockSlot, page = currentDockPage)
             homeApps = updatedGridApps
             dockApps = updatedDockApps
             dropScope.launch(Dispatchers.IO) {
@@ -1181,11 +1186,12 @@ fun LauncherScreen(
             }
         } else if (existingDockApp != null) {
             // Dock app → create new dock folder
-            val updatedDockApps = dockApps.filter { it.position != toDockSlot }
+            val updatedDockApps = dockApps.filter { !(it.position == toDockSlot && it.page == currentDockPage) }
             val newFolder = DockFolder(
                 name = "Folder",
                 position = toDockSlot,
-                appPackageNames = listOf(existingDockApp.packageName, sourceAppInfo.packageName)
+                appPackageNames = listOf(existingDockApp.packageName, sourceAppInfo.packageName),
+                page = currentDockPage
             )
             homeApps = updatedGridApps
             dockApps = updatedDockApps
@@ -1198,7 +1204,7 @@ fun LauncherScreen(
 
     // Handle drop from dock to grid (only empty grid cells allowed)
     fun handleDropFromDockToGrid(fromDockSlot: Int, toGridIndex: Int) {
-        val dockApp = dockApps.find { it.position == fromDockSlot }
+        val dockApp = dockApps.find { it.position == fromDockSlot && it.page == currentDockPage }
         val toCell = gridCells.getOrNull(toGridIndex)
 
         if (dockApp != null) {
@@ -1206,7 +1212,7 @@ fun LauncherScreen(
             if (appInfo != null) {
                 // Drop on empty cell → standard move
                 if (toCell is HomeGridCell.Empty) {
-                    val updatedDockApps = dockApps.filter { it.position != fromDockSlot }
+                    val updatedDockApps = dockApps.filter { !(it.position == fromDockSlot && it.page == currentDockPage) }
                     val updatedGridApps = homeApps + HomeScreenApp(dockApp.packageName, toGridIndex, currentPage)
 
                     homeApps = updatedGridApps
@@ -1217,7 +1223,7 @@ fun LauncherScreen(
                 }
                 // Drop on app → create folder
                 else if (toCell is HomeGridCell.App) {
-                    val updatedDockApps = dockApps.filter { it.position != fromDockSlot }
+                    val updatedDockApps = dockApps.filter { !(it.position == fromDockSlot && it.page == currentDockPage) }
                     val updatedGridApps = homeApps.toMutableList()
                     updatedGridApps.removeAll { it.position == toGridIndex && it.page == currentPage }
 
@@ -1238,7 +1244,7 @@ fun LauncherScreen(
                 }
                 // Drop on folder → add to folder
                 else if (toCell is HomeGridCell.Folder) {
-                    val updatedDockApps = dockApps.filter { it.position != fromDockSlot }
+                    val updatedDockApps = dockApps.filter { !(it.position == fromDockSlot && it.page == currentDockPage) }
                     val updatedFolders = homeFolders.map { folder ->
                         if (folder.id == toCell.folder.id) {
                             folder.copy(appPackageNames = addAppToFolder(folder.appPackageNames, dockApp.packageName))
@@ -1422,8 +1428,8 @@ fun LauncherScreen(
                 val targetCell = dropCells.getOrNull(targetGridIndex)
                 targetCell is HomeGridCell.App || targetCell is HomeGridCell.Folder
             } else if (targetDockSlot != null) {
-                val existDockApp = dockApps.find { it.position == targetDockSlot }
-                val existDockFolder = dockFolders.find { it.position == targetDockSlot }
+                val existDockApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+                val existDockFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
                 existDockApp != null || existDockFolder != null
             } else false
         } else false
@@ -1448,8 +1454,8 @@ fun LauncherScreen(
 
             if (targetDockSlot != null) {
                 val dockPos = dockPositions[targetDockSlot]
-                val existingDockApp = dockApps.find { it.position == targetDockSlot }
-                val existingDockFolder = dockFolders.find { it.position == targetDockSlot }
+                val existingDockApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+                val existingDockFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
                 val isSlotEmpty = existingDockApp == null && existingDockFolder == null
                 // Valid: empty slot for any drag, or occupied slot for single app drag (folder add / folder create)
                 val isDraggingApp = draggedFolderData == null
@@ -1467,7 +1473,8 @@ fun LauncherScreen(
                                 id = folderData.id,
                                 name = folderData.name,
                                 position = targetDockSlot,
-                                appPackageNames = folderData.appPackageNames
+                                appPackageNames = folderData.appPackageNames,
+                                page = currentDockPage
                             )
                             homeFolders = homeFolders.filter { it.id != folderData.id }
                             dockFolders = dockFolders + newDockFolder
@@ -1762,8 +1769,8 @@ fun LauncherScreen(
         hoveredGridCell = if (targetDockSlot == null) findCellIndex(centerPos) else null
         if (targetDockSlot != null) {
             val draggingFolder = draggedFolderData != null
-            val existDockApp = dockApps.find { it.position == targetDockSlot }
-            val existDockFolder = dockFolders.find { it.position == targetDockSlot }
+            val existDockApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+            val existDockFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
             val isSlotEmpty = existDockApp == null && existDockFolder == null
             isHoveredDockSlotValid = isSlotEmpty ||
                 (!draggingFolder && (existDockFolder != null || existDockApp != null))
@@ -1862,8 +1869,8 @@ fun LauncherScreen(
 
         val draggingFolder = externalDragItemState is com.bearinmind.launcher314.data.AppFolder
         if (targetDockSlot != null) {
-            val existingDockApp = dockApps.find { it.position == targetDockSlot }
-            val existingDockFolder = dockFolders.find { it.position == targetDockSlot }
+            val existingDockApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+            val existingDockFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
             val isSlotEmpty = existingDockApp == null && existingDockFolder == null
             // Allow drop on empty slot, or on existing dock folder/app if dragging a single app
             isHoveredDockSlotValid = isSlotEmpty ||
@@ -1929,8 +1936,8 @@ fun LauncherScreen(
 
         if (targetDockSlot != null) {
             val dockPos = dockPositions[targetDockSlot]
-            val existingDockApp = dockApps.find { it.position == targetDockSlot }
-            val existingDockFolder = dockFolders.find { it.position == targetDockSlot }
+            val existingDockApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+            val existingDockFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
             val isSlotEmpty = existingDockApp == null && existingDockFolder == null
             if (dockPos != null) {
                 targetOffset = Offset(dockPos.x - originalPos.x, dockPos.y - originalPos.y)
@@ -1940,7 +1947,8 @@ fun LauncherScreen(
                             is com.bearinmind.launcher314.data.AppInfo -> {
                                 dockApps = dockApps + DockApp(
                                     packageName = item.packageName,
-                                    position = targetDockSlot
+                                    position = targetDockSlot,
+                                    page = currentDockPage
                                 )
                                 saveAllData()
                             }
@@ -1948,7 +1956,8 @@ fun LauncherScreen(
                                 dockFolders = dockFolders + DockFolder(
                                     name = item.name,
                                     position = targetDockSlot,
-                                    appPackageNames = item.appPackageNames
+                                    appPackageNames = item.appPackageNames,
+                                    page = currentDockPage
                                 )
                                 saveDockFolders(dockFolders)
                             }
@@ -1968,11 +1977,12 @@ fun LauncherScreen(
                 } else if (item is com.bearinmind.launcher314.data.AppInfo && existingDockApp != null) {
                     // App dropped on existing dock app → create new dock folder
                     dropAction = {
-                        val updatedDockApps = dockApps.filter { it.position != targetDockSlot }
+                        val updatedDockApps = dockApps.filter { !(it.position == targetDockSlot && it.page == currentDockPage) }
                         val newFolder = DockFolder(
                             name = "Folder",
                             position = targetDockSlot,
-                            appPackageNames = listOf(existingDockApp.packageName, item.packageName)
+                            appPackageNames = listOf(existingDockApp.packageName, item.packageName),
+                            page = currentDockPage
                         )
                         dockApps = updatedDockApps
                         dockFolders = dockFolders + newFolder
@@ -2056,8 +2066,8 @@ fun LauncherScreen(
         // Determine if this drop creates a new folder (app on app)
         val createsFolder = if (item is com.bearinmind.launcher314.data.AppInfo) {
             if (targetDockSlot != null) {
-                val existingDockApp = dockApps.find { it.position == targetDockSlot }
-                val existingDockFolder = dockFolders.find { it.position == targetDockSlot }
+                val existingDockApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+                val existingDockFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
                 existingDockApp != null && existingDockFolder == null
             } else if (targetGridCell != null) {
                 val pageCells = buildGridCellsForPage(intendedPage)
@@ -2067,7 +2077,7 @@ fun LauncherScreen(
 
         // Determine if dropping onto an existing folder (dock or grid)
         val dropsOntoFolder = if (item is com.bearinmind.launcher314.data.AppInfo) {
-            if (targetDockSlot != null) dockFolders.find { it.position == targetDockSlot } != null
+            if (targetDockSlot != null) dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage } != null
             else if (targetGridCell != null) {
                 val pageCells = buildGridCellsForPage(intendedPage)
                 pageCells.getOrNull(targetGridCell) is HomeGridCell.Folder
@@ -2210,7 +2220,7 @@ fun LauncherScreen(
                             hoveredGridCell = if (targetDockSlot == null) findCellIndex(centerPos) else null
 
                             if (targetDockSlot != null) {
-                                isHoveredDockSlotValid = dockApps.find { it.position == targetDockSlot } == null
+                                isHoveredDockSlotValid = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage } == null
                                 isHoveredCellValid = true
                                 showFolderCreationIndicator = false
                             } else if (hoveredGridCell != null) {
@@ -2517,9 +2527,9 @@ fun LauncherScreen(
 
                                                 // Check if hover target is valid (for icon red tint)
                                                 if (targetDockSlot != null) {
-                                                    // Hovering over dock - check if slot is empty
-                                                    val dockSlotApp = dockApps.find { it.position == targetDockSlot }
-                                                    val dockSlotFolder = dockFolders.find { it.position == targetDockSlot }
+                                                    // Hovering over dock - check if slot is empty (on the visible page)
+                                                    val dockSlotApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+                                                    val dockSlotFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
                                                     isHoveredDockSlotValid = dockSlotApp == null && dockSlotFolder == null
                                                     isHoveredCellValid = true // Not hovering grid
                                                     showFolderCreationIndicator = false
@@ -3610,23 +3620,86 @@ fun LauncherScreen(
                 }
             }
 
-            // Dock bar at bottom
-            if (isDockEnabled) Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = gridHPadding, vertical = gridVPadding),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+            // Dock bar at bottom — wrapped in a HorizontalPager when there are multiple
+            // dock pages. Styled like the widget stack (chrome appears on swipe + dots).
+            val dockPagerState = rememberPagerState(initialPage = 0, pageCount = { dockPagesCount })
+            // Expose for drag-drop logic so new dock items use the current page.
+            currentDockPage = dockPagerState.currentPage
+
+            // Chrome (dim background + border) appears while swiping the dock pager,
+            // identical animation profile to the widget stack chrome.
+            val isDockSwiping = dockPagerState.isScrollInProgress
+            var isDockSwipeLingering by remember { mutableStateOf(false) }
+            LaunchedEffect(isDockSwiping) {
+                if (isDockSwiping) {
+                    isDockSwipeLingering = true
+                } else if (isDockSwipeLingering) {
+                    delay(1000)
+                    isDockSwipeLingering = false
+                }
+            }
+            val showDockChrome = dockPagesCount > 1 && (isDockSwiping || isDockSwipeLingering)
+            val dockChromeAlpha by animateFloatAsState(
+                targetValue = if (showDockChrome) 1f else 0f,
+                animationSpec = tween(
+                    durationMillis = if (showDockChrome) 120 else 400,
+                    easing = FastOutSlowInEasing
+                ),
+                label = "dockChrome"
+            )
+
+            // Dot styling matches widget stack
+            val dockDotBaseColor = getScrollbarColor(context)
+            val dockDotIntensity = getScrollbarIntensity(context)
+            val dockDotColor = remember(dockDotBaseColor, dockDotIntensity) {
+                val base = Color(dockDotBaseColor)
+                val factor = (dockDotIntensity / 100f).coerceIn(0f, 1f)
+                Color(
+                    red = base.red * factor,
+                    green = base.green * factor,
+                    blue = base.blue * factor,
+                    alpha = base.alpha
+                )
+            }
+            val dockDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
+
+            if (isDockEnabled) Box(
+                modifier = Modifier.fillMaxWidth()
             ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(dockHoverCornerRadius))
+                        .then(
+                            if (dockChromeAlpha > 0f) Modifier
+                                .background(Color.Black.copy(alpha = 0.4f * dockChromeAlpha))
+                                .border(1.dp, Color(0xFF888888).copy(alpha = dockChromeAlpha), RoundedCornerShape(dockHoverCornerRadius))
+                            else Modifier
+                        )
+                ) {
+                HorizontalPager(
+                    state = dockPagerState,
+                    modifier = Modifier.fillMaxWidth(),
+                    // Disable swipe when an item is being dragged so dock-page swipes
+                    // don't fight with drag-and-drop.
+                    userScrollEnabled = dockPagesCount > 1 && draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged
+                ) { dockPage ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = gridHPadding, vertical = gridVPadding),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                 repeat(dockSlots) { slot ->
-                    val dockApp = dockApps.find { it.position == slot }
+                    val dockApp = dockApps.find { it.position == slot && it.page == dockPage }
                     val appInfo = dockApp?.let { da ->
                         allAvailableApps.find { it.packageName == da.packageName }?.let { info ->
                             val cust = appCustomizations.customizations[da.packageName]
                             if (cust != null) info.copy(customization = cust) else info
                         }
                     }
-                    val dockFolder = dockFolders.find { it.position == slot }
+                    val dockFolder = dockFolders.find { it.position == slot && it.page == dockPage }
                     // Apply per-app customizations so dock folder mini icons show custom icons/shapes/tints
                     val dockFolderPreviewApps = dockFolder?.appPackageNames?.filter { it.isNotEmpty() && it !in hiddenApps }?.take(4)?.mapNotNull { pkg ->
                         allAvailableApps.find { it.packageName == pkg }?.let { info ->
@@ -3775,9 +3848,9 @@ fun LauncherScreen(
                                     showFolderCreationIndicator = !isDraggingFolder && targetCell is HomeGridCell.App
                                     isHoveredDockSlotValid = true // Not hovering dock
                                 } else if (targetDockSlot != null) {
-                                    // Hovering over dock - check if slot is valid
-                                    val dockSlotApp = dockApps.find { it.position == targetDockSlot }
-                                    val dockSlotFolder = dockFolders.find { it.position == targetDockSlot }
+                                    // Hovering over dock - check if slot is valid (on visible page)
+                                    val dockSlotApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+                                    val dockSlotFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
                                     val dockSlotEmpty = dockSlotApp == null && dockSlotFolder == null
                                     isHoveredDockSlotValid = targetDockSlot == slot || dockSlotEmpty ||
                                         (!isDraggingFolder && (dockSlotFolder != null || dockSlotApp != null))
@@ -3841,9 +3914,11 @@ fun LauncherScreen(
                                             }
                                         }
                                     } else if (targetDockSlot != null && targetDockSlot != currentDraggedSlot) {
-                                        val fromApp = dockApps.find { it.position == currentDraggedSlot }
-                                        val toApp = dockApps.find { it.position == targetDockSlot }
-                                        val toFolder = dockFolders.find { it.position == targetDockSlot }
+                                        // All dock-to-dock ops happen on the currently visible page —
+                                        // both source and target are slots within currentDockPage.
+                                        val fromApp = dockApps.find { it.position == currentDraggedSlot && it.page == currentDockPage }
+                                        val toApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+                                        val toFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
                                         val slotEmpty = toApp == null && toFolder == null
 
                                         if (isDraggingDockFolder && dockFolder != null && slotEmpty) {
@@ -3854,7 +3929,7 @@ fun LauncherScreen(
                                             } else Offset.Zero
                                             dropAction = {
                                                 dockFolders = dockFolders.map { f ->
-                                                    if (f.id == dockFolder.id) f.copy(position = targetDockSlot)
+                                                    if (f.id == dockFolder.id) f.copy(position = targetDockSlot, page = currentDockPage)
                                                     else f
                                                 }
                                                 saveAllData()
@@ -3867,8 +3942,8 @@ fun LauncherScreen(
                                             } else Offset.Zero
                                             dropAction = {
                                                 val updatedDockApps = dockApps.toMutableList()
-                                                updatedDockApps.removeAll { it.position == currentDraggedSlot }
-                                                updatedDockApps.add(DockApp(fromApp.packageName, targetDockSlot))
+                                                updatedDockApps.removeAll { it.position == currentDraggedSlot && it.page == currentDockPage }
+                                                updatedDockApps.add(DockApp(fromApp.packageName, targetDockSlot, page = currentDockPage))
                                                 saveDockApps(updatedDockApps)
                                             }
                                         } else if (fromApp != null && toApp != null) {
@@ -3879,12 +3954,13 @@ fun LauncherScreen(
                                             } else Offset.Zero
                                             dropAction = {
                                                 val updatedDockApps = dockApps.filter {
-                                                    it.position != currentDraggedSlot && it.position != targetDockSlot
+                                                    !((it.position == currentDraggedSlot || it.position == targetDockSlot) && it.page == currentDockPage)
                                                 }
                                                 val newDockFolder = DockFolder(
                                                     name = "Folder",
                                                     position = targetDockSlot,
-                                                    appPackageNames = listOf(toApp.packageName, fromApp.packageName)
+                                                    appPackageNames = listOf(toApp.packageName, fromApp.packageName),
+                                                    page = currentDockPage
                                                 )
                                                 dockApps = updatedDockApps
                                                 dockFolders = dockFolders + newDockFolder
@@ -3999,8 +4075,36 @@ fun LauncherScreen(
                             globalIconBgIntensity = globalIconBgIntensity
                         )
                     }
+                } // end repeat(dockSlots)
+                } // end Row
+                } // end HorizontalPager dockPage
+                } // end inner chrome Box
+
+                // Page dots overlay — only visible when there are multiple dock pages
+                // and only fully opaque while swiping (matches widget stack behavior).
+                if (dockPagesCount > 1 && dockChromeAlpha > 0f) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 4.dp)
+                            .graphicsLayer { alpha = dockChromeAlpha },
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        repeat(dockPagesCount) { dotIndex ->
+                            Box(
+                                modifier = Modifier
+                                    .size(dockDotSize)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (dockPagerState.currentPage == dotIndex)
+                                            dockDotColor.copy(alpha = 0.9f)
+                                        else dockDotColor.copy(alpha = 0.3f)
+                                    )
+                            )
+                        }
+                    }
                 }
-            }
+            } // end outer dock Box
         }
 
         // ========== EDGE SCROLL INDICATORS ==========
@@ -5004,7 +5108,7 @@ fun LauncherScreen(
                                                             if (updatedDF != null && updatedDF.appPackageNames.count { it.isNotEmpty() } <= 1) {
                                                                 val remainingPkg = updatedDF.appPackageNames.firstOrNull { it.isNotEmpty() }
                                                                 if (remainingPkg != null) {
-                                                                    dockApps = dockApps + DockApp(remainingPkg, updatedDF.position)
+                                                                    dockApps = dockApps + DockApp(remainingPkg, updatedDF.position, page = updatedDF.page)
                                                                 }
                                                                 saveDockFolders(dockFolders.filter { it.id != folder.id })
                                                             } else {
@@ -5171,7 +5275,7 @@ fun LauncherScreen(
                                                         // Dock folder dissolves → remaining app becomes dock app
                                                         val remainingPkg = updatedDF.appPackageNames.firstOrNull { it.isNotEmpty() }
                                                         if (remainingPkg != null) {
-                                                            dockApps = dockApps + DockApp(remainingPkg, updatedDF.position)
+                                                            dockApps = dockApps + DockApp(remainingPkg, updatedDF.position, page = updatedDF.page)
                                                         }
                                                         saveDockFolders(dockFolders.filter { it.id != folder.id })
                                                         openHomeFolder = null

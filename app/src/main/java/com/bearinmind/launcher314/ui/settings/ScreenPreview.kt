@@ -1531,6 +1531,7 @@ fun HomeScreenPreviewSection(
     var gridRows by remember { mutableFloatStateOf(getHomeGridRows(context).toFloat()) }
     var dockColumns by remember { mutableFloatStateOf(getDockColumns(context).toFloat()) }
     var isDockEnabled by remember { mutableStateOf(getDockEnabled(context)) }
+    var dockPages by remember { mutableFloatStateOf(com.bearinmind.launcher314.data.getDockPages(context).toFloat()) }
     var iconSizePercent by remember { mutableFloatStateOf(getHomeIconSizePercent(context).toFloat()) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
 
@@ -1793,6 +1794,30 @@ fun HomeScreenPreviewSection(
                     )
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Dock Pages slider — when > 1, dock becomes a HorizontalPager.
+        // End padding matches the Columns / Rows sliders above (76.dp) so all
+        // the tracklines line up at the same length.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 76.dp)
+        ) {
+            ThumbDragHorizontalSlider(
+                currentValue = dockPages,
+                config = SliderConfigs.dockPages,
+                enabled = isDockEnabled,
+                onValueChange = { newPages ->
+                    dockPages = newPages
+                    com.bearinmind.launcher314.data.setDockPages(context, newPages.roundToInt())
+                },
+                onValueChangeFinished = {
+                    com.bearinmind.launcher314.data.setDockPages(context, dockPages.roundToInt())
+                }
+            )
         }
     }
 }
