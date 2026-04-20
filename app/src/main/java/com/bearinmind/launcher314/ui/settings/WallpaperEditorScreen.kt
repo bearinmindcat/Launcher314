@@ -71,6 +71,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -271,9 +272,66 @@ fun WallpaperEditorScreen(
             decorFitsSystemWindows = false
         )
     ) {
+        // Match what the launcher Activity does in NavigationHelper.kt: make both
+        // system bars fully TRANSPARENT and disable contrast enforcement. Setting
+        // the bars to #0F0F0F directly doesn't work — on API 35+ `statusBarColor`
+        // is deprecated/ignored, and Samsung One UI paints its own scrim on top
+        // regardless. With transparent bars + no scrim, our Box's #0F0F0F
+        // background shows through uniformly behind the system icons.
+        val localView = androidx.compose.ui.platform.LocalView.current
+        DisposableEffect(Unit) {
+            val dialogWindow = (localView.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+            val prevStatus = dialogWindow?.statusBarColor
+            val prevNav = dialogWindow?.navigationBarColor
+            val controller = dialogWindow?.let { androidx.core.view.WindowCompat.getInsetsController(it, localView) }
+            val prevLightStatus = controller?.isAppearanceLightStatusBars
+            val prevLightNav = controller?.isAppearanceLightNavigationBars
+            val prevStatusContrast = if (Build.VERSION.SDK_INT >= 29) dialogWindow?.isStatusBarContrastEnforced else null
+            val prevNavContrast = if (Build.VERSION.SDK_INT >= 29) dialogWindow?.isNavigationBarContrastEnforced else null
+
+            // Force the Compose Dialog's window to be truly edge-to-edge AND clear
+            // the `FLAG_DIM_BEHIND` flag — that flag is what actually causes the
+            // "darker" scrim above the status bar + below the nav bar, because the
+            // dim is applied to the region behind the dialog and the system bars
+            // sit on top of it. Clearing DIM_BEHIND removes the scrim entirely.
+            if (dialogWindow != null) {
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
+                dialogWindow.setLayout(
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT
+                )
+                dialogWindow.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                dialogWindow.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                // Also set dim amount to 0 just to be extra safe
+                dialogWindow.setDimAmount(0f)
+            }
+            dialogWindow?.statusBarColor = android.graphics.Color.TRANSPARENT
+            dialogWindow?.navigationBarColor = android.graphics.Color.TRANSPARENT
+            controller?.isAppearanceLightStatusBars = false
+            controller?.isAppearanceLightNavigationBars = false
+            if (Build.VERSION.SDK_INT >= 29 && dialogWindow != null) {
+                dialogWindow.isStatusBarContrastEnforced = false
+                dialogWindow.isNavigationBarContrastEnforced = false
+            }
+            onDispose {
+                if (dialogWindow != null) {
+                    if (prevStatus != null) dialogWindow.statusBarColor = prevStatus
+                    if (prevNav != null) dialogWindow.navigationBarColor = prevNav
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        if (prevStatusContrast != null) dialogWindow.isStatusBarContrastEnforced = prevStatusContrast
+                        if (prevNavContrast != null) dialogWindow.isNavigationBarContrastEnforced = prevNavContrast
+                    }
+                }
+                if (controller != null) {
+                    if (prevLightStatus != null) controller.isAppearanceLightStatusBars = prevLightStatus
+                    if (prevLightNav != null) controller.isAppearanceLightNavigationBars = prevLightNav
+                }
+            }
+        }
+
         Box(modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0F0F))
+            .background(Color(0xFF121212))
         ) {
             // IconRow is a normal Column child (sized to its own height). The Column
             // applies a fixed bottom padding so the IconRow sits above the 3-button
@@ -281,7 +339,7 @@ fun WallpaperEditorScreen(
             // this Dialog, so we hardcode 56dp — the standard 3-button nav bar
             // height on Samsung One UI / stock Android.
             val pinnedIconRowHeight = 76.dp
-            val navBarPaddingDp = 72.dp
+            val navBarPaddingDp = 96.dp
             // Active editing category — hoisted so the IconRow's CategoryIcons and
             // the Crossfade control above can share the same state.
             var activeCategoryShared by remember { mutableStateOf("brightness") }
