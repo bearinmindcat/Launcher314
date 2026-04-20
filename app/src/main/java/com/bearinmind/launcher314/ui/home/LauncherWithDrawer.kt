@@ -529,6 +529,55 @@ fun LauncherWithDrawer(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // ========== CUSTOM WALLPAPER BACKDROP ==========
+        // Paints UNDER all launcher content. When wallpaper mode = "custom" we show
+        // the imported image (scale-cropped to fill the screen). The dim overlay and
+        // optional blur apply to both custom and system wallpaper — for system wallpaper
+        // the backdrop is transparent so the system wallpaper shows through, but dim
+        // still stacks on top via the overlay Box below.
+        val wallpaperMode by remember { mutableStateOf(com.bearinmind.launcher314.data.getWallpaperMode(context)) }
+        val wallpaperCacheVersion = com.bearinmind.launcher314.data.getWallpaperCacheVersion(context)
+        val wallpaperDim = com.bearinmind.launcher314.data.getWallpaperDim(context)
+        val wallpaperBlurPercent = com.bearinmind.launcher314.data.getWallpaperBlur(context)
+        val customWallpaperPath = remember(wallpaperCacheVersion, wallpaperMode) {
+            if (wallpaperMode == com.bearinmind.launcher314.data.WALLPAPER_MODE_CUSTOM)
+                com.bearinmind.launcher314.data.getCustomWallpaperPath(context)
+            else null
+        }
+
+        if (customWallpaperPath != null) {
+            val blurRadiusDp = (wallpaperBlurPercent / 100f * 25f).dp
+            coil.compose.AsyncImage(
+                model = java.io.File(customWallpaperPath),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (wallpaperBlurPercent > 0 && android.os.Build.VERSION.SDK_INT >= 31) {
+                            Modifier.graphicsLayer {
+                                renderEffect = androidx.compose.ui.graphics.BlurEffect(
+                                    radiusX = with(density) { blurRadiusDp.toPx() },
+                                    radiusY = with(density) { blurRadiusDp.toPx() },
+                                    edgeTreatment = androidx.compose.ui.graphics.TileMode.Clamp
+                                )
+                            }
+                        } else Modifier
+                    )
+            )
+        }
+
+        // Dim overlay applies to BOTH custom and system wallpaper. Keep it behind the
+        // rest of the launcher content so text/icons aren't dimmed — it only tints the
+        // wallpaper.
+        if (wallpaperDim > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = (wallpaperDim / 100f).coerceIn(0f, 1f)))
+            )
+        }
+
         // Layer 1: Home screen (launcher) with gesture detection
         // Only handles the OPENING gesture (swipe up on home screen).
         // Layer 2's nestedScroll handles the CLOSING gesture (swipe down on drawer).

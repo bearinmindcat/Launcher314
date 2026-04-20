@@ -341,6 +341,17 @@ fun SettingsScreen(
                         onIntensityChange = { scrollbarIntensity = it }
                     )
                 }
+
+                Divider(color = Color.Gray.copy(alpha = 0.2f))
+
+                var wallpaperSectionExpanded by remember { mutableStateOf(false) }
+                CollapsibleSection(
+                    title = "Wallpaper",
+                    expanded = wallpaperSectionExpanded,
+                    onToggle = { wallpaperSectionExpanded = !wallpaperSectionExpanded }
+                ) {
+                    WallpaperPersonalizationCard()
+                }
             }
 
             Divider(color = Color.Gray.copy(alpha = 0.2f))

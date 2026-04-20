@@ -23,6 +23,9 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
+    <!-- Permission to set the actual Android system wallpaper via WallpaperManager -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+
 
     <!-- Shortcut support -->
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />

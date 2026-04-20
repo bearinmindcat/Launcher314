@@ -836,6 +836,50 @@ object SliderConfigs {
         label = "Dock Pages"
     )
 
+    val wallpaperPercent = HorizontalSliderConfig(
+        minValue = 0f,
+        maxValue = 100f,
+        tickValues = (0..100 step 10).toList(),
+        labeledTickValues = listOf(0, 25, 50, 75, 100),
+        snapTickValues = (0..100 step 5).toList(),
+        showMinorTicks = true,
+        label = "",
+        labelSuffix = "%"
+    )
+
+    val wallpaperBrightness = HorizontalSliderConfig(
+        minValue = -50f,
+        maxValue = 50f,
+        tickValues = (-50..50 step 10).toList(),
+        labeledTickValues = listOf(-50, -25, 0, 25, 50),
+        snapTickValues = (-50..50 step 5).toList(),
+        showMinorTicks = true,
+        label = "",
+        labelSuffix = ""
+    )
+
+    val wallpaperSaturation = HorizontalSliderConfig(
+        minValue = -100f,
+        maxValue = 100f,
+        tickValues = (-100..100 step 20).toList(),
+        labeledTickValues = listOf(-100, -50, 0, 50, 100),
+        snapTickValues = (-100..100 step 10).toList(),
+        showMinorTicks = true,
+        label = "",
+        labelSuffix = ""
+    )
+
+    val wallpaperZoom = HorizontalSliderConfig(
+        minValue = 0.5f,
+        maxValue = 5f,
+        tickValues = listOf(1, 2, 3, 4, 5),
+        labeledTickValues = listOf(1, 2, 3, 4, 5),
+        snapTickValues = emptyList(),
+        showMinorTicks = false,
+        label = "",
+        labelSuffix = "×"
+    )
+
     val iconTextSize = HorizontalSliderConfig(
         minValue = 50f,
         maxValue = 150f,
