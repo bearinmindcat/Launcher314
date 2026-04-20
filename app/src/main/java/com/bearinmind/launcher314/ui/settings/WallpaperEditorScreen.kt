@@ -281,7 +281,7 @@ fun WallpaperEditorScreen(
             // this Dialog, so we hardcode 56dp — the standard 3-button nav bar
             // height on Samsung One UI / stock Android.
             val pinnedIconRowHeight = 76.dp
-            val navBarPaddingDp = 56.dp
+            val navBarPaddingDp = 72.dp
             // Active editing category — hoisted so the IconRow's CategoryIcons and
             // the Crossfade control above can share the same state.
             var activeCategoryShared by remember { mutableStateOf("brightness") }
@@ -637,6 +637,7 @@ fun WallpaperEditorScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(pinnedIconRowHeight)
+                            .background(Color.Magenta) // DEBUG
                             .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
