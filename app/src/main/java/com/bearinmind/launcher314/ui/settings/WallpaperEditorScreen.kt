@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -267,9 +268,23 @@ fun WallpaperEditorScreen(
                 0f, 0f, 0f, 1f, 0f
             )))
         }
-        // lightBalance applies a histogram-driven cubic LUT (Apple Brilliance
-        // patent). Not expressible as a 4x5 ColorMatrix so preview skips it;
-        // baked output (see WallpaperHelper.applyLightBalance) reflects it.
+        // Light balance PREVIEW = approximate: a gentle combined brightness
+        // lift + contrast boost. The real bake uses a histogram-driven cubic
+        // LUT (Apple Brilliance patent) which can't be expressed as a 4x5
+        // matrix; this approximation just gives the user something visible to
+        // react to while dragging. Final saved output uses the real math.
+        if (lightBalance != 0) {
+            val a = amt(lightBalance)
+            val b = a * 30f // small additive lift
+            val c = 1f + a * 0.2f // mild contrast change
+            val t = 128f * (1f - c)
+            cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
+                c, 0f, 0f, 0f, t + b,
+                0f, c, 0f, 0f, t + b,
+                0f, 0f, c, 0f, t + b,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
         if (temperature != 0) {
             val t = amt(temperature) * 40f
             cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
@@ -280,18 +295,40 @@ fun WallpaperEditorScreen(
             )))
         }
         if (tint != 0) {
+            // YIQ-chrominance tint — shifts the I (magenta↔green) axis of YIQ
+            // space without disturbing luminance. Coefficients come from the
+            // YIQ→RGB inverse at I=1, so Y stays ~constant (per GPUImage2's
+            // WhiteBalanceFragmentShader, but baked into a 4x5 ColorMatrix).
             val t = amt(tint) * 30f
             cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
-                1f, 0f, 0f, 0f, t * 0.5f,
-                0f, 1f, 0f, 0f, -t,
-                0f, 0f, 1f, 0f, t * 0.5f,
+                1f, 0f, 0f, 0f, 0.956f * t,
+                0f, 1f, 0f, 0f, -0.272f * t,
+                0f, 0f, 1f, 0f, -1.105f * t,
                 0f, 0f, 0f, 1f, 0f
             )))
         }
-        // Highlights + shadows are luminance-masked tone curves that can't be
-        // expressed as a 4x5 ColorMatrix — they're applied per-pixel at bake
-        // time only (WallpaperHelper.applyTonalAndSharpness). Live preview
-        // therefore doesn't reflect them; only the saved wallpaper does.
+        // Highlights/shadows PREVIEW approximation: global contrast skew biased
+        // toward either end. Not identical to the per-pixel luminance mask at
+        // bake time, but close enough visually for the user to see the slider
+        // taking effect in real time.
+        if (highlights != 0) {
+            val h = amt(highlights) * 0.30f
+            cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
+                1f + h, 0f, 0f, 0f, -h * 128f,
+                0f, 1f + h, 0f, 0f, -h * 128f,
+                0f, 0f, 1f + h, 0f, -h * 128f,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
+        if (shadows != 0) {
+            val s = amt(shadows) * 0.30f
+            cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
+                1f - s, 0f, 0f, 0f, s * 128f,
+                0f, 1f - s, 0f, 0f, s * 128f,
+                0f, 0f, 1f - s, 0f, s * 128f,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
         if (definition != 0) {
             val c = 1f + amt(definition) * 0.5f
             val t = 128f * (1f - c)
@@ -415,7 +452,7 @@ fun WallpaperEditorScreen(
             // nav bar. WindowInsets / view.rootWindowInsets both return 0 inside
             // this Dialog, so we hardcode 56dp — the standard 3-button nav bar
             // height on Samsung One UI / stock Android.
-            val pinnedIconRowHeight = 76.dp
+            val pinnedIconRowHeight = 88.dp
             val navBarPaddingDp = 96.dp
             // Active editing category — hoisted so the IconRow's CategoryIcons and
             // the Crossfade control above can share the same state.
@@ -725,36 +762,16 @@ fun WallpaperEditorScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(0.dp)
                                 ) {
-                                    val categoryLabel = when (cat) {
-                                        "light_balance" -> "Light balance"
-                                        "brightness" -> "Brightness"
-                                        "exposure" -> "Exposure"
-                                        "contrast" -> "Contrast"
-                                        "highlights" -> "Highlights"
-                                        "shadows" -> "Shadows"
-                                        "saturation" -> "Saturation"
-                                        "tint" -> "Tint"
-                                        "temperature" -> "Temperature"
-                                        "sharpness" -> "Sharpness"
-                                        "definition" -> "Definition"
-                                        else -> ""
-                                    }
-                                    Text(
-                                        categoryLabel,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFAAAAAA)
-                                    )
-                                    // Height sized to match the slider's own vertical
-                                    // footprint (~72dp = 48dp track + ~16dp tick labels
-                                    // + a little breathing room). Any bigger and we get
-                                    // empty space above the slider that visually adds
-                                    // a gap between the category name and the track.
+                                    // Slider only — the category name lives
+                                    // under each icon in the pager below so
+                                    // users can see every category's name at
+                                    // once, not just the selected one.
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 28.dp)
                                             .height(64.dp),
-                                        contentAlignment = Alignment.BottomCenter
+                                        contentAlignment = Alignment.TopCenter
                                     ) {
                                         // All -50..+50 effects reuse wallpaperBrightness (bipolar).
                                         // Sharpness is 0..100 (wallpaperPercent). Saturation stays
@@ -828,6 +845,9 @@ fun WallpaperEditorScreen(
                                             )
                                         }
                                     }
+                                    // (label is no longer shown here — each
+                                    // icon in the pager below carries its own
+                                    // name underneath it.)
                                 }
                             }
                         }
@@ -851,23 +871,21 @@ fun WallpaperEditorScreen(
                         pageCount = { categoryKeys.size }
                     )
                     val pickerHaptics = com.bearinmind.launcher314.helpers.rememberHapticFeedback()
-                    // `visualPage` tracks whichever icon is visually centered
-                    // (smallest |offset|). Using this instead of `currentPage`
-                    // keeps the "selected" highlight (outline + fill + scale)
-                    // lined up with the icon that's actually biggest on screen
-                    // during drags and flings, so the pager never looks like
-                    // it's snapping to a different icon than you chose.
+                    // `visualPage` = whichever icon has the smallest |offset|
+                    // from center (i.e. the biggest / currently-outlined one).
+                    // Updated instantly as the user drags, even through
+                    // offset-0.5 flips, so the outline/scale/label ALWAYS
+                    // track the visually-dominant icon.
                     val visualPage by remember {
                         derivedStateOf {
-                            val raw = pagerState.currentPage + pagerState.currentPageOffsetFraction
-                            raw.toDouble().let { kotlin.math.round(it).toInt() }
-                                .coerceIn(0, categoryKeys.size - 1)
+                            kotlin.math.round(
+                                pagerState.currentPage + pagerState.currentPageOffsetFraction
+                            ).toInt().coerceIn(0, categoryKeys.size - 1)
                         }
                     }
-                    // Skip the first emission (initial composition) so opening
-                    // the editor doesn't trigger a vibration. Subsequent page
-                    // changes — drag, fling-snap, or programmatic — get a soft
-                    // tick to confirm the new selection.
+                    // Haptic tick + slider sync fire when visualPage changes.
+                    // Skip the first composition so opening the editor doesn't
+                    // vibrate.
                     var hapticPrimed by remember { mutableStateOf(false) }
                     LaunchedEffect(visualPage) {
                         if (hapticPrimed) {
@@ -877,6 +895,14 @@ fun WallpaperEditorScreen(
                         }
                         activeCategoryShared = categoryKeys[visualPage]
                     }
+                    // (No post-settle correction.) The pager's own fling
+                    // animation lands the page exactly once; any second
+                    // animation on top of that reads as a visible "jump back"
+                    // after the user's eye has already committed to the
+                    // landing icon. Trade-off: nudges may occasionally snap
+                    // one icon past where the finger was — acceptable because
+                    // the single-animation path is perceptually smoother than
+                    // any correction scheme that requires a second pass.
                     val cropActivated = cropL != 0f || cropT != 0f || cropR != 1f || cropB != 1f ||
                         rotation != 0 || flipH || flipV || scale != 1f || offsetX != 0f || offsetY != 0f
                     BoxWithConstraints(
@@ -884,25 +910,51 @@ fun WallpaperEditorScreen(
                             .fillMaxWidth()
                             .height(pinnedIconRowHeight)
                     ) {
-                        val itemWidth = 56.dp
-                        // Center the current page by padding each side with
-                        // (container - item) / 2.
-                        val sidePadding = ((this.maxWidth - itemWidth) / 2).coerceAtLeast(0.dp)
-                        // threshold = 0.5 is "round to nearest": whatever icon
-                        // is visually centered when the finger lifts is where
-                        // the pager snaps. Combined with visualPage-driven
-                        // selection above, this means the icon that LOOKS
-                        // biggest is always the one that ends up selected.
-                        // atMost(1) + non-bouncy spring keep each swipe
-                        // unambiguous (exactly one page advance, settles
-                        // quickly without overshoot).
+                        // Each cell slot = maxWidth / 5 so that 5 cells (center +
+                        // 2 on each side) span the FULL width of the container —
+                        // same visible count as before but distributed edge to
+                        // edge instead of bunched into a narrow center strip.
+                        // The icon inside each cell stays at its intrinsic 56dp
+                        // and is centered by the Column's CenterHorizontally.
+                        val itemWidth = this.maxWidth / 5
+                        val sidePadding = itemWidth * 2
+                        // Let release velocity carry the pager through however
+                        // many pages Compose's spline predicts, capped at the
+                        // full category count so the HARDEST flick goes from
+                        // crop (0) → definition (11) or vice-versa in a single
+                        // fling. Gentle drag → ±1, medium flick → a handful,
+                        // max swipe → full 11-page traversal. One animation,
+                        // no second-pass "jump back."
+                        val maxPageDistance = categoryKeys.size - 1
+                        val velocitySnap = remember(maxPageDistance) {
+                            object : androidx.compose.foundation.pager.PagerSnapDistance {
+                                override fun calculateTargetPage(
+                                    startPage: Int,
+                                    suggestedTargetPage: Int,
+                                    velocity: Float,
+                                    pageSize: Int,
+                                    pageSpacing: Int
+                                ): Int = suggestedTargetPage.coerceIn(
+                                    startPage - maxPageDistance,
+                                    startPage + maxPageDistance
+                                )
+                            }
+                        }
+                        // Smooth settle: tween with FastOutSlowInEasing gives
+                        // a fluid deceleration at the end of a fling or the
+                        // short animation after a slow drag. 400ms is long
+                        // enough to feel unhurried but snappy — the decay
+                        // portion (handled internally by Compose's spline) is
+                        // untouched, so fast flings still decelerate in their
+                        // own natural physics curve before this easing kicks
+                        // in for the final lock-on.
                         val flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
                             state = pagerState,
-                            pagerSnapDistance = androidx.compose.foundation.pager.PagerSnapDistance.atMost(1),
+                            pagerSnapDistance = velocitySnap,
                             snapPositionalThreshold = 0.5f,
-                            snapAnimationSpec = androidx.compose.animation.core.spring(
-                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy
+                            snapAnimationSpec = androidx.compose.animation.core.tween(
+                                durationMillis = 400,
+                                easing = androidx.compose.animation.core.FastOutSlowInEasing
                             )
                         )
                         androidx.compose.foundation.pager.HorizontalPager(
@@ -941,7 +993,37 @@ fun WallpaperEditorScreen(
                             val onTap: () -> Unit = {
                                 scope.launch { pagerState.animateScrollToPage(page) }
                             }
-                            Box(
+                            // Crop has no scalar slider, so just feed 0 (no indicator).
+                            val displayValue = when (key) {
+                                "light_balance" -> lightBalance
+                                "brightness" -> brightness
+                                "exposure" -> exposure
+                                "contrast" -> contrast
+                                "highlights" -> highlights
+                                "shadows" -> shadows
+                                "saturation" -> saturation
+                                "tint" -> tint
+                                "temperature" -> temperature
+                                "sharpness" -> sharpness
+                                "definition" -> definition
+                                else -> 0
+                            }
+                            val categoryName = when (key) {
+                                "crop" -> "Crop"
+                                "light_balance" -> "Light balance"
+                                "brightness" -> "Brightness"
+                                "exposure" -> "Exposure"
+                                "contrast" -> "Contrast"
+                                "highlights" -> "Highlights"
+                                "shadows" -> "Shadows"
+                                "saturation" -> "Saturation"
+                                "tint" -> "Tint"
+                                "temperature" -> "Temperature"
+                                "sharpness" -> "Sharpness"
+                                "definition" -> "Definition"
+                                else -> ""
+                            }
+                            Column(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .graphicsLayer {
@@ -949,23 +1031,9 @@ fun WallpaperEditorScreen(
                                         scaleY = iconScale
                                         alpha = iconAlpha
                                     },
-                                contentAlignment = Alignment.Center
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
                             ) {
-                                // Crop has no scalar slider, so just feed 50 (no indicator).
-                                val displayValue = when (key) {
-                                    "light_balance" -> lightBalance
-                                    "brightness" -> brightness
-                                    "exposure" -> exposure
-                                    "contrast" -> contrast
-                                    "highlights" -> highlights
-                                    "shadows" -> shadows
-                                    "saturation" -> saturation
-                                    "tint" -> tint
-                                    "temperature" -> temperature
-                                    "sharpness" -> sharpness
-                                    "definition" -> definition
-                                    else -> 50
-                                }
                                 when (key) {
                                     "crop" -> CategoryIcon(Icons.Outlined.Crop, "Crop", isSelected, activated, displayValue, onTap)
                                     "light_balance" -> CategoryIconPainter(
@@ -1010,6 +1078,15 @@ fun WallpaperEditorScreen(
                                         "Definition", isSelected, activated, displayValue, onTap
                                     )
                                 }
+                                Text(
+                                    text = categoryName,
+                                    fontSize = 9.sp,
+                                    color = Color(0xFFAAAAAA),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -1420,21 +1497,46 @@ private fun CategoryIconBox(
     iconContent: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(12.dp)
-    // Activated (value != 0) → pure white outline so touched effects stand out
-    // clearly against untouched ones as you scroll past. Selected keeps the
-    // pure-white outline but gets a thicker stroke + brighter fill below so
-    // it's still obviously the current cell.
-    val outlineColor = when {
-        activated -> Color.White
-        else -> Color(0xFF444444)
-    }
-    val outlineWidth = if (selected) 1.5.dp else 1.dp
-    val iconAlpha = if (activated) 1f else 0.4f
-    // Slightly brighter fill on the selected cell so it's more obvious which
-    // cell is currently being edited. Non-selected activated cells use a
-    // dimmer fill so their value preview is still visible without competing.
+    // Animated colors/widths so transitions between selected/unselected and
+    // activated/unactivated states don't snap — they interpolate across a
+    // short tween. Keeps the pager feel fluid when flipping pages.
+    val targetOutlineColor = if (activated) Color.White else Color(0xFF444444)
+    val outlineColor by androidx.compose.animation.animateColorAsState(
+        targetValue = targetOutlineColor,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 250,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing
+        ),
+        label = "outlineColor"
+    )
+    val outlineWidth by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (selected) 1.5.dp else 1.dp,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 250,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing
+        ),
+        label = "outlineWidth"
+    )
+    val iconAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (activated) 1f else 0.4f,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 250,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing
+        ),
+        label = "iconAlpha"
+    )
+    // Fill colors and active state — also tweened so the value-preview shade
+    // shifts gently when crossing the selected/unselected boundary.
     val selectedFill = Color(0xFF5A5A5A)
     val unselectedActivatedFill = Color(0xFF2E2E2E)
+    val fillColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) selectedFill else unselectedActivatedFill,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 250,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing
+        ),
+        label = "fillColor"
+    )
     val showValueIndicator = selected && activated
     Box(
         modifier = Modifier
@@ -1450,7 +1552,7 @@ private fun CategoryIconBox(
                     val fillW = size.width * frac
                     val left = if (value >= 0) 0f else size.width - fillW
                     drawRect(
-                        color = if (selected) selectedFill else unselectedActivatedFill,
+                        color = fillColor,
                         topLeft = androidx.compose.ui.geometry.Offset(left, 0f),
                         size = androidx.compose.ui.geometry.Size(fillW, size.height)
                     )

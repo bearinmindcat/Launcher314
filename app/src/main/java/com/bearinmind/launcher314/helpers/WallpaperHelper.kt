@@ -263,27 +263,22 @@ object WallpaperHelper {
             )))
         }
         if (tint != 0) {
+            // YIQ-chrominance tint (see WallpaperEditorScreen preview filter).
             val t = amt(tint) * 30f
             combined.postConcat(ColorMatrix(floatArrayOf(
-                1f, 0f, 0f, 0f, t * 0.5f,
-                0f, 1f, 0f, 0f, -t,
-                0f, 0f, 1f, 0f, t * 0.5f,
+                1f, 0f, 0f, 0f, 0.956f * t,
+                0f, 1f, 0f, 0f, -0.272f * t,
+                0f, 0f, 1f, 0f, -1.105f * t,
                 0f, 0f, 0f, 1f, 0f
             )))
         }
         // highlights / shadows are applied AFTER the draw via per-pixel tone
         // curves (see below) — matrix-only versions affect every pixel equally,
         // which isn't what those sliders actually mean in photo editors.
-        if (definition != 0) {
-            val c = 1f + amt(definition) * 0.5f
-            val t = 128f * (1f - c)
-            combined.postConcat(ColorMatrix(floatArrayOf(
-                c, 0f, 0f, 0f, t,
-                0f, c, 0f, 0f, t,
-                0f, 0f, c, 0f, t,
-                0f, 0f, 0f, 1f, 0f
-            )))
-        }
+        // Definition is applied post-draw as a wide-radius unsharp mask
+        // (Lightroom "Clarity" / Apple "Definition" convention): pulls
+        // mid-tone contrast without affecting global exposure. Matrix-only
+        // version was just a gentle contrast boost — not the same effect.
         if (contrast != 0) combined.postConcat(makeContrastMatrix(contrast))
         if (saturation != 0) {
             val sat = ColorMatrix()
@@ -308,10 +303,11 @@ object WallpaperHelper {
 
         // --- Per-pixel tonal passes that can't fit in a 4x5 ColorMatrix ---
         // LightBalance runs FIRST (it's a base auto-tone — Apple Brilliance
-        // patent US8314847B2). Highlights/shadows/sharpness then fine-tune on
-        // top of that corrected tone.
+        // patent US8314847B2). Highlights/shadows/sharpness/definition then
+        // fine-tune on top of that corrected tone.
         applyLightBalance(out, lightBalance)
         applyTonalAndSharpness(out, highlights, shadows, sharpness)
+        applyDefinition(out, definition)
 
         // Vignette — radial gradient darkening from corners inward
         if (vignette > 0) {
@@ -516,6 +512,55 @@ object WallpaperHelper {
         }
 
         out.setPixels(pixels, 0, w, 0, 0, w, h)
+    }
+
+    /**
+     * Definition / Clarity — wide-radius unsharp mask on midtones.
+     * This is Lightroom's Clarity and Apple Photos' Definition: it boosts
+     * local (mid-tone) contrast without shifting global exposure.
+     *
+     *   out = original + amt * (original - bigBlur(original))
+     *
+     * Unlike Sharpness which uses a small radius (edges), Definition uses
+     * a much larger radius proportional to image dimension so it sculpts
+     * broader tonal regions.
+     */
+    private fun applyDefinition(out: Bitmap, definition: Int) {
+        if (definition == 0) return
+        val amt = definition / 100f // -1..+1
+        // Radius ≈ min(W,H) / 30 per Lightroom convention. Cap for stability.
+        val radius = (minOf(out.width, out.height) / 30).coerceIn(8, 40)
+        val blurred = applyStackBlur(
+            out.copy(out.config ?: Bitmap.Config.ARGB_8888, true),
+            radiusPx = radius
+        )
+        val w = out.width
+        val h = out.height
+        val src = IntArray(w * h)
+        val blur = IntArray(w * h)
+        out.getPixels(src, 0, w, 0, 0, w, h)
+        blurred.getPixels(blur, 0, w, 0, 0, w, h)
+        blurred.recycle()
+        for (i in src.indices) {
+            val p = src[i]
+            val a = (p ushr 24) and 0xff
+            val r = (p shr 16) and 0xff
+            val g = (p shr 8) and 0xff
+            val b = p and 0xff
+            val bp = blur[i]
+            val br = (bp shr 16) and 0xff
+            val bg = (bp shr 8) and 0xff
+            val bb = bp and 0xff
+            // Only affect mid-tones: fade the effect toward 0 at the extremes.
+            // lumMask = 1 at mid-gray (lum=128), 0 at black or white.
+            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b)
+            val midMask = 1f - kotlin.math.abs(lum - 128f) / 128f // 0..1
+            val nr = (r + amt * midMask * (r - br)).toInt().coerceIn(0, 255)
+            val ng = (g + amt * midMask * (g - bg)).toInt().coerceIn(0, 255)
+            val nb = (b + amt * midMask * (b - bb)).toInt().coerceIn(0, 255)
+            src[i] = (a shl 24) or (nr shl 16) or (ng shl 8) or nb
+        }
+        out.setPixels(src, 0, w, 0, 0, w, h)
     }
 
     private fun makeBrightnessMatrix(brightness: Int): ColorMatrix {
