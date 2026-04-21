@@ -24,9 +24,12 @@ private const val WP_KEY_DEVICE_EDIT_OFFSET_Y = "wallpaper_device_edit_offset_y"
 private const val WP_KEY_DEVICE_EDIT_ROTATION = "wallpaper_device_edit_rotation"     // 0 / 90 / 180 / 270
 private const val WP_KEY_DEVICE_EDIT_FLIP_H = "wallpaper_device_edit_flip_h"         // bool
 private const val WP_KEY_DEVICE_EDIT_FLIP_V = "wallpaper_device_edit_flip_v"         // bool
-private const val WP_KEY_DEVICE_EDIT_BRIGHTNESS = "wallpaper_device_edit_brightness" // int -50..+50
-private const val WP_KEY_DEVICE_EDIT_CONTRAST = "wallpaper_device_edit_contrast"     // int -50..+50
-private const val WP_KEY_DEVICE_EDIT_SATURATION = "wallpaper_device_edit_saturation" // int -100..+100
+// v2 keys: scale unified to -100..+100 with 0 as the neutral default. Old v1
+// keys (0..100 with 50 neutral) are intentionally NOT read so prior saves
+// don't surface as pre-activated effects at the new neutral (0).
+private const val WP_KEY_DEVICE_EDIT_BRIGHTNESS = "wallpaper_device_edit_brightness_v2"
+private const val WP_KEY_DEVICE_EDIT_CONTRAST = "wallpaper_device_edit_contrast_v2"
+private const val WP_KEY_DEVICE_EDIT_SATURATION = "wallpaper_device_edit_saturation_v2"
 private const val WP_KEY_DEVICE_EDIT_BLUR = "wallpaper_device_edit_blur"             // int 0..100
 private const val WP_KEY_DEVICE_EDIT_VIGNETTE = "wallpaper_device_edit_vignette"     // int 0..100
 private const val WP_KEY_DEVICE_EDIT_FILTER = "wallpaper_device_edit_filter"         // "none" | "grayscale" | "sepia" | "invert"
@@ -34,6 +37,14 @@ private const val WP_KEY_DEVICE_EDIT_CROP_L = "wallpaper_device_edit_crop_l"    
 private const val WP_KEY_DEVICE_EDIT_CROP_T = "wallpaper_device_edit_crop_t"
 private const val WP_KEY_DEVICE_EDIT_CROP_R = "wallpaper_device_edit_crop_r"
 private const val WP_KEY_DEVICE_EDIT_CROP_B = "wallpaper_device_edit_crop_b"
+private const val WP_KEY_DEVICE_EDIT_LIGHT_BALANCE = "wallpaper_device_edit_light_balance_v2"
+private const val WP_KEY_DEVICE_EDIT_EXPOSURE = "wallpaper_device_edit_exposure_v2"
+private const val WP_KEY_DEVICE_EDIT_HIGHLIGHTS = "wallpaper_device_edit_highlights_v2"
+private const val WP_KEY_DEVICE_EDIT_SHADOWS = "wallpaper_device_edit_shadows_v2"
+private const val WP_KEY_DEVICE_EDIT_TINT = "wallpaper_device_edit_tint_v2"
+private const val WP_KEY_DEVICE_EDIT_TEMPERATURE = "wallpaper_device_edit_temperature_v2"
+private const val WP_KEY_DEVICE_EDIT_SHARPNESS = "wallpaper_device_edit_sharpness_v2"
+private const val WP_KEY_DEVICE_EDIT_DEFINITION = "wallpaper_device_edit_definition_v2"
 
 const val WP_FILTER_NONE = "none"
 const val WP_FILTER_GRAYSCALE = "grayscale"
@@ -52,9 +63,22 @@ data class DeviceWallpaperEdit(
     val cropTop: Float = 0f,
     val cropRight: Float = 1f,
     val cropBottom: Float = 1f,
-    val brightness: Int = 0,            // -50..+50
-    val contrast: Int = 0,              // -50..+50
-    val saturation: Int = 0,            // -100..+100
+    // All color/tonal effects use a unified -100..+100 range with 0 as the
+    // neutral / default value. Negative reduces the effect, positive enhances
+    // it. Color-matrix math uses `value / 100f` as the bipolar strength
+    // (-1..+1) so 0 = identity, +100 = max positive, -100 = max negative.
+    val brightness: Int = 0,
+    val contrast: Int = 0,
+    val saturation: Int = 0,
+    val lightBalance: Int = 0,
+    val exposure: Int = 0,
+    val highlights: Int = 0,
+    val shadows: Int = 0,
+    val tint: Int = 0,                  // - = green, + = magenta
+    val temperature: Int = 0,           // - = cool, + = warm
+    val sharpness: Int = 0,             // - = softer, + = sharper
+    val definition: Int = 0,
+    // --- Retained for backwards compat with older saved state ---
     val blur: Int = 0,                  // 0..100
     val vignette: Int = 0,              // 0..100
     val filter: String = WP_FILTER_NONE
@@ -153,8 +177,8 @@ fun getDeviceWallpaperEdit(context: Context): DeviceWallpaperEdit {
         rotationDegrees = prefs.getInt(WP_KEY_DEVICE_EDIT_ROTATION, 0),
         flipH = prefs.getBoolean(WP_KEY_DEVICE_EDIT_FLIP_H, false),
         flipV = prefs.getBoolean(WP_KEY_DEVICE_EDIT_FLIP_V, false),
-        brightness = prefs.getInt(WP_KEY_DEVICE_EDIT_BRIGHTNESS, 0).coerceIn(-50, 50),
-        contrast = prefs.getInt(WP_KEY_DEVICE_EDIT_CONTRAST, 0).coerceIn(-50, 50),
+        brightness = prefs.getInt(WP_KEY_DEVICE_EDIT_BRIGHTNESS, 0).coerceIn(-100, 100),
+        contrast = prefs.getInt(WP_KEY_DEVICE_EDIT_CONTRAST, 0).coerceIn(-100, 100),
         saturation = prefs.getInt(WP_KEY_DEVICE_EDIT_SATURATION, 0).coerceIn(-100, 100),
         blur = prefs.getInt(WP_KEY_DEVICE_EDIT_BLUR, 0).coerceIn(0, 100),
         vignette = prefs.getInt(WP_KEY_DEVICE_EDIT_VIGNETTE, 0).coerceIn(0, 100),
@@ -162,7 +186,15 @@ fun getDeviceWallpaperEdit(context: Context): DeviceWallpaperEdit {
         cropLeft = (prefs.getInt(WP_KEY_DEVICE_EDIT_CROP_L, 0) / 10000f).coerceIn(0f, 1f),
         cropTop = (prefs.getInt(WP_KEY_DEVICE_EDIT_CROP_T, 0) / 10000f).coerceIn(0f, 1f),
         cropRight = (prefs.getInt(WP_KEY_DEVICE_EDIT_CROP_R, 10000) / 10000f).coerceIn(0f, 1f),
-        cropBottom = (prefs.getInt(WP_KEY_DEVICE_EDIT_CROP_B, 10000) / 10000f).coerceIn(0f, 1f)
+        cropBottom = (prefs.getInt(WP_KEY_DEVICE_EDIT_CROP_B, 10000) / 10000f).coerceIn(0f, 1f),
+        lightBalance = prefs.getInt(WP_KEY_DEVICE_EDIT_LIGHT_BALANCE, 0).coerceIn(-100, 100),
+        exposure = prefs.getInt(WP_KEY_DEVICE_EDIT_EXPOSURE, 0).coerceIn(-100, 100),
+        highlights = prefs.getInt(WP_KEY_DEVICE_EDIT_HIGHLIGHTS, 0).coerceIn(-100, 100),
+        shadows = prefs.getInt(WP_KEY_DEVICE_EDIT_SHADOWS, 0).coerceIn(-100, 100),
+        tint = prefs.getInt(WP_KEY_DEVICE_EDIT_TINT, 0).coerceIn(-100, 100),
+        temperature = prefs.getInt(WP_KEY_DEVICE_EDIT_TEMPERATURE, 0).coerceIn(-100, 100),
+        sharpness = prefs.getInt(WP_KEY_DEVICE_EDIT_SHARPNESS, 0).coerceIn(-100, 100),
+        definition = prefs.getInt(WP_KEY_DEVICE_EDIT_DEFINITION, 0).coerceIn(-100, 100)
     )
 }
 
@@ -174,8 +206,8 @@ fun setDeviceWallpaperEdit(context: Context, edit: DeviceWallpaperEdit) {
         .putInt(WP_KEY_DEVICE_EDIT_ROTATION, edit.rotationDegrees)
         .putBoolean(WP_KEY_DEVICE_EDIT_FLIP_H, edit.flipH)
         .putBoolean(WP_KEY_DEVICE_EDIT_FLIP_V, edit.flipV)
-        .putInt(WP_KEY_DEVICE_EDIT_BRIGHTNESS, edit.brightness.coerceIn(-50, 50))
-        .putInt(WP_KEY_DEVICE_EDIT_CONTRAST, edit.contrast.coerceIn(-50, 50))
+        .putInt(WP_KEY_DEVICE_EDIT_BRIGHTNESS, edit.brightness.coerceIn(-100, 100))
+        .putInt(WP_KEY_DEVICE_EDIT_CONTRAST, edit.contrast.coerceIn(-100, 100))
         .putInt(WP_KEY_DEVICE_EDIT_SATURATION, edit.saturation.coerceIn(-100, 100))
         .putInt(WP_KEY_DEVICE_EDIT_BLUR, edit.blur.coerceIn(0, 100))
         .putInt(WP_KEY_DEVICE_EDIT_VIGNETTE, edit.vignette.coerceIn(0, 100))
@@ -184,5 +216,13 @@ fun setDeviceWallpaperEdit(context: Context, edit: DeviceWallpaperEdit) {
         .putInt(WP_KEY_DEVICE_EDIT_CROP_T, (edit.cropTop * 10000).toInt())
         .putInt(WP_KEY_DEVICE_EDIT_CROP_R, (edit.cropRight * 10000).toInt())
         .putInt(WP_KEY_DEVICE_EDIT_CROP_B, (edit.cropBottom * 10000).toInt())
+        .putInt(WP_KEY_DEVICE_EDIT_LIGHT_BALANCE, edit.lightBalance.coerceIn(-100, 100))
+        .putInt(WP_KEY_DEVICE_EDIT_EXPOSURE, edit.exposure.coerceIn(-100, 100))
+        .putInt(WP_KEY_DEVICE_EDIT_HIGHLIGHTS, edit.highlights.coerceIn(-100, 100))
+        .putInt(WP_KEY_DEVICE_EDIT_SHADOWS, edit.shadows.coerceIn(-100, 100))
+        .putInt(WP_KEY_DEVICE_EDIT_TINT, edit.tint.coerceIn(-100, 100))
+        .putInt(WP_KEY_DEVICE_EDIT_TEMPERATURE, edit.temperature.coerceIn(-100, 100))
+        .putInt(WP_KEY_DEVICE_EDIT_SHARPNESS, edit.sharpness.coerceIn(-100, 100))
+        .putInt(WP_KEY_DEVICE_EDIT_DEFINITION, edit.definition.coerceIn(-100, 100))
         .apply()
 }

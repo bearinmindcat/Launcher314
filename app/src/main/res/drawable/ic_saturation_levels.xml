@@ -1,0 +1,35 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Outer circle stroke -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M12,2 A10,10 0 1,1 11.99,2" />
+    <!-- 4 quadrant slices, each with decreasing fillAlpha so the circle
+         shows 4 shades of "brightness" around it. fillAlpha is preserved
+         through Compose's Icon tint, so this renders correctly whether
+         the icon is tinted white (unselected) or black (selected). -->
+    <!-- Top-right: fully bright -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="1.0"
+        android:pathData="M12,12 L12,2 A10,10 0 0,1 22,12 Z" />
+    <!-- Bottom-right: light -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.7"
+        android:pathData="M12,12 L22,12 A10,10 0 0,1 12,22 Z" />
+    <!-- Bottom-left: medium -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.4"
+        android:pathData="M12,12 L12,22 A10,10 0 0,1 2,12 Z" />
+    <!-- Top-left: faintest -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.15"
+        android:pathData="M12,12 L2,12 A10,10 0 0,1 12,2 Z" />
+</vector>

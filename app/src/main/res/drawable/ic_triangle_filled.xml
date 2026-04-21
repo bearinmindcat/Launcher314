@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Filled triangle for the Definition category — visually mirrors the
+         outlined ChangeHistory used for Sharpness so the two tonal effects
+         read as a related pair (outline / filled) in the picker. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,4 L22,20 L2,20 Z" />
+</vector>

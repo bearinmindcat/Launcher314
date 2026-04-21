@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Definition = rounded-corner triangle with 4 horizontal tonal bands
+         (same varying-alpha approach used in ic_saturation_levels.xml but
+         clipped to a triangle shape instead of a circle). Top apex band is
+         faintest (fillAlpha 0.15); bottom band is fully bright (1.0). Outer
+         path adds the rounded-corner outline on top. -->
+    <!-- Band 1: top apex, faintest -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.15"
+        android:pathData="M12,4 L14.25,8 L9.75,8 Z" />
+    <!-- Band 2: upper-middle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.4"
+        android:pathData="M9.75,8 L14.25,8 L16.5,12 L7.5,12 Z" />
+    <!-- Band 3: lower-middle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.7"
+        android:pathData="M7.5,12 L16.5,12 L18.75,16 L5.25,16 Z" />
+    <!-- Band 4: bottom, fully bright -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="1.0"
+        android:pathData="M5.25,16 L18.75,16 L21,20 L3,20 Z" />
+    <!-- Rounded-corner outline drawn last so it sits on top of the bands. -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M12,4 L21,20 L3,20 Z" />
+</vector>

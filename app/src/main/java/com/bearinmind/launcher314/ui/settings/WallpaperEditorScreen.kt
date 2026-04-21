@@ -3,6 +3,7 @@ package com.bearinmind.launcher314.ui.settings
 import android.app.WallpaperManager
 import android.graphics.BitmapFactory
 import android.os.Build
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -22,8 +23,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,7 +45,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Contrast
@@ -86,6 +88,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -117,7 +122,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun WallpaperEditorScreen(
     sourceFile: File,
@@ -153,6 +158,14 @@ fun WallpaperEditorScreen(
     var brightness by remember { mutableIntStateOf(initialEdit.brightness) }
     var contrast by remember { mutableIntStateOf(initialEdit.contrast) }
     var saturation by remember { mutableIntStateOf(initialEdit.saturation) }
+    var lightBalance by remember { mutableIntStateOf(initialEdit.lightBalance) }
+    var exposure by remember { mutableIntStateOf(initialEdit.exposure) }
+    var highlights by remember { mutableIntStateOf(initialEdit.highlights) }
+    var shadows by remember { mutableIntStateOf(initialEdit.shadows) }
+    var tint by remember { mutableIntStateOf(initialEdit.tint) }
+    var temperature by remember { mutableIntStateOf(initialEdit.temperature) }
+    var sharpness by remember { mutableIntStateOf(initialEdit.sharpness) }
+    var definition by remember { mutableIntStateOf(initialEdit.definition) }
     var blur by remember { mutableIntStateOf(initialEdit.blur) }
     var vignette by remember { mutableIntStateOf(initialEdit.vignette) }
     var filter by remember { mutableStateOf(initialEdit.filter) }
@@ -173,6 +186,10 @@ fun WallpaperEditorScreen(
         rotationDegrees = rotation, flipH = flipH, flipV = flipV,
         cropLeft = cropL, cropTop = cropT, cropRight = cropR, cropBottom = cropB,
         brightness = brightness, contrast = contrast, saturation = saturation,
+        lightBalance = lightBalance, exposure = exposure,
+        highlights = highlights, shadows = shadows,
+        tint = tint, temperature = temperature,
+        sharpness = sharpness, definition = definition,
         blur = blur, vignette = vignette, filter = filter
     )
 
@@ -192,6 +209,10 @@ fun WallpaperEditorScreen(
         flipH = e.flipH; flipV = e.flipV
         cropL = e.cropLeft; cropT = e.cropTop; cropR = e.cropRight; cropB = e.cropBottom
         brightness = e.brightness; contrast = e.contrast; saturation = e.saturation
+        lightBalance = e.lightBalance; exposure = e.exposure
+        highlights = e.highlights; shadows = e.shadows
+        tint = e.tint; temperature = e.temperature
+        sharpness = e.sharpness; definition = e.definition
         blur = e.blur; vignette = e.vignette; filter = e.filter
     }
 
@@ -214,11 +235,22 @@ fun WallpaperEditorScreen(
 
     val deviceAspect = configuration.screenWidthDp.toFloat() / configuration.screenHeightDp.toFloat()
 
-    // Combined ColorFilter for live preview
-    val previewColorFilter = remember(brightness, contrast, saturation, filter) {
+    // Combined ColorFilter for live preview. Effects that fit cleanly into a
+    // 4x5 ColorMatrix are applied here (brightness, exposure, lightBalance,
+    // temperature, tint, contrast, saturation, definition, filter). Tonal
+    // effects that need per-pixel curves (highlights, shadows) use rough
+    // matrix approximations for preview; the bake-time renderer applies the
+    // real curves. Sharpness is bake-only (needs convolution).
+    val previewColorFilter = remember(
+        brightness, contrast, saturation, filter,
+        lightBalance, exposure, highlights, shadows, tint, temperature, definition
+    ) {
+        // All effect sliders are now -100..+100 with 0 = neutral. `amt(v) = v/100f`
+        // maps directly to a -1..+1 strength.
+        fun amt(v: Int): Float = v / 100f
         val cm = android.graphics.ColorMatrix()
         if (brightness != 0) {
-            val b = (brightness / 50f * 127f)
+            val b = amt(brightness) * 127f
             cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
                 1f, 0f, 0f, 0f, b,
                 0f, 1f, 0f, 0f, b,
@@ -226,8 +258,52 @@ fun WallpaperEditorScreen(
                 0f, 0f, 0f, 1f, 0f
             )))
         }
+        if (exposure != 0) {
+            val e = Math.pow(2.0, amt(exposure).toDouble()).toFloat()
+            cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
+                e, 0f, 0f, 0f, 0f,
+                0f, e, 0f, 0f, 0f,
+                0f, 0f, e, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
+        // lightBalance applies a histogram-driven cubic LUT (Apple Brilliance
+        // patent). Not expressible as a 4x5 ColorMatrix so preview skips it;
+        // baked output (see WallpaperHelper.applyLightBalance) reflects it.
+        if (temperature != 0) {
+            val t = amt(temperature) * 40f
+            cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
+                1f, 0f, 0f, 0f, t,
+                0f, 1f, 0f, 0f, 0f,
+                0f, 0f, 1f, 0f, -t,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
+        if (tint != 0) {
+            val t = amt(tint) * 30f
+            cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
+                1f, 0f, 0f, 0f, t * 0.5f,
+                0f, 1f, 0f, 0f, -t,
+                0f, 0f, 1f, 0f, t * 0.5f,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
+        // Highlights + shadows are luminance-masked tone curves that can't be
+        // expressed as a 4x5 ColorMatrix — they're applied per-pixel at bake
+        // time only (WallpaperHelper.applyTonalAndSharpness). Live preview
+        // therefore doesn't reflect them; only the saved wallpaper does.
+        if (definition != 0) {
+            val c = 1f + amt(definition) * 0.5f
+            val t = 128f * (1f - c)
+            cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
+                c, 0f, 0f, 0f, t,
+                0f, c, 0f, 0f, t,
+                0f, 0f, c, 0f, t,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
         if (contrast != 0) {
-            val c = 1f + contrast / 100f
+            val c = 1f + amt(contrast)
             val t = 128f * (1f - c)
             cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
                 c, 0f, 0f, 0f, t,
@@ -238,7 +314,8 @@ fun WallpaperEditorScreen(
         }
         if (saturation != 0) {
             val sat = android.graphics.ColorMatrix()
-            sat.setSaturation((1f + saturation / 100f).coerceAtLeast(0f))
+            // -100 -> 0% (grayscale), 0 -> 100% (identity), +100 -> 200%.
+            sat.setSaturation((1f + amt(saturation)).coerceAtLeast(0f))
             cm.postConcat(sat)
         }
         when (filter) {
@@ -383,7 +460,7 @@ fun WallpaperEditorScreen(
                         onClick = { doReset() }
                     )
                     TextOnlyTopButton(
-                        label = "Save",
+                        label = "Preview",
                         onClick = { saveDialogOpen = true }
                     )
                 }
@@ -515,20 +592,21 @@ fun WallpaperEditorScreen(
                                     .then(blurMod)
                             )
 
-                            // Crop overlay — sibling of the Image inside the inner box so
-                            // they share the exact same parent dimensions (the inner box's
-                            // fillMaxSize). This guarantees the crop outline aligns precisely
-                            // with the image bounds where the outer border sits.
-                            CropOverlay(
-                                cropL = cropL, cropT = cropT, cropR = cropR, cropB = cropB,
-                                onCropChange = { l, t, r, b ->
-                                    cropL = l.coerceIn(0f, 1f)
-                                    cropT = t.coerceIn(0f, 1f)
-                                    cropR = r.coerceIn(0f, 1f)
-                                    cropB = b.coerceIn(0f, 1f)
-                                },
-                                onCommit = { commitEdit() }
-                            )
+                            // Crop overlay — only visible when the Crop category is the
+                            // active editing mode. Other modes (Brightness, Contrast, etc.)
+                            // hide the outline/handles so the user sees the clean image.
+                            if (isCropMode) {
+                                CropOverlay(
+                                    cropL = cropL, cropT = cropT, cropR = cropR, cropB = cropB,
+                                    onCropChange = { l, t, r, b ->
+                                        cropL = l.coerceIn(0f, 1f)
+                                        cropT = t.coerceIn(0f, 1f)
+                                        cropR = r.coerceIn(0f, 1f)
+                                        cropB = b.coerceIn(0f, 1f)
+                                    },
+                                    onCommit = { commitEdit() }
+                                )
+                            }
 
                             // Vignette preview overlay
                             if (vignette > 0) {
@@ -550,37 +628,56 @@ fun WallpaperEditorScreen(
 
                             // (floating save button removed — save now lives in the top action bar)
 
-                            // Floating transform row — overlaid on the bottom-center of the
-                            // image preview, semi-transparent pill background. Replaces the
-                            // old "Transform" section in the controls list.
-                            Row(
+                            // Floating transform row — only shown in Crop mode. Uses
+                            // AnimatedVisibility(fadeIn/fadeOut) so the whole group
+                            // smoothly appears/disappears when switching in/out of
+                            // crop mode. All four icons live in ONE rounded-box
+                            // container (not four separate boxes) matching the top
+                            // bar's 12dp rounded-rect style.
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = isCropMode,
+                                enter = androidx.compose.animation.fadeIn(
+                                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
+                                ),
+                                exit = androidx.compose.animation.fadeOut(
+                                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 180)
+                                ),
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .padding(bottom = 10.dp)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(Color.Black.copy(alpha = 0.55f))
-                                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                FloatingTransformIcon(
-                                    icon = Icons.Outlined.Rotate90DegreesCcw,
-                                    contentDesc = "Rotate left"
-                                ) { rotation = ((rotation - 90) + 360) % 360; commitEdit() }
-                                FloatingTransformIcon(
-                                    icon = Icons.Outlined.Rotate90DegreesCw,
-                                    contentDesc = "Rotate right"
-                                ) { rotation = (rotation + 90) % 360; commitEdit() }
-                                FloatingTransformIcon(
-                                    icon = Icons.Outlined.SwapHoriz,
-                                    contentDesc = "Flip horizontal",
-                                    selected = flipH
-                                ) { flipH = !flipH; commitEdit() }
-                                FloatingTransformIcon(
-                                    icon = Icons.Outlined.SwapVert,
-                                    contentDesc = "Flip vertical",
-                                    selected = flipV
-                                ) { flipV = !flipV; commitEdit() }
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.Black.copy(alpha = 0.55f))
+                                        .border(
+                                            width = 1.dp,
+                                            color = Color(0xFF888888),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    FloatingTransformIconPainter(
+                                        painter = androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_rotate_left_spectrum),
+                                        contentDesc = "Rotate left"
+                                    ) { rotation = ((rotation - 90) + 360) % 360; commitEdit() }
+                                    FloatingTransformIconPainter(
+                                        painter = androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_rotate_right_spectrum),
+                                        contentDesc = "Rotate right"
+                                    ) { rotation = (rotation + 90) % 360; commitEdit() }
+                                    FloatingTransformIcon(
+                                        icon = Icons.Outlined.SwapHoriz,
+                                        contentDesc = "Flip horizontal",
+                                        selected = flipH
+                                    ) { flipH = !flipH; commitEdit() }
+                                    FloatingTransformIcon(
+                                        icon = Icons.Outlined.SwapVert,
+                                        contentDesc = "Flip vertical",
+                                        selected = flipV
+                                    ) { flipV = !flipV; commitEdit() }
+                                }
                             }
                         }
                         } // end inner box
@@ -593,10 +690,21 @@ fun WallpaperEditorScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 16.dp)
+                            // Animate the Column's height when swapping between crop
+                            // mode (no slider → collapses) and other modes (slider +
+                            // label → ~108dp). That lets the Preview above (weight 1f)
+                            // grow / shrink smoothly instead of snapping.
+                            .animateContentSize(
+                                animationSpec = androidx.compose.animation.core.tween(
+                                    durationMillis = 300,
+                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                )
+                            ),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Spacer(Modifier.height(4.dp))
+                        // (removed top Spacer so the label + slider sit as close
+                        // as possible to the IconRow beneath the Crossfade block.)
 
                         // Crossfade smoothly transitions the label + control between categories
                         // when the active one changes. Crop mode renders an empty placeholder
@@ -615,15 +723,20 @@ fun WallpaperEditorScreen(
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    verticalArrangement = Arrangement.spacedBy(0.dp)
                                 ) {
                                     val categoryLabel = when (cat) {
+                                        "light_balance" -> "Light balance"
                                         "brightness" -> "Brightness"
+                                        "exposure" -> "Exposure"
                                         "contrast" -> "Contrast"
+                                        "highlights" -> "Highlights"
+                                        "shadows" -> "Shadows"
                                         "saturation" -> "Saturation"
-                                        "filter" -> "Filter"
-                                        "blur" -> "Blur"
-                                        "vignette" -> "Vignette"
+                                        "tint" -> "Tint"
+                                        "temperature" -> "Temperature"
+                                        "sharpness" -> "Sharpness"
+                                        "definition" -> "Definition"
                                         else -> ""
                                     }
                                     Text(
@@ -631,50 +744,86 @@ fun WallpaperEditorScreen(
                                         style = MaterialTheme.typography.labelMedium,
                                         color = Color(0xFFAAAAAA)
                                     )
-                                    // Height bumped to 92dp so the slider's tick number
-                                    // labels + caption text below the track render
-                                    // INSIDE this box (slider is ~80–90dp tall) instead
-                                    // of overflowing onto the IconRow underneath.
-                                    Box(modifier = Modifier.fillMaxWidth().height(92.dp), contentAlignment = Alignment.Center) {
+                                    // Height sized to match the slider's own vertical
+                                    // footprint (~72dp = 48dp track + ~16dp tick labels
+                                    // + a little breathing room). Any bigger and we get
+                                    // empty space above the slider that visually adds
+                                    // a gap between the category name and the track.
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 28.dp)
+                                            .height(64.dp),
+                                        contentAlignment = Alignment.BottomCenter
+                                    ) {
+                                        // All -50..+50 effects reuse wallpaperBrightness (bipolar).
+                                        // Sharpness is 0..100 (wallpaperPercent). Saturation stays
+                                        // on its -100..+100 config.
                                         when (cat) {
+                                            "light_balance" -> ThumbDragHorizontalSlider(
+                                                currentValue = lightBalance.toFloat(),
+                                                config = SliderConfigs.wallpaperEffect,
+                                                onValueChange = { lightBalance = it.toInt() },
+                                                onValueChangeFinished = { commitEdit() }
+                                            )
                                             "brightness" -> ThumbDragHorizontalSlider(
                                                 currentValue = brightness.toFloat(),
-                                                config = SliderConfigs.wallpaperBrightness,
+                                                config = SliderConfigs.wallpaperEffect,
                                                 onValueChange = { brightness = it.toInt() },
+                                                onValueChangeFinished = { commitEdit() }
+                                            )
+                                            "exposure" -> ThumbDragHorizontalSlider(
+                                                currentValue = exposure.toFloat(),
+                                                config = SliderConfigs.wallpaperEffect,
+                                                onValueChange = { exposure = it.toInt() },
                                                 onValueChangeFinished = { commitEdit() }
                                             )
                                             "contrast" -> ThumbDragHorizontalSlider(
                                                 currentValue = contrast.toFloat(),
-                                                config = SliderConfigs.wallpaperBrightness,
+                                                config = SliderConfigs.wallpaperEffect,
                                                 onValueChange = { contrast = it.toInt() },
+                                                onValueChangeFinished = { commitEdit() }
+                                            )
+                                            "highlights" -> ThumbDragHorizontalSlider(
+                                                currentValue = highlights.toFloat(),
+                                                config = SliderConfigs.wallpaperEffect,
+                                                onValueChange = { highlights = it.toInt() },
+                                                onValueChangeFinished = { commitEdit() }
+                                            )
+                                            "shadows" -> ThumbDragHorizontalSlider(
+                                                currentValue = shadows.toFloat(),
+                                                config = SliderConfigs.wallpaperEffect,
+                                                onValueChange = { shadows = it.toInt() },
                                                 onValueChangeFinished = { commitEdit() }
                                             )
                                             "saturation" -> ThumbDragHorizontalSlider(
                                                 currentValue = saturation.toFloat(),
-                                                config = SliderConfigs.wallpaperSaturation,
+                                                config = SliderConfigs.wallpaperEffect,
                                                 onValueChange = { saturation = it.toInt() },
                                                 onValueChangeFinished = { commitEdit() }
                                             )
-                                            "filter" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                FilterChip(selected = filter == WP_FILTER_NONE,
-                                                    onClick = { filter = WP_FILTER_NONE; commitEdit() }, label = { Text("None") })
-                                                FilterChip(selected = filter == WP_FILTER_GRAYSCALE,
-                                                    onClick = { filter = WP_FILTER_GRAYSCALE; commitEdit() }, label = { Text("B&W") })
-                                                FilterChip(selected = filter == WP_FILTER_SEPIA,
-                                                    onClick = { filter = WP_FILTER_SEPIA; commitEdit() }, label = { Text("Sepia") })
-                                                FilterChip(selected = filter == WP_FILTER_INVERT,
-                                                    onClick = { filter = WP_FILTER_INVERT; commitEdit() }, label = { Text("Invert") })
-                                            }
-                                            "blur" -> ThumbDragHorizontalSlider(
-                                                currentValue = blur.toFloat(),
-                                                config = SliderConfigs.wallpaperPercent,
-                                                onValueChange = { blur = it.toInt() },
+                                            "tint" -> ThumbDragHorizontalSlider(
+                                                currentValue = tint.toFloat(),
+                                                config = SliderConfigs.wallpaperEffect,
+                                                onValueChange = { tint = it.toInt() },
                                                 onValueChangeFinished = { commitEdit() }
                                             )
-                                            "vignette" -> ThumbDragHorizontalSlider(
-                                                currentValue = vignette.toFloat(),
-                                                config = SliderConfigs.wallpaperPercent,
-                                                onValueChange = { vignette = it.toInt() },
+                                            "temperature" -> ThumbDragHorizontalSlider(
+                                                currentValue = temperature.toFloat(),
+                                                config = SliderConfigs.wallpaperEffect,
+                                                onValueChange = { temperature = it.toInt() },
+                                                onValueChangeFinished = { commitEdit() }
+                                            )
+                                            "sharpness" -> ThumbDragHorizontalSlider(
+                                                currentValue = sharpness.toFloat(),
+                                                config = SliderConfigs.wallpaperEffect,
+                                                onValueChange = { sharpness = it.toInt() },
+                                                onValueChangeFinished = { commitEdit() }
+                                            )
+                                            "definition" -> ThumbDragHorizontalSlider(
+                                                currentValue = definition.toFloat(),
+                                                config = SliderConfigs.wallpaperEffect,
+                                                onValueChange = { definition = it.toInt() },
                                                 onValueChangeFinished = { commitEdit() }
                                             )
                                         }
@@ -688,33 +837,181 @@ fun WallpaperEditorScreen(
                         }
                     }
 
-                    // Category icon picker — placed RIGHT below the Controls column so
-                    // it sits directly under the brightness slider (no big gap). The
-                    // Column's navigationBarsPadding above keeps it clear of the nav bar.
-                    Row(
+                    // Category picker — HorizontalPager. User swipes left/right to
+                    // slide through categories; centered page is the active one,
+                    // scales up (1.3x) and full-alpha while neighbors shrink + fade.
+                    // Tapping a neighbor animates to center on that page.
+                    val categoryKeys = listOf(
+                        "crop", "light_balance", "brightness", "exposure", "contrast",
+                        "highlights", "shadows", "saturation", "tint", "temperature",
+                        "sharpness", "definition"
+                    )
+                    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+                        initialPage = categoryKeys.indexOf(activeCategoryShared).coerceAtLeast(0),
+                        pageCount = { categoryKeys.size }
+                    )
+                    val pickerHaptics = com.bearinmind.launcher314.helpers.rememberHapticFeedback()
+                    // `visualPage` tracks whichever icon is visually centered
+                    // (smallest |offset|). Using this instead of `currentPage`
+                    // keeps the "selected" highlight (outline + fill + scale)
+                    // lined up with the icon that's actually biggest on screen
+                    // during drags and flings, so the pager never looks like
+                    // it's snapping to a different icon than you chose.
+                    val visualPage by remember {
+                        derivedStateOf {
+                            val raw = pagerState.currentPage + pagerState.currentPageOffsetFraction
+                            raw.toDouble().let { kotlin.math.round(it).toInt() }
+                                .coerceIn(0, categoryKeys.size - 1)
+                        }
+                    }
+                    // Skip the first emission (initial composition) so opening
+                    // the editor doesn't trigger a vibration. Subsequent page
+                    // changes — drag, fling-snap, or programmatic — get a soft
+                    // tick to confirm the new selection.
+                    var hapticPrimed by remember { mutableStateOf(false) }
+                    LaunchedEffect(visualPage) {
+                        if (hapticPrimed) {
+                            pickerHaptics.performTextHandleMove()
+                        } else {
+                            hapticPrimed = true
+                        }
+                        activeCategoryShared = categoryKeys[visualPage]
+                    }
+                    val cropActivated = cropL != 0f || cropT != 0f || cropR != 1f || cropB != 1f ||
+                        rotation != 0 || flipH || flipV || scale != 1f || offsetX != 0f || offsetY != 0f
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(pinnedIconRowHeight)
-                            .background(Color.Magenta) // DEBUG
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        CategoryIcon(Icons.Outlined.Crop, "Crop",
-                            selected = activeCategoryShared == "crop") { activeCategoryShared = "crop" }
-                        CategoryIcon(Icons.Outlined.LightMode, "Brightness",
-                            selected = activeCategoryShared == "brightness") { activeCategoryShared = "brightness" }
-                        CategoryIcon(Icons.Outlined.Contrast, "Contrast",
-                            selected = activeCategoryShared == "contrast") { activeCategoryShared = "contrast" }
-                        CategoryIcon(Icons.Outlined.InvertColors, "Saturation",
-                            selected = activeCategoryShared == "saturation") { activeCategoryShared = "saturation" }
-                        CategoryIcon(Icons.Outlined.AutoAwesome, "Filter",
-                            selected = activeCategoryShared == "filter") { activeCategoryShared = "filter" }
-                        CategoryIcon(Icons.Outlined.BlurOn, "Blur",
-                            selected = activeCategoryShared == "blur") { activeCategoryShared = "blur" }
-                        CategoryIcon(Icons.Outlined.PanoramaFishEye, "Vignette",
-                            selected = activeCategoryShared == "vignette") { activeCategoryShared = "vignette" }
+                        val itemWidth = 56.dp
+                        // Center the current page by padding each side with
+                        // (container - item) / 2.
+                        val sidePadding = ((this.maxWidth - itemWidth) / 2).coerceAtLeast(0.dp)
+                        // threshold = 0.5 is "round to nearest": whatever icon
+                        // is visually centered when the finger lifts is where
+                        // the pager snaps. Combined with visualPage-driven
+                        // selection above, this means the icon that LOOKS
+                        // biggest is always the one that ends up selected.
+                        // atMost(1) + non-bouncy spring keep each swipe
+                        // unambiguous (exactly one page advance, settles
+                        // quickly without overshoot).
+                        val flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
+                            state = pagerState,
+                            pagerSnapDistance = androidx.compose.foundation.pager.PagerSnapDistance.atMost(1),
+                            snapPositionalThreshold = 0.5f,
+                            snapAnimationSpec = androidx.compose.animation.core.spring(
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy
+                            )
+                        )
+                        androidx.compose.foundation.pager.HorizontalPager(
+                            state = pagerState,
+                            pageSize = androidx.compose.foundation.pager.PageSize.Fixed(itemWidth),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = sidePadding),
+                            pageSpacing = 0.dp,
+                            flingBehavior = flingBehavior,
+                            modifier = Modifier.fillMaxSize()
+                        ) { page ->
+                            val key = categoryKeys[page]
+                            // Signed distance of this page from the centered one
+                            // — used to scale + fade neighbors. coerceIn(0..1)
+                            // caps pages >=1 away at the minimum scale.
+                            val pageOffset = kotlin.math.abs(
+                                (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                            ).coerceIn(0f, 1f)
+                            val iconScale = 1.25f - pageOffset * 0.40f  // center 1.25, edge 0.85
+                            val iconAlpha = 1f - pageOffset * 0.45f     // center 1.00, edge 0.55
+                            val activated = when (key) {
+                                "crop" -> cropActivated
+                                "light_balance" -> lightBalance != 0
+                                "brightness" -> brightness != 0
+                                "exposure" -> exposure != 0
+                                "contrast" -> contrast != 0
+                                "highlights" -> highlights != 0
+                                "shadows" -> shadows != 0
+                                "saturation" -> saturation != 0
+                                "tint" -> tint != 0
+                                "temperature" -> temperature != 0
+                                "sharpness" -> sharpness != 0
+                                "definition" -> definition != 0
+                                else -> false
+                            }
+                            val isSelected = page == visualPage
+                            val onTap: () -> Unit = {
+                                scope.launch { pagerState.animateScrollToPage(page) }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        scaleX = iconScale
+                                        scaleY = iconScale
+                                        alpha = iconAlpha
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                // Crop has no scalar slider, so just feed 50 (no indicator).
+                                val displayValue = when (key) {
+                                    "light_balance" -> lightBalance
+                                    "brightness" -> brightness
+                                    "exposure" -> exposure
+                                    "contrast" -> contrast
+                                    "highlights" -> highlights
+                                    "shadows" -> shadows
+                                    "saturation" -> saturation
+                                    "tint" -> tint
+                                    "temperature" -> temperature
+                                    "sharpness" -> sharpness
+                                    "definition" -> definition
+                                    else -> 50
+                                }
+                                when (key) {
+                                    "crop" -> CategoryIcon(Icons.Outlined.Crop, "Crop", isSelected, activated, displayValue, onTap)
+                                    "light_balance" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_lightbulb_2_spectrum),
+                                        "Light balance", isSelected, activated, displayValue, onTap
+                                    )
+                                    "brightness" -> CategoryIcon(Icons.Outlined.LightMode, "Brightness", isSelected, activated, displayValue, onTap)
+                                    "exposure" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_contrast_square_spectrum),
+                                        "Exposure", isSelected, activated, displayValue, onTap
+                                    )
+                                    "contrast" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_contrast_spectrum),
+                                        "Contrast", isSelected, activated, displayValue, onTap
+                                    )
+                                    "highlights" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_tonality_2_spectrum),
+                                        "Highlights", isSelected, activated, displayValue, onTap
+                                    )
+                                    "shadows" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_tonality_spectrum),
+                                        "Shadows", isSelected, activated, displayValue, onTap
+                                    )
+                                    "saturation" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_saturation_levels),
+                                        "Saturation", isSelected, activated, displayValue, onTap
+                                    )
+                                    "tint" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_opacity_spectrum),
+                                        "Tint", isSelected, activated, displayValue, onTap
+                                    )
+                                    "temperature" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_thermometer_spectrum),
+                                        "Temperature", isSelected, activated, displayValue, onTap
+                                    )
+                                    "sharpness" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_triangle_rounded_tonality),
+                                        "Sharpness", isSelected, activated, displayValue, onTap
+                                    )
+                                    "definition" -> CategoryIconPainter(
+                                        androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_triangle_rounded_levels),
+                                        "Definition", isSelected, activated, displayValue, onTap
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1074,26 +1371,113 @@ private fun CategoryIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDesc: String,
     selected: Boolean,
+    activated: Boolean = true,
+    value: Int = 50,
     onClick: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(if (selected) Color.White else Color.Transparent)
-            .border(
-                width = if (selected) 0.dp else 1.dp,
-                color = if (selected) Color.Transparent else Color(0xFF555555),
-                shape = RoundedCornerShape(22.dp)
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
+    CategoryIconBox(selected, activated, value, onClick) {
         Icon(
             icon, contentDescription = contentDesc,
             modifier = Modifier.size(22.dp),
-            tint = if (selected) Color.Black else Color.White
+            tint = Color.White
         )
+    }
+}
+
+/** Painter variant of CategoryIcon for drawable-resource icons (Spectrum set). */
+@Composable
+private fun CategoryIconPainter(
+    painter: androidx.compose.ui.graphics.painter.Painter,
+    contentDesc: String,
+    selected: Boolean,
+    activated: Boolean = true,
+    value: Int = 50,
+    onClick: () -> Unit
+) {
+    CategoryIconBox(selected, activated, value, onClick) {
+        Icon(
+            painter = painter,
+            contentDescription = contentDesc,
+            modifier = Modifier.size(22.dp),
+            tint = Color.White
+        )
+    }
+}
+
+/**
+ * Shared box-with-progress-arc render used by both icon variants. When the
+ * cell is selected AND activated, the glyph is replaced with the current
+ * slider value (delta from the 50 neutral) and a circular arc is drawn just
+ * inside the rounded-rect border to show how far the value has moved from
+ * default — like the Samsung Photos editor's indicator.
+ */
+@Composable
+private fun CategoryIconBox(
+    selected: Boolean,
+    activated: Boolean,
+    value: Int,
+    onClick: () -> Unit = {},
+    iconContent: @Composable () -> Unit
+) {
+    val shape = RoundedCornerShape(12.dp)
+    // Activated (value != 0) → pure white outline so touched effects stand out
+    // clearly against untouched ones as you scroll past. Selected keeps the
+    // pure-white outline but gets a thicker stroke + brighter fill below so
+    // it's still obviously the current cell.
+    val outlineColor = when {
+        activated -> Color.White
+        else -> Color(0xFF444444)
+    }
+    val outlineWidth = if (selected) 1.5.dp else 1.dp
+    val iconAlpha = if (activated) 1f else 0.4f
+    // Slightly brighter fill on the selected cell so it's more obvious which
+    // cell is currently being edited. Non-selected activated cells use a
+    // dimmer fill so their value preview is still visible without competing.
+    val selectedFill = Color(0xFF5A5A5A)
+    val unselectedActivatedFill = Color(0xFF2E2E2E)
+    val showValueIndicator = selected && activated
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(shape)
+            .drawBehind {
+                // Draw value fill for ANY activated cell (selected or not) so
+                // the user can see at a glance where each effect sits before
+                // they navigate to it. 0 → no fill. Positive values fill from
+                // the LEFT edge; negative fill from the RIGHT edge.
+                if (activated && value != 0) {
+                    val frac = (kotlin.math.abs(value) / 100f).coerceIn(0f, 1f)
+                    val fillW = size.width * frac
+                    val left = if (value >= 0) 0f else size.width - fillW
+                    drawRect(
+                        color = if (selected) selectedFill else unselectedActivatedFill,
+                        topLeft = androidx.compose.ui.geometry.Offset(left, 0f),
+                        size = androidx.compose.ui.geometry.Size(fillW, size.height)
+                    )
+                }
+            }
+            .border(width = outlineWidth, color = outlineColor, shape = shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (showValueIndicator) {
+            // Show signed slider value (e.g. "+29" / "-12" / "0").
+            val text = when {
+                value > 0 -> "+$value"
+                else -> value.toString()
+            }
+            Text(
+                text = text,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                textAlign = TextAlign.Center
+            )
+        } else {
+            Box(modifier = Modifier.graphicsLayer { alpha = iconAlpha }) {
+                iconContent()
+            }
+        }
     }
 }
 
@@ -1108,17 +1492,48 @@ private fun FloatingTransformIcon(
     selected: Boolean = false,
     onClick: () -> Unit
 ) {
+    // Inner-slot icon button — no outer border (the whole transform Row has one
+    // shared rounded box around all four icons). When a flip toggle is active,
+    // the icon cell gets a subtle white highlight so the user sees the state.
+    val innerShape = RoundedCornerShape(8.dp)
     Box(
         modifier = Modifier
             .size(36.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(innerShape)
+            .background(if (selected) Color.White else Color.Transparent)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             icon, contentDescription = contentDesc,
             modifier = Modifier.size(20.dp),
-            tint = if (selected) Color(0xFF64B5F6) else Color.White
+            tint = if (selected) Color.Black else Color.White
+        )
+    }
+}
+
+/** Painter variant for custom vector drawables (Spectrum rotate icons). */
+@Composable
+private fun FloatingTransformIconPainter(
+    painter: androidx.compose.ui.graphics.painter.Painter,
+    contentDesc: String,
+    selected: Boolean = false,
+    onClick: () -> Unit
+) {
+    val innerShape = RoundedCornerShape(8.dp)
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(innerShape)
+            .background(if (selected) Color.White else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painter = painter,
+            contentDescription = contentDesc,
+            modifier = Modifier.size(20.dp),
+            tint = if (selected) Color.Black else Color.White
         )
     }
 }
@@ -1221,7 +1636,15 @@ private fun applyEdited(
                 edit.rotationDegrees, edit.flipH, edit.flipV,
                 edit.cropLeft, edit.cropTop, edit.cropRight, edit.cropBottom,
                 edit.brightness, edit.contrast, edit.saturation,
-                edit.blur, edit.vignette, edit.filter
+                edit.blur, edit.vignette, edit.filter,
+                lightBalance = edit.lightBalance,
+                exposure = edit.exposure,
+                highlights = edit.highlights,
+                shadows = edit.shadows,
+                tint = edit.tint,
+                temperature = edit.temperature,
+                sharpness = edit.sharpness,
+                definition = edit.definition
             )
             val applied = WallpaperHelper.applyAsSystemWallpaper(context, rendered, target)
             if (rendered !== source) rendered.recycle()

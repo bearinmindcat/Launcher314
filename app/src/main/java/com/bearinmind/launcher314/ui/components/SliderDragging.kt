@@ -858,6 +858,22 @@ object SliderConfigs {
         labelSuffix = ""
     )
 
+    // Unified config for the new Samsung-Photos-style effects (light balance,
+    // brightness, exposure, contrast, highlights, shadows, saturation, tint,
+    // temperature, sharpness, definition). Bipolar -100..+100 with 0 as the
+    // neutral / default. 21 snap ticks at step 10 so every effect's trackline
+    // renders with the same visual density.
+    val wallpaperEffect = HorizontalSliderConfig(
+        minValue = -100f,
+        maxValue = 100f,
+        tickValues = (-100..100 step 20).toList(),
+        labeledTickValues = listOf(-100, -50, 0, 50, 100),
+        snapTickValues = (-100..100 step 10).toList(),
+        showMinorTicks = true,
+        label = "",
+        labelSuffix = ""
+    )
+
     val wallpaperSaturation = HorizontalSliderConfig(
         minValue = -100f,
         maxValue = 100f,

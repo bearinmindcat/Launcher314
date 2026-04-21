@@ -183,7 +183,18 @@ object WallpaperHelper {
         saturation: Int,
         blur: Int,
         vignette: Int,
-        filter: String
+        filter: String,
+        // Newer Samsung-Photos-style effect params. All -50..+50 unless noted.
+        // Applied via color matrix in the same bake pass as brightness/contrast.
+        // Sharpness (0..100) is post-processed with a convolution kernel.
+        lightBalance: Int = 0,
+        exposure: Int = 0,
+        highlights: Int = 0,
+        shadows: Int = 0,
+        tint: Int = 0,
+        temperature: Int = 0,
+        sharpness: Int = 0,
+        definition: Int = 0
     ): Bitmap {
         // Apply crop rectangle first — extract a sub-bitmap in image coordinates.
         val src: Bitmap = if (cropLeft > 0.001f || cropTop > 0.001f || cropRight < 0.999f || cropBottom < 0.999f) {
@@ -224,13 +235,59 @@ object WallpaperHelper {
             )
         }
 
-        // Build combined color matrix: brightness → contrast → saturation → named filter
+        // Build combined color matrix. All effect values are -100..+100 with
+        // 0 as neutral; `amt(v) = v/100f` maps directly to a bipolar -1..+1
+        // strength. Order mirrors the live preview composable.
+        fun amt(v: Int): Float = v / 100f
         val combined = ColorMatrix()
         if (brightness != 0) combined.postConcat(makeBrightnessMatrix(brightness))
+        if (exposure != 0) {
+            val e = Math.pow(2.0, amt(exposure).toDouble()).toFloat()
+            combined.postConcat(ColorMatrix(floatArrayOf(
+                e, 0f, 0f, 0f, 0f,
+                0f, e, 0f, 0f, 0f,
+                0f, 0f, e, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
+        // lightBalance is applied AFTER the draw as a histogram-driven cubic LUT
+        // (Apple patent US8314847B2 — Brilliance algorithm). Matrix-only version
+        // was just a brightness shift, which isn't what users expect.
+        if (temperature != 0) {
+            val t = amt(temperature) * 40f
+            combined.postConcat(ColorMatrix(floatArrayOf(
+                1f, 0f, 0f, 0f, t,
+                0f, 1f, 0f, 0f, 0f,
+                0f, 0f, 1f, 0f, -t,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
+        if (tint != 0) {
+            val t = amt(tint) * 30f
+            combined.postConcat(ColorMatrix(floatArrayOf(
+                1f, 0f, 0f, 0f, t * 0.5f,
+                0f, 1f, 0f, 0f, -t,
+                0f, 0f, 1f, 0f, t * 0.5f,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
+        // highlights / shadows are applied AFTER the draw via per-pixel tone
+        // curves (see below) — matrix-only versions affect every pixel equally,
+        // which isn't what those sliders actually mean in photo editors.
+        if (definition != 0) {
+            val c = 1f + amt(definition) * 0.5f
+            val t = 128f * (1f - c)
+            combined.postConcat(ColorMatrix(floatArrayOf(
+                c, 0f, 0f, 0f, t,
+                0f, c, 0f, 0f, t,
+                0f, 0f, c, 0f, t,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
         if (contrast != 0) combined.postConcat(makeContrastMatrix(contrast))
         if (saturation != 0) {
             val sat = ColorMatrix()
-            sat.setSaturation((1f + saturation / 100f).coerceAtLeast(0f))
+            sat.setSaturation((1f + amt(saturation)).coerceAtLeast(0f))
             combined.postConcat(sat)
         }
         when (filter) {
@@ -248,6 +305,13 @@ object WallpaperHelper {
         canvas.drawBitmap(src, matrix, paint)
         // Recycle the intermediate cropped bitmap if we allocated one separate from source
         if (src !== source) src.recycle()
+
+        // --- Per-pixel tonal passes that can't fit in a 4x5 ColorMatrix ---
+        // LightBalance runs FIRST (it's a base auto-tone — Apple Brilliance
+        // patent US8314847B2). Highlights/shadows/sharpness then fine-tune on
+        // top of that corrected tone.
+        applyLightBalance(out, lightBalance)
+        applyTonalAndSharpness(out, highlights, shadows, sharpness)
 
         // Vignette — radial gradient darkening from corners inward
         if (vignette > 0) {
@@ -272,9 +336,191 @@ object WallpaperHelper {
         return if (blur > 0) applyStackBlur(out, radiusPx = blur) else out
     }
 
+    /**
+     * Light Balance — histogram-driven cubic tone curve, implementing the
+     * algorithm from Apple's patent US8314847B2 ("Automatic Tone Mapping Curve
+     * Generation Based on Dynamically Stretched Image Histogram Distribution")
+     * which underpins Apple Photos' Brilliance/Light slider.
+     *
+     * Steps (per the patent):
+     *   1. Build a 256-bin luminance histogram (Rec709 Y).
+     *   2. Histogram-stretch endpoints: drop the darkest 0.1% and brightest
+     *      1% as outliers, so `low..high` contains the real image range.
+     *   3. Inside that stretched range, count pixel mass in three zones
+     *      (shadows < 0.25, midtones 0.25..0.75, highlights > 0.75).
+     *   4. Derive endpoint slopes of an S-curve:
+     *        S0 = clamp(1.2 - (midMass + lowMass),  0.1, 1.2)
+     *        S1 = clamp(1.2 - (midMass + highMass), 0.1, 1.2)
+     *      — higher slope at an endpoint lifts/compresses that side more.
+     *   5. Fit a Hermite cubic through (0,0)→(1,1) using those slopes and bake
+     *      into a 256-entry LUT.
+     *   6. Apply the LUT per pixel, blended with identity by the slider amount.
+     *
+     * Slider maps 0..100 to blend -1..+1. Positive blends toward the full
+     * algorithmic curve; negative blends toward a mild midgray compression
+     * (a de-contrasted inverse). 50 = identity (no change).
+     */
+    private fun applyLightBalance(out: Bitmap, lightBalance: Int) {
+        if (lightBalance == 0) return
+        val amount = lightBalance / 100f  // -1..+1
+
+        val w = out.width
+        val h = out.height
+        val pixels = IntArray(w * h)
+        out.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        // Step 1: Rec709 luminance histogram.
+        val histogram = IntArray(256)
+        for (p in pixels) {
+            val r = (p shr 16) and 0xff
+            val g = (p shr 8) and 0xff
+            val b = p and 0xff
+            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b + 0.5f).toInt().coerceIn(0, 255)
+            histogram[lum]++
+        }
+        val total = w * h
+
+        // Step 2: Find 0.1% / top-1% percentile cutoffs for the stretch.
+        val lowCut = (total * 0.001f).toInt().coerceAtLeast(1)
+        val highCut = (total * 0.01f).toInt().coerceAtLeast(1)
+        var low = 0
+        var cum = 0
+        for (i in 0..255) { cum += histogram[i]; if (cum >= lowCut) { low = i; break } }
+        var high = 255
+        cum = 0
+        for (i in 255 downTo 0) { cum += histogram[i]; if (cum >= highCut) { high = i; break } }
+        val stretchRange = (high - low).coerceAtLeast(1).toFloat()
+
+        // Step 3: Zone masses after stretching each histogram bin to 0..1.
+        var lowMass = 0
+        var midMass = 0
+        var highMass = 0
+        for (i in 0..255) {
+            val stretched = ((i - low) / stretchRange).coerceIn(0f, 1f)
+            val count = histogram[i]
+            when {
+                stretched < 0.25f -> lowMass += count
+                stretched < 0.75f -> midMass += count
+                else -> highMass += count
+            }
+        }
+        val lowFrac = lowMass.toFloat() / total
+        val midFrac = midMass.toFloat() / total
+        val highFrac = highMass.toFloat() / total
+
+        // Step 4: Endpoint slopes.
+        val s0 = (1.2f - (midFrac + lowFrac)).coerceIn(0.1f, 1.2f)
+        val s1 = (1.2f - (midFrac + highFrac)).coerceIn(0.1f, 1.2f)
+
+        // Step 5: Build 256-entry LUT. Hermite cubic with y0=0, y1=1, m0=s0, m1=s1:
+        //   H(t) = t^3*(s0 + s1 - 2) + t^2*(-2s0 - s1 + 3) + t*s0
+        val lut = IntArray(256)
+        for (i in 0..255) {
+            val t = ((i - low) / stretchRange).coerceIn(0f, 1f)
+            val curved = t * t * t * (s0 + s1 - 2f) + t * t * (-2f * s0 - s1 + 3f) + t * s0
+            val curved8 = (curved * 255f).coerceIn(0f, 255f)
+            val blended = if (amount >= 0f) {
+                // Blend identity → patent curve.
+                i * (1f - amount) + curved8 * amount
+            } else {
+                // Negative side: compress toward midgray (128) for a muted/flat look.
+                i * (1f + amount) + 128f * (-amount)
+            }
+            lut[i] = blended.toInt().coerceIn(0, 255)
+        }
+
+        // Step 6: Apply LUT per channel. Patent applies to luminance only, but
+        // per-channel is the cheap equivalent used by most mobile editors and
+        // matches how the rest of our pipeline operates on RGB directly.
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            val a = (p ushr 24) and 0xff
+            val r = lut[(p shr 16) and 0xff]
+            val g = lut[(p shr 8) and 0xff]
+            val b = lut[p and 0xff]
+            pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        out.setPixels(pixels, 0, w, 0, 0, w, h)
+    }
+
+    /**
+     * Per-pixel tonal adjustments that a 4x5 ColorMatrix can't express:
+     * - Highlights: shift only pixels above midtone luminance.
+     * - Shadows:    shift only pixels below midtone luminance.
+     * - Sharpness:  unsharp mask — out = out + amt * (out - blur(out)).
+     *
+     * All three share a single IntArray pixel pass so the expensive
+     * getPixels/setPixels round-trip happens once.
+     */
+    private fun applyTonalAndSharpness(out: Bitmap, highlights: Int, shadows: Int, sharpness: Int) {
+        val hAmt = if (highlights != 0) highlights / 100f else 0f
+        val sAmt = if (shadows != 0) shadows / 100f else 0f
+        val sharpAmt = if (sharpness != 0) sharpness / 100f else 0f
+        if (hAmt == 0f && sAmt == 0f && sharpAmt == 0f) return
+
+        val w = out.width
+        val h = out.height
+        val pixels = IntArray(w * h)
+        out.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        // For sharpness we need a blurred copy. Reuse applyStackBlur with a
+        // small radius so the high-frequency detail shows up in the subtract.
+        val blurPixels: IntArray? = if (sharpAmt != 0f) {
+            val blurred = applyStackBlur(out.copy(out.config ?: Bitmap.Config.ARGB_8888, true), radiusPx = 4)
+            val bp = IntArray(w * h)
+            blurred.getPixels(bp, 0, w, 0, 0, w, h)
+            blurred.recycle()
+            bp
+        } else null
+
+        // Max luminance shift at ±1 amount. ~80 gives a visible but not
+        // nuclear highlights/shadows response; adjust to taste later.
+        val maxShift = 80f
+
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            val a = (p ushr 24) and 0xff
+            var r = (p shr 16) and 0xff
+            var g = (p shr 8) and 0xff
+            var b = p and 0xff
+
+            // Rec709 luminance 0..1
+            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b) / 255f
+
+            // Soft linear masks that peak at the extremes and hit 0 at 0.5.
+            // (A smoothstep would be nicer but linear is 3× cheaper per pixel
+            // over a 1080x2400 wallpaper and the difference is subtle.)
+            if (hAmt != 0f || sAmt != 0f) {
+                val hMask = ((lum - 0.5f) * 2f).coerceIn(0f, 1f)
+                val sMask = ((0.5f - lum) * 2f).coerceIn(0f, 1f)
+                val delta = hAmt * hMask * maxShift + sAmt * sMask * maxShift
+                if (delta != 0f) {
+                    r = (r + delta).toInt().coerceIn(0, 255)
+                    g = (g + delta).toInt().coerceIn(0, 255)
+                    b = (b + delta).toInt().coerceIn(0, 255)
+                }
+            }
+
+            // Unsharp mask for sharpness. Negative amount = soft blur blend.
+            if (sharpAmt != 0f && blurPixels != null) {
+                val bp = blurPixels[i]
+                val br = (bp shr 16) and 0xff
+                val bg = (bp shr 8) and 0xff
+                val bb = bp and 0xff
+                r = (r + sharpAmt * (r - br)).toInt().coerceIn(0, 255)
+                g = (g + sharpAmt * (g - bg)).toInt().coerceIn(0, 255)
+                b = (b + sharpAmt * (b - bb)).toInt().coerceIn(0, 255)
+            }
+
+            pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+        }
+
+        out.setPixels(pixels, 0, w, 0, 0, w, h)
+    }
+
     private fun makeBrightnessMatrix(brightness: Int): ColorMatrix {
-        // -50..+50 → offset -127..+127 (linear brightness shift, preserves contrast)
-        val b = (brightness / 50f * 127f)
+        // -100..+100 with 0 = neutral → offset -127..+127
+        val b = brightness / 100f * 127f
         return ColorMatrix(floatArrayOf(
             1f, 0f, 0f, 0f, b,
             0f, 1f, 0f, 0f, b,
@@ -284,8 +530,8 @@ object WallpaperHelper {
     }
 
     private fun makeContrastMatrix(contrast: Int): ColorMatrix {
-        // -50..+50 → scale 0.5..1.5 around midpoint 128
-        val c = 1f + contrast / 100f
+        // -100..+100 with 0 = neutral → scale 0.5..1.5 around midpoint 128
+        val c = 1f + contrast / 100f * 0.5f
         val t = 128f * (1f - c)
         return ColorMatrix(floatArrayOf(
             c, 0f, 0f, 0f, t,
