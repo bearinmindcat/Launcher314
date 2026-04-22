@@ -1255,8 +1255,7 @@ fun WallpaperEditorScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                            .padding(horizontal = 48.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         listOf(
@@ -1274,21 +1273,34 @@ fun WallpaperEditorScreen(
                                 label = "sectionBg"
                             )
                             val sectionShape = RoundedCornerShape(8.dp)
+                            // Each tab gets exactly 1/3 of the row via weight(1f)
+                            // so "Filters" sits at the row's geometric center
+                            // regardless of label width, and "Crop" / "Effects"
+                            // land symmetrically on either side. The inner tab
+                            // box is centered within its slot so label widths
+                            // never skew the group's balance.
                             Box(
                                 modifier = Modifier
-                                    .clip(sectionShape)
-                                    .background(bg)
-                                    .border(width = 1.dp, color = Color(0xFF888888), shape = sectionShape)
-                                    .clickable { currentSection = sectionKey }
-                                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                                    .weight(1f)
+                                    .padding(horizontal = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = sectionLabel,
-                                    color = Color(0xFFCCCCCC),
-                                    fontSize = 13.sp,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Normal
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(sectionShape)
+                                        .background(bg)
+                                        .border(width = 1.dp, color = Color(0xFF888888), shape = sectionShape)
+                                        .clickable { currentSection = sectionKey }
+                                        .padding(horizontal = 18.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = sectionLabel,
+                                        color = Color(0xFFCCCCCC),
+                                        fontSize = 13.sp,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Normal
+                                    )
+                                }
                             }
                         }
                     }
