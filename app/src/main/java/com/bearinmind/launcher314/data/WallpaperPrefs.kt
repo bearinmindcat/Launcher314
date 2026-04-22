@@ -37,19 +37,26 @@ private const val WP_KEY_DEVICE_EDIT_CROP_L = "wallpaper_device_edit_crop_l"    
 private const val WP_KEY_DEVICE_EDIT_CROP_T = "wallpaper_device_edit_crop_t"
 private const val WP_KEY_DEVICE_EDIT_CROP_R = "wallpaper_device_edit_crop_r"
 private const val WP_KEY_DEVICE_EDIT_CROP_B = "wallpaper_device_edit_crop_b"
-private const val WP_KEY_DEVICE_EDIT_LIGHT_BALANCE = "wallpaper_device_edit_light_balance_v2"
 private const val WP_KEY_DEVICE_EDIT_EXPOSURE = "wallpaper_device_edit_exposure_v2"
 private const val WP_KEY_DEVICE_EDIT_HIGHLIGHTS = "wallpaper_device_edit_highlights_v2"
 private const val WP_KEY_DEVICE_EDIT_SHADOWS = "wallpaper_device_edit_shadows_v2"
 private const val WP_KEY_DEVICE_EDIT_TINT = "wallpaper_device_edit_tint_v2"
 private const val WP_KEY_DEVICE_EDIT_TEMPERATURE = "wallpaper_device_edit_temperature_v2"
 private const val WP_KEY_DEVICE_EDIT_SHARPNESS = "wallpaper_device_edit_sharpness_v2"
-private const val WP_KEY_DEVICE_EDIT_DEFINITION = "wallpaper_device_edit_definition_v2"
 
 const val WP_FILTER_NONE = "none"
-const val WP_FILTER_GRAYSCALE = "grayscale"
+const val WP_FILTER_GRAYSCALE = "grayscale"      // labelled "Mono" in the UI — uses the enhanced BT.709-weighted matrix
 const val WP_FILTER_SEPIA = "sepia"
-const val WP_FILTER_INVERT = "invert"
+const val WP_FILTER_INVERT = "invert"             // retained for saved-state compat; not exposed in the pager
+const val WP_FILTER_WARM = "warm"
+const val WP_FILTER_COOL = "cool"
+const val WP_FILTER_VIVID = "vivid"
+const val WP_FILTER_FADED = "faded"
+const val WP_FILTER_POLAROID = "polaroid"
+const val WP_FILTER_KODACHROME = "kodachrome"
+const val WP_FILTER_VINTAGE = "vintage"
+const val WP_FILTER_TEAL_ORANGE = "teal_orange"
+const val WP_FILTER_NIGHT = "night"
 
 data class DeviceWallpaperEdit(
     val scale: Float = 1f,
@@ -70,14 +77,12 @@ data class DeviceWallpaperEdit(
     val brightness: Int = 0,
     val contrast: Int = 0,
     val saturation: Int = 0,
-    val lightBalance: Int = 0,
     val exposure: Int = 0,
     val highlights: Int = 0,
     val shadows: Int = 0,
     val tint: Int = 0,                  // - = green, + = magenta
     val temperature: Int = 0,           // - = cool, + = warm
     val sharpness: Int = 0,             // - = softer, + = sharper
-    val definition: Int = 0,
     // --- Retained for backwards compat with older saved state ---
     val blur: Int = 0,                  // 0..100
     val vignette: Int = 0,              // 0..100
@@ -187,14 +192,12 @@ fun getDeviceWallpaperEdit(context: Context): DeviceWallpaperEdit {
         cropTop = (prefs.getInt(WP_KEY_DEVICE_EDIT_CROP_T, 0) / 10000f).coerceIn(0f, 1f),
         cropRight = (prefs.getInt(WP_KEY_DEVICE_EDIT_CROP_R, 10000) / 10000f).coerceIn(0f, 1f),
         cropBottom = (prefs.getInt(WP_KEY_DEVICE_EDIT_CROP_B, 10000) / 10000f).coerceIn(0f, 1f),
-        lightBalance = prefs.getInt(WP_KEY_DEVICE_EDIT_LIGHT_BALANCE, 0).coerceIn(-100, 100),
         exposure = prefs.getInt(WP_KEY_DEVICE_EDIT_EXPOSURE, 0).coerceIn(-100, 100),
         highlights = prefs.getInt(WP_KEY_DEVICE_EDIT_HIGHLIGHTS, 0).coerceIn(-100, 100),
         shadows = prefs.getInt(WP_KEY_DEVICE_EDIT_SHADOWS, 0).coerceIn(-100, 100),
         tint = prefs.getInt(WP_KEY_DEVICE_EDIT_TINT, 0).coerceIn(-100, 100),
         temperature = prefs.getInt(WP_KEY_DEVICE_EDIT_TEMPERATURE, 0).coerceIn(-100, 100),
-        sharpness = prefs.getInt(WP_KEY_DEVICE_EDIT_SHARPNESS, 0).coerceIn(-100, 100),
-        definition = prefs.getInt(WP_KEY_DEVICE_EDIT_DEFINITION, 0).coerceIn(-100, 100)
+        sharpness = prefs.getInt(WP_KEY_DEVICE_EDIT_SHARPNESS, 0).coerceIn(-100, 100)
     )
 }
 
@@ -216,13 +219,11 @@ fun setDeviceWallpaperEdit(context: Context, edit: DeviceWallpaperEdit) {
         .putInt(WP_KEY_DEVICE_EDIT_CROP_T, (edit.cropTop * 10000).toInt())
         .putInt(WP_KEY_DEVICE_EDIT_CROP_R, (edit.cropRight * 10000).toInt())
         .putInt(WP_KEY_DEVICE_EDIT_CROP_B, (edit.cropBottom * 10000).toInt())
-        .putInt(WP_KEY_DEVICE_EDIT_LIGHT_BALANCE, edit.lightBalance.coerceIn(-100, 100))
         .putInt(WP_KEY_DEVICE_EDIT_EXPOSURE, edit.exposure.coerceIn(-100, 100))
         .putInt(WP_KEY_DEVICE_EDIT_HIGHLIGHTS, edit.highlights.coerceIn(-100, 100))
         .putInt(WP_KEY_DEVICE_EDIT_SHADOWS, edit.shadows.coerceIn(-100, 100))
         .putInt(WP_KEY_DEVICE_EDIT_TINT, edit.tint.coerceIn(-100, 100))
         .putInt(WP_KEY_DEVICE_EDIT_TEMPERATURE, edit.temperature.coerceIn(-100, 100))
         .putInt(WP_KEY_DEVICE_EDIT_SHARPNESS, edit.sharpness.coerceIn(-100, 100))
-        .putInt(WP_KEY_DEVICE_EDIT_DEFINITION, edit.definition.coerceIn(-100, 100))
         .apply()
 }

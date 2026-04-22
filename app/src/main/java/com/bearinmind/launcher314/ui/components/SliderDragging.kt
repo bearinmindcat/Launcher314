@@ -85,6 +85,7 @@ fun ThumbDragHorizontalSlider(
     val coroutineScope = rememberCoroutineScope()
     var isDragging by remember { mutableStateOf(false) }
     var isDragOnThumb by remember { mutableStateOf(false) }
+    var isPressed by remember { mutableStateOf(false) }
     var isOverflowSnapping by remember { mutableStateOf(false) }
 
     // rememberUpdatedState prevents stale capture inside pointerInput(Unit)
@@ -133,9 +134,34 @@ fun ThumbDragHorizontalSlider(
                     .fillMaxWidth()
                     .height(32.dp)
                     .then(
-                        if (onDoubleTap != null && enabled) Modifier.pointerInput(Unit) {
+                        if (enabled) Modifier.pointerInput(Unit) {
+                            // Press-state tracking so the ripple appears even
+                            // on a plain tap (not just when drag slop is passed).
+                            // Double-tap reset only fires when the second tap
+                            // lands inside the thumb's touch radius — taps on
+                            // empty track don't reset, matching the user's
+                            // expectation that the draggable rectangle is the
+                            // target.
                             detectTapGestures(
-                                onDoubleTap = { onDoubleTap() }
+                                onPress = { offset ->
+                                    val currentThumbFraction =
+                                        (animatedValue.value - config.minValue) / (config.maxValue - config.minValue)
+                                    val currentThumbX = currentThumbFraction * size.width.toFloat()
+                                    val hitThumb =
+                                        kotlin.math.abs(offset.x - currentThumbX) <= THUMB_TOUCH_RADIUS.toPx()
+                                    if (hitThumb) {
+                                        isPressed = true
+                                        try { tryAwaitRelease() } finally { isPressed = false }
+                                    }
+                                },
+                                onDoubleTap = { offset ->
+                                    val currentThumbFraction =
+                                        (animatedValue.value - config.minValue) / (config.maxValue - config.minValue)
+                                    val currentThumbX = currentThumbFraction * size.width.toFloat()
+                                    val hitThumb =
+                                        kotlin.math.abs(offset.x - currentThumbX) <= THUMB_TOUCH_RADIUS.toPx()
+                                    if (hitThumb) onDoubleTap?.invoke()
+                                }
                             )
                         } else Modifier
                     )
@@ -334,8 +360,10 @@ fun ThumbDragHorizontalSlider(
                 )
             }
 
-            // Touch indicator when dragging
-            if (isDragging) {
+            // Touch indicator — shows on drag OR plain press so the ripple
+            // confirms the slider is receiving touch even when the user isn't
+            // yet moving their finger past the drag-slop threshold.
+            if (isDragging || isPressed) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val thumbXOffset = maxWidth * thumbFraction
                     val touchColor = if (!enabled) disabledThumbColor.copy(alpha = 0.15f)
@@ -858,11 +886,11 @@ object SliderConfigs {
         labelSuffix = ""
     )
 
-    // Unified config for the new Samsung-Photos-style effects (light balance,
-    // brightness, exposure, contrast, highlights, shadows, saturation, tint,
-    // temperature, sharpness, definition). Bipolar -100..+100 with 0 as the
-    // neutral / default. 21 snap ticks at step 10 so every effect's trackline
-    // renders with the same visual density.
+    // Unified config for the Samsung-Photos-style effects (brightness,
+    // exposure, contrast, highlights, shadows, saturation, tint, temperature,
+    // sharpness). Bipolar -100..+100 with 0 as the neutral / default. 21 snap
+    // ticks at step 10 so every effect's trackline renders with the same
+    // visual density.
     val wallpaperEffect = HorizontalSliderConfig(
         minValue = -100f,
         maxValue = 100f,
