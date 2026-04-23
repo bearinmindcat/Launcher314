@@ -559,12 +559,19 @@ fun LauncherWithDrawer(
         val wallpaperPreview = com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview
         if (wallpaperPreview != null) {
             val previewEdit = wallpaperPreview.edit
-            val previewBlurDp = (previewEdit.blur / 100f * 25f).dp
-            val previewBlurMod = if (previewEdit.blur > 0 && android.os.Build.VERSION.SDK_INT >= 31) {
+            // Include BOTH the edit's own blur AND the launcher's global
+            // wallpaper-blur preference, approximated as an additive radius,
+            // so the preview matches what the launcher actually paints on
+            // the home screen post-Apply (the saved bitmap already has the
+            // edit blur baked in, and the launcher adds its own on top).
+            val editBlurPx = (previewEdit.blur / 100f * 25f)
+            val launcherBlurPx = (wallpaperBlurPercent / 100f * 25f)
+            val combinedBlurDp = (editBlurPx + launcherBlurPx).dp
+            val previewBlurMod = if (combinedBlurDp > 0.dp && android.os.Build.VERSION.SDK_INT >= 31) {
                 Modifier.graphicsLayer {
                     renderEffect = androidx.compose.ui.graphics.BlurEffect(
-                        radiusX = with(density) { previewBlurDp.toPx() },
-                        radiusY = with(density) { previewBlurDp.toPx() },
+                        radiusX = with(density) { combinedBlurDp.toPx() },
+                        radiusY = with(density) { combinedBlurDp.toPx() },
                         edgeTreatment = androidx.compose.ui.graphics.TileMode.Clamp
                     )
                 }
@@ -723,11 +730,12 @@ fun LauncherWithDrawer(
         // Dim overlay applies to BOTH custom and system wallpaper. Keep it behind the
         // rest of the launcher content so text/icons aren't dimmed — it only tints the
         // wallpaper.
-        // Skip the global wallpaper-dim overlay while the wallpaper editor's
-        // Preview is active — the user wants to judge the image's true
-        // colors/brightness, not see it multiplied by their launcher's dim
-        // preference. After Apply, normal browsing re-applies dim as set.
-        if (wallpaperDim > 0 && wallpaperPreview == null) {
+        // Apply the launcher's wallpaper-dim overlay even during the editor
+        // Preview, so the preview accurately reflects how the image will
+        // look on the actual home screen (post-Apply the launcher lays the
+        // same dim on top, which previously caused the preview to look
+        // noticeably brighter than the saved result).
+        if (wallpaperDim > 0) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -984,6 +992,10 @@ fun LauncherWithDrawer(
         if (previewEntry != null) {
             val previewScope = androidx.compose.runtime.rememberCoroutineScope()
             var isApplyingPreview by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            // Confirmation dialog gating the real wallpaper apply call —
+            // matches the Material3 AlertDialog style used by the drawer's
+            // folder-delete popup (plain Text title/body + two TextButtons).
+            var showApplyConfirm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
             // Pinch-to-zoom + drag-to-pan with iOS-style rubber-band feel:
             // gestures write RAW values to the bus (no hard clamp) so the
             // image visually drags past bounds; the render layer applies a
@@ -1136,23 +1148,7 @@ fun LauncherWithDrawer(
                         )
                     }
                     androidx.compose.material3.OutlinedButton(
-                        onClick = {
-                            val bmp = previewEntry.sourceBitmap
-                            val edit = previewEntry.edit
-                            com.bearinmind.launcher314.ui.settings.applyEdited(
-                                context = context,
-                                source = bmp,
-                                edit = edit,
-                                target = android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
-                                scope = previewScope,
-                                setApplying = { isApplyingPreview = it },
-                                setStatus = { /* no status surface here */ },
-                                onSuccess = {
-                                    com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview = null
-                                    com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit = null
-                                }
-                            )
-                        },
+                        onClick = { showApplyConfirm = true },
                         enabled = !isApplyingPreview,
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -1167,6 +1163,45 @@ fun LauncherWithDrawer(
                             style = androidx.compose.material3.MaterialTheme.typography.labelLarge
                         )
                     }
+                }
+                // Apply confirmation dialog — same bare Material3 AlertDialog
+                // the folder-remove flow uses. On Apply: actually runs the
+                // wallpaper-apply, clears the preview bus, closes the dialog.
+                if (showApplyConfirm) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showApplyConfirm = false },
+                        title = { androidx.compose.material3.Text("Set as wallpaper") },
+                        text = {
+                            androidx.compose.material3.Text(
+                                "Pressing \"apply\" will set this image as the current wallpaper for both your homescreen & lockscreen."
+                            )
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                showApplyConfirm = false
+                                val bmp = previewEntry.sourceBitmap
+                                val edit = previewEntry.edit
+                                com.bearinmind.launcher314.ui.settings.applyEdited(
+                                    context = context,
+                                    source = bmp,
+                                    edit = edit,
+                                    target = android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
+                                    scope = previewScope,
+                                    setApplying = { isApplyingPreview = it },
+                                    setStatus = { /* no status surface here */ },
+                                    onSuccess = {
+                                        com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview = null
+                                        com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit = null
+                                    }
+                                )
+                            }) { androidx.compose.material3.Text("Apply") }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = { showApplyConfirm = false }) {
+                                androidx.compose.material3.Text("Cancel")
+                            }
+                        }
+                    )
                 }
                 if (isApplyingPreview) {
                     Box(

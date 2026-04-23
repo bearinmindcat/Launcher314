@@ -502,10 +502,8 @@ fun WallpaperEditorScreen(
                             }
                         }
                     )
-                    TextOnlyTopButton(
-                        label = "Apply",
-                        onClick = { saveDialogOpen = true }
-                    )
+                    // (Apply button removed — save happens from the
+                    // launcher-preview's Apply pill after tapping Preview.)
                 }
 
                 if (saveDialogOpen) {
