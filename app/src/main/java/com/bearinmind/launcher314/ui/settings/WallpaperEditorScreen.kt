@@ -3,6 +3,7 @@ package com.bearinmind.launcher314.ui.settings
 import android.app.WallpaperManager
 import android.graphics.BitmapFactory
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -127,7 +128,17 @@ fun WallpaperEditorScreen(
     sourceFile: File,
     initialEdit: DeviceWallpaperEdit,
     onDismiss: () -> Unit,
-    onApplied: () -> Unit
+    onApplied: () -> Unit,
+    /**
+     * Invoked when the user taps the top-bar Preview button. Caller should
+     * navigate out of the Settings screen so the launcher's real home-screen
+     * chrome becomes visible; the wallpaper backdrop under it will reflect
+     * the in-progress edit via `WallpaperPreviewBus`. The editor itself is
+     * dismissed by the Preview-button handler right before this fires, and
+     * Settings will auto-reopen the editor (with all state restored) when
+     * the user navigates back.
+     */
+    onRequestPreviewLauncher: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -470,6 +481,30 @@ fun WallpaperEditorScreen(
                     )
                     TextOnlyTopButton(
                         label = "Preview",
+                        onClick = {
+                            if (sourceBitmap != null) {
+                                val snap = snapshotEdit()
+                                // Stash snapshot + source for the launcher's
+                                // backdrop renderer, plus a pending-resume
+                                // copy so Settings can auto-reopen the editor
+                                // with identical state when the user exits
+                                // the preview.
+                                com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview =
+                                    com.bearinmind.launcher314.data.WallpaperPreviewBus.PreviewEntry(
+                                        sourceBitmap = sourceBitmap,
+                                        edit = snap,
+                                        colorFilter = previewColorFilter
+                                    )
+                                com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit = snap
+                                // Close editor + navigate away from Settings to
+                                // the launcher's real home screen.
+                                onRequestPreviewLauncher()
+                                onDismiss()
+                            }
+                        }
+                    )
+                    TextOnlyTopButton(
+                        label = "Apply",
                         onClick = { saveDialogOpen = true }
                     )
                 }
@@ -1315,6 +1350,7 @@ fun WallpaperEditorScreen(
                     CircularProgressIndicator(color = Color.White)
                 }
             }
+
         }
     }
 }
@@ -2020,7 +2056,7 @@ private fun currentEdit(
     blur = blur, vignette = vignette, filter = filter
 )
 
-private fun applyEdited(
+internal fun applyEdited(
     context: android.content.Context,
     source: android.graphics.Bitmap,
     edit: DeviceWallpaperEdit,

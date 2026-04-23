@@ -61,7 +61,9 @@ import java.io.File
 import kotlin.math.roundToInt
 
 @Composable
-fun WallpaperPersonalizationCard() {
+fun WallpaperPersonalizationCard(
+    onPreviewLauncher: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -72,6 +74,18 @@ fun WallpaperPersonalizationCard() {
     var blur by remember { mutableIntStateOf(getWallpaperBlur(context)) }
     var cacheVersion by remember { mutableIntStateOf(getWallpaperCacheVersion(context)) }
     var editorOpenForDevice by remember { mutableStateOf(false) }
+
+    // Auto-reopen the editor on Settings re-entry if we came back from a
+    // launcher-preview round trip. Clears the active-preview backdrop so the
+    // home-screen stops showing the preview bitmap once Settings is
+    // foregrounded again.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val pending = com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit
+        if (pending != null && deviceSourcePath != null) {
+            editorOpenForDevice = true
+            com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview = null
+        }
+    }
 
     // Step 1 overlay picker — custom image on top of launcher
     val pickCustom = rememberLauncherForActivityResult(
@@ -209,14 +223,25 @@ fun WallpaperPersonalizationCard() {
     if (editorOpenForDevice && deviceSourcePath != null) {
         val sourceFile = File(deviceSourcePath!!)
         if (sourceFile.exists()) {
+            // If returning from a launcher preview, restore the in-progress
+            // edit (rather than re-reading the last-saved prefs). Consume the
+            // pending value so subsequent opens start from saved prefs.
+            val resume = com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit
+            val initial = remember(resume) {
+                if (resume != null) {
+                    com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit = null
+                    resume
+                } else getDeviceWallpaperEdit(context)
+            }
             WallpaperEditorScreen(
                 sourceFile = sourceFile,
-                initialEdit = getDeviceWallpaperEdit(context),
+                initialEdit = initial,
                 onDismiss = { editorOpenForDevice = false },
                 onApplied = {
                     cacheVersion = getWallpaperCacheVersion(context)
                     mode = WALLPAPER_MODE_DEVICE
-                }
+                },
+                onRequestPreviewLauncher = onPreviewLauncher
             )
         } else {
             editorOpenForDevice = false

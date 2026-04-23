@@ -20,7 +20,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -545,7 +550,132 @@ fun LauncherWithDrawer(
             else null
         }
 
-        if (customWallpaperPath != null) {
+        // Preview override: when the wallpaper editor's "Preview" button
+        // is active, render the in-progress edited bitmap in place of the
+        // saved custom wallpaper so the user can see the new look behind
+        // the real home-screen chrome.
+        val wallpaperPreview = com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview
+        if (wallpaperPreview != null) {
+            val previewEdit = wallpaperPreview.edit
+            val previewBlurDp = (previewEdit.blur / 100f * 25f).dp
+            val previewBlurMod = if (previewEdit.blur > 0 && android.os.Build.VERSION.SDK_INT >= 31) {
+                Modifier.graphicsLayer {
+                    renderEffect = androidx.compose.ui.graphics.BlurEffect(
+                        radiusX = with(density) { previewBlurDp.toPx() },
+                        radiusY = with(density) { previewBlurDp.toPx() },
+                        edgeTreatment = androidx.compose.ui.graphics.TileMode.Clamp
+                    )
+                }
+            } else Modifier
+            // Apply the crop rectangle once per edit change (avoids reallocating
+            // the cropped Bitmap on every recomposition).
+            val previewCropped = remember(
+                wallpaperPreview.sourceBitmap,
+                previewEdit.cropLeft, previewEdit.cropTop,
+                previewEdit.cropRight, previewEdit.cropBottom
+            ) {
+                val src = wallpaperPreview.sourceBitmap
+                val inset = previewEdit.cropLeft > 0.001f || previewEdit.cropTop > 0.001f ||
+                    previewEdit.cropRight < 0.999f || previewEdit.cropBottom < 0.999f
+                if (inset) {
+                    val l = (previewEdit.cropLeft * src.width).toInt().coerceIn(0, src.width - 1)
+                    val t = (previewEdit.cropTop * src.height).toInt().coerceIn(0, src.height - 1)
+                    val r = (previewEdit.cropRight * src.width).toInt().coerceIn(l + 1, src.width)
+                    val b = (previewEdit.cropBottom * src.height).toInt().coerceIn(t + 1, src.height)
+                    android.graphics.Bitmap.createBitmap(src, l, t, r - l, b - t)
+                } else src
+            }
+            // Render math. Translation is strictly clamped so the bitmap's
+            // edges never detach from the screen's edges. Overshoot shows up
+            // instead as an iOS-style directional stretch applied in a
+            // second graphicsLayer, pivoted at the OPPOSITE edge from the
+            // drag direction — so dragging right anchors the left edge and
+            // stretches the right side outward. Releasing springs overshoot
+            // back to zero (the gesture-end LaunchedEffect above).
+            val renderScreenWpx = with(density) { configuration.screenWidthDp.dp.toPx() }
+            val renderScreenHpx = with(density) { configuration.screenHeightDp.dp.toPx() }
+            val baseScale = previewEdit.scale.coerceIn(1f, 5f)
+            val baseMaxOffX = (baseScale - 1f) * renderScreenWpx / 2f
+            val baseMaxOffY = (baseScale - 1f) * renderScreenHpx / 2f
+            val renderOffX = previewEdit.offsetX.coerceIn(-baseMaxOffX, baseMaxOffX)
+            val renderOffY = previewEdit.offsetY.coerceIn(-baseMaxOffY, baseMaxOffY)
+            val overshootX = previewEdit.offsetX - renderOffX
+            val overshootY = previewEdit.offsetY - renderOffY
+            val stretchFromOvershootX = if (overshootX != 0f)
+                rubberbandAttenuate(kotlin.math.abs(overshootX), 180f, 0.55f) / renderScreenWpx
+            else 0f
+            val stretchFromOvershootY = if (overshootY != 0f)
+                rubberbandAttenuate(kotlin.math.abs(overshootY), 180f, 0.55f) / renderScreenHpx
+            else 0f
+            val stretchFromScale = if (previewEdit.scale < 1f)
+                rubberbandAttenuate(1f - previewEdit.scale, 0.5f, 0.55f)
+            else 0f
+            val stretchX = stretchFromOvershootX + stretchFromScale
+            val stretchY = stretchFromOvershootY + stretchFromScale
+            // Pivot = opposite edge of the drag direction (drag right → anchor
+            // left / pivot.x = 0). Center when no overshoot on that axis.
+            val stretchPivotX = when {
+                overshootX > 0f -> 0f
+                overshootX < 0f -> 1f
+                else -> 0.5f
+            }
+            val stretchPivotY = when {
+                overshootY > 0f -> 0f
+                overshootY < 0f -> 1f
+                else -> 0.5f
+            }
+            androidx.compose.foundation.Image(
+                bitmap = previewCropped.asImageBitmap(),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                colorFilter = wallpaperPreview.colorFilter,
+                modifier = Modifier
+                    .fillMaxSize()
+                    // OUTER graphicsLayer (applied last, wraps result): the
+                    // directional rubber-band stretch. Pivot = opposite edge
+                    // of the drag direction, scaleX/scaleY bump only on the
+                    // axis being over-dragged, so the anchor edge stays put
+                    // and the dragged side stretches outward.
+                    .graphicsLayer {
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                            stretchPivotX,
+                            stretchPivotY
+                        )
+                        scaleX = 1f + stretchX
+                        scaleY = 1f + stretchY
+                    }
+                    // INNER graphicsLayer (applied first): the user's normal
+                    // pan/zoom/rotation/flip with translation already clamped
+                    // to [-maxOff, +maxOff] so edges are always against the
+                    // screen. The stretch layer above then grows from there.
+                    .graphicsLayer {
+                        rotationZ = previewEdit.rotationDegrees.toFloat()
+                        scaleX = baseScale * (if (previewEdit.flipH) -1f else 1f)
+                        scaleY = baseScale * (if (previewEdit.flipV) -1f else 1f)
+                        translationX = renderOffX
+                        translationY = renderOffY
+                    }
+                    .then(previewBlurMod)
+            )
+            // Vignette overlay on top of the preview bitmap.
+            if (previewEdit.vignette > 0) {
+                val alphaMax = (previewEdit.vignette / 100f * 0.85f).coerceIn(0f, 1f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.radialGradient(
+                                colors = listOf(
+                                    androidx.compose.ui.graphics.Color.Transparent,
+                                    androidx.compose.ui.graphics.Color.Black.copy(alpha = alphaMax * 0.4f),
+                                    androidx.compose.ui.graphics.Color.Black.copy(alpha = alphaMax)
+                                ),
+                                radius = 1800f
+                            )
+                        )
+                )
+            }
+        } else if (customWallpaperPath != null) {
             val blurRadiusDp = (wallpaperBlurPercent / 100f * 25f).dp
             coil.compose.AsyncImage(
                 model = java.io.File(customWallpaperPath),
@@ -818,5 +948,196 @@ fun LauncherWithDrawer(
         }
         } // CompositionLocalProvider
 
+        // Preview-mode overlay: blocks all interaction with the launcher
+        // beneath (apps / icons / widgets / dock / drawer) and surfaces two
+        // outlined top buttons — Exit (return to editor, preserving state)
+        // and Apply (bake + save the wallpaper, then dismiss). Visible only
+        // while the wallpaper editor's Preview is active.
+        val previewEntry = com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview
+        if (previewEntry != null) {
+            val previewScope = androidx.compose.runtime.rememberCoroutineScope()
+            var isApplyingPreview by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            // Pinch-to-zoom + drag-to-pan with iOS-style rubber-band feel:
+            // gestures write RAW values to the bus (no hard clamp) so the
+            // image visually drags past bounds; the render layer applies a
+            // rubberband curve so the displayed excess asymptotically tops
+            // out. On release, a spring animates raw values back inside
+            // bounds — produces the "stretch, then snap" behaviour the user
+            // asked for.
+            val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+            val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+            val previewTransformState = androidx.compose.foundation.gestures.rememberTransformableState { zoomChange, panChange, _ ->
+                val prev = com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview ?: return@rememberTransformableState
+                val rawScale = prev.edit.scale * zoomChange
+                val rawOffX = prev.edit.offsetX + panChange.x
+                val rawOffY = prev.edit.offsetY + panChange.y
+                val newEdit = prev.edit.copy(
+                    scale = rawScale.coerceIn(0.4f, 6f),  // soft limits to prevent runaway
+                    offsetX = rawOffX,
+                    offsetY = rawOffY
+                )
+                com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview = prev.copy(edit = newEdit)
+            }
+            // Spring-back: when the gesture ends, animate raw scale / offset
+            // from their current (possibly overshooting) values to the
+            // nearest in-bounds target. The LaunchedEffect re-keys on
+            // `isTransformInProgress`, so a new gesture mid-animation cancels
+            // the spring cleanly.
+            androidx.compose.runtime.LaunchedEffect(previewTransformState.isTransformInProgress) {
+                if (previewTransformState.isTransformInProgress) return@LaunchedEffect
+                val start = com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview
+                    ?: return@LaunchedEffect
+                val startScale = start.edit.scale
+                val startOffX = start.edit.offsetX
+                val startOffY = start.edit.offsetY
+                val targetScale = startScale.coerceIn(1f, 5f)
+                val tMaxOffX = (targetScale - 1f) * screenWidthPx / 2f
+                val tMaxOffY = (targetScale - 1f) * screenHeightPx / 2f
+                val targetOffX = startOffX.coerceIn(-tMaxOffX, tMaxOffX)
+                val targetOffY = startOffY.coerceIn(-tMaxOffY, tMaxOffY)
+                if (startScale == targetScale && startOffX == targetOffX && startOffY == targetOffY) {
+                    // Already in bounds — still commit so pendingResumeEdit stays in sync.
+                    com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit = start.edit
+                    return@LaunchedEffect
+                }
+                androidx.compose.animation.core.animate(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    // Critically-damped spring: smoothly arrives at the
+                    // target with no overshoot — no secondary bounce in the
+                    // opposite direction.
+                    animationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                    )
+                ) { t, _ ->
+                    val cur = com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview ?: return@animate
+                    val animEdit = cur.edit.copy(
+                        scale = startScale + (targetScale - startScale) * t,
+                        offsetX = startOffX + (targetOffX - startOffX) * t,
+                        offsetY = startOffY + (targetOffY - startOffY) * t
+                    )
+                    com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview = cur.copy(edit = animEdit)
+                    com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit = animEdit
+                }
+            }
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Full-screen gesture layer: transformable handles pan/zoom;
+                // clickable(indication = null) swallows stray taps so app
+                // icons / widgets below can't be launched while previewing.
+                val sinkInteraction = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .transformable(previewTransformState)
+                        .clickable(
+                            interactionSource = sinkInteraction,
+                            indication = null,
+                            onClick = {}
+                        )
+                )
+                // Exit + Apply button row pinned to the top-right, matching
+                // the editor's top action bar layout (Reset / Preview / Apply
+                // sit on the right, outlined, 12dp radius, 1dp #888 border).
+                // Exit uses the same red as the editor's Reset (#E53935).
+                // Solid dark fill so the buttons stay legible over any
+                // wallpaper. 98% opacity so there's still a hint of the image
+                // behind, but anything > 90% reads as "solid" to the user.
+                val buttonFill = Color(0xFF121212).copy(alpha = 0.98f)
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier
+                        .align(androidx.compose.ui.Alignment.TopEnd)
+                        .padding(top = 48.dp, end = 16.dp),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview = null
+                            onSettingsClick()
+                        },
+                        enabled = !isApplyingPreview,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF888888)),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            containerColor = buttonFill
+                        )
+                    ) {
+                        androidx.compose.material3.Text(
+                            "Exit",
+                            color = Color(0xFFE53935),
+                            style = androidx.compose.material3.MaterialTheme.typography.labelLarge
+                        )
+                    }
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val bmp = previewEntry.sourceBitmap
+                            val edit = previewEntry.edit
+                            com.bearinmind.launcher314.ui.settings.applyEdited(
+                                context = context,
+                                source = bmp,
+                                edit = edit,
+                                target = android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
+                                scope = previewScope,
+                                setApplying = { isApplyingPreview = it },
+                                setStatus = { /* no status surface here */ },
+                                onSuccess = {
+                                    com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview = null
+                                    com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit = null
+                                }
+                            )
+                        },
+                        enabled = !isApplyingPreview,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF888888)),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            containerColor = buttonFill
+                        )
+                    ) {
+                        androidx.compose.material3.Text(
+                            "Apply",
+                            color = Color.White,
+                            style = androidx.compose.material3.MaterialTheme.typography.labelLarge
+                        )
+                    }
+                }
+                if (isApplyingPreview) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.4f)),
+                        contentAlignment = androidx.compose.ui.Alignment.Center
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(color = Color.White)
+                    }
+                }
+            }
+        }
     }
+}
+
+/**
+ * iOS-style rubber-band clamp. Values inside `[minV, maxV]` pass through;
+ * anything past a boundary is attenuated toward an asymptotic ceiling
+ * (`limit` = max displayed overshoot). Produces the "stretch, then it can't
+ * stretch any further" feel. `c = 0.55` is Apple's published constant.
+ */
+private fun rubberbandClamp(
+    value: Float,
+    minV: Float,
+    maxV: Float,
+    limit: Float = 300f,
+    c: Float = 0.55f
+): Float {
+    return when {
+        value in minV..maxV -> value
+        value > maxV -> maxV + rubberbandAttenuate(value - maxV, limit, c)
+        else -> minV - rubberbandAttenuate(minV - value, limit, c)
+    }
+}
+
+private fun rubberbandAttenuate(excess: Float, limit: Float, c: Float): Float {
+    if (excess <= 0f || limit <= 0f) return 0f
+    return (1f - 1f / (excess * c / limit + 1f)) * limit
 }
