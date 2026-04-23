@@ -436,10 +436,9 @@ fun WallpaperEditorScreen(
             var activeCategoryShared by remember { mutableStateOf("brightness") }
             // Top-level section the user is editing: "crop" (geometric tools),
             // "filters" (named preset filters), "effects" (scalar sliders).
-            // Picker is permanently visible below the pager; switching the
-            // section changes the pager's contents and hides / shows the
-            // per-effect slider above.
-            var currentSection by remember { mutableStateOf("effects") }
+            // Defaults to Crop so "Edit again…" opens with the crop rectangle
+            // ready to drag — the most common first step.
+            var currentSection by remember { mutableStateOf("crop") }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -580,6 +579,31 @@ fun WallpaperEditorScreen(
                     var editCropT by remember { mutableFloatStateOf(0f) }
                     var editCropR by remember { mutableFloatStateOf(1f) }
                     var editCropB by remember { mutableFloatStateOf(1f) }
+                    // Save-animation machinery. Sequential three-phase
+                    // transition when the user taps Save in the crop section:
+                    //   phase 1 (crop)    : CropOverlay handles fade out
+                    //   phase 2 (enlarge) : image zooms into the pre-save
+                    //                       editCrop region so it fills the
+                    //                       preview; at the end of the
+                    //                       zoom we commit the composed
+                    //                       crop and swap to the new
+                    //                       editorDisplayBitmap
+                    //   phase 3 (return)  : CropOverlay re-appears at the
+                    //                       new edges so the user can
+                    //                       crop further
+                    val saveAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+                    var saveAnimPhase by remember { mutableIntStateOf(0) }
+                    var preSaveEcL by remember { mutableFloatStateOf(0f) }
+                    var preSaveEcT by remember { mutableFloatStateOf(0f) }
+                    var preSaveEcR by remember { mutableFloatStateOf(1f) }
+                    var preSaveEcB by remember { mutableFloatStateOf(1f) }
+                    var previewSizePx by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+                    // When the save animation hits phase 3 we drive the
+                    // preview-box aspect ratio from the old bitmap aspect to
+                    // the new one over the same ~280 ms as the overlay
+                    // fade-in, so the box border smoothly morphs instead of
+                    // snapping to the new aspect when the bitmap swaps.
+                    var aspectOverride by remember { mutableStateOf<Float?>(null) }
                     // Reset editable rect whenever the user re-enters the Crop
                     // section (so it doesn't retain stale mid-drag values
                     // from a previous editing pass).
@@ -631,8 +655,8 @@ fun WallpaperEditorScreen(
                                 android.graphics.Bitmap.createBitmap(sourceBitmap, l, t, r - l, b - t)
                             }
                         }
-                        val previewAspect = editorDisplayBitmap.width.toFloat() /
-                            editorDisplayBitmap.height.toFloat()
+                        val previewAspect = aspectOverride
+                            ?: (editorDisplayBitmap.width.toFloat() / editorDisplayBitmap.height).toFloat()
                         // Force the preview to fill the available HEIGHT and then derive the
                         // narrower width from the image's aspect ratio — this keeps the box
                         // exactly the image's shape, no dark extension on the sides for tall
@@ -650,7 +674,41 @@ fun WallpaperEditorScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .onGloballyPositioned { previewSizePx = it.size }
+                                    // Shared zoom layer: during phase 2 of
+                                    // the save animation, this graphicsLayer
+                                    // scales the image + crop-overlay + dim
+                                    // bands together. Pivot (0.5, 0.5) with
+                                    // translation pans the pre-save editCrop
+                                    // centre to the preview centre as scale
+                                    // grows from 1 to 1/ecW · 1/ecH.
+                                    .graphicsLayer {
+                                        if (saveAnimPhase == 2) {
+                                            val ecW = (preSaveEcR - preSaveEcL).coerceAtLeast(0.02f)
+                                            val ecH = (preSaveEcB - preSaveEcT).coerceAtLeast(0.02f)
+                                            val ecCx = (preSaveEcL + preSaveEcR) / 2f
+                                            val ecCy = (preSaveEcT + preSaveEcB) / 2f
+                                            // Uniform scale — no distortion.
+                                            // The dimension that matches the
+                                            // editCrop's longer side fills
+                                            // the preview; the shorter side
+                                            // letterboxes into the dim bands
+                                            // (already editor-bg coloured),
+                                            // so when the preview box later
+                                            // morphs to the new aspect the
+                                            // letterbox becomes outside-box
+                                            // bg — seamless.
+                                            val sT = 1f / kotlin.math.max(ecW, ecH)
+                                            val p = saveAnim.value
+                                            val s = 1f + p * (sT - 1f)
+                                            scaleX = s
+                                            scaleY = s
+                                            translationX = p * -(ecCx - 0.5f) * previewSizePx.width * sT
+                                            translationY = p * -(ecCy - 0.5f) * previewSizePx.height * sT
+                                        }
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
                             val blurMod = if (blur > 0 && Build.VERSION.SDK_INT >= 31) {
@@ -668,36 +726,28 @@ fun WallpaperEditorScreen(
                             // no distortion). FillBounds avoids the tiny rounding-letterbox
                             // that ContentScale.Fit produced — the crop outline now starts
                             // flush with the image edges.
-                            // Crossfade the image when the displayed sub-
-                            // bitmap changes (i.e. after a Save composes a
-                            // new committed crop). Handles and preview box
-                            // re-layout to the new aspect in the same ~300ms
-                            // window, so the whole transition feels unified.
-                            androidx.compose.animation.Crossfade(
-                                targetState = editorDisplayBitmap,
-                                animationSpec = androidx.compose.animation.core.tween(
-                                    durationMillis = 320,
-                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
-                                ),
-                                label = "cropSaveCrossfade"
-                            ) { bmp ->
-                                Image(
-                                    bitmap = bmp.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    colorFilter = previewColorFilter,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer {
-                                            rotationZ = rotation.toFloat()
-                                            scaleX = scale * (if (flipH) -1f else 1f)
-                                            scaleY = scale * (if (flipV) -1f else 1f)
-                                            translationX = offsetX
-                                            translationY = offsetY
-                                        }
-                                        .then(blurMod)
-                                )
-                            }
+                            // Image holds ONLY the user's rotate / scale /
+                            // flip / translate. The save-animation zoom
+                            // lives on the parent Box (above) so the crop
+                            // overlay + dim bands zoom in lockstep with the
+                            // image, otherwise the outline would detach
+                            // from the image during the enlarge phase.
+                            Image(
+                                bitmap = editorDisplayBitmap.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                colorFilter = previewColorFilter,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        rotationZ = rotation.toFloat()
+                                        scaleX = scale * (if (flipH) -1f else 1f)
+                                        scaleY = scale * (if (flipV) -1f else 1f)
+                                        translationX = offsetX
+                                        translationY = offsetY
+                                    }
+                                    .then(blurMod)
+                            )
 
                             // Crop overlay — only visible when the Crop category is the
                             // active editing mode. Other modes (Brightness, Contrast, etc.)
@@ -707,6 +757,36 @@ fun WallpaperEditorScreen(
                             // already-cropped displayed sub-bitmap. Save
                             // composes it into cropL/T/R/B.
                             if (isCropMode) {
+                                // Per-phase overlay look:
+                                //  phase 0 (idle)    : dim 0.55, outline 1.0
+                                //  phase 1 (crop)    : dim 0.55 → 1.0 (the
+                                //                      uncropped area fades
+                                //                      to fully black) while
+                                //                      outline stays visible
+                                //  phase 2 (enlarge) : dim 1.0, outline 1.0
+                                //                      (grey outline rides
+                                //                      the zoom with the
+                                //                      image)
+                                //  phase 3 (return)  : dim back to 0.55,
+                                //                      outline fades in from
+                                //                      0 as handles return
+                                //                      at the new edges
+                                val dimDefault = Color.Black.copy(alpha = 0.55f)
+                                val editorBg = Color(0xFF121212)
+                                val dimColorNow = when (saveAnimPhase) {
+                                    1 -> androidx.compose.ui.graphics.lerp(
+                                        dimDefault, editorBg, saveAnim.value
+                                    )
+                                    2 -> editorBg
+                                    3 -> dimDefault
+                                    else -> dimDefault
+                                }
+                                val outlineNow = when (saveAnimPhase) {
+                                    1 -> 1f       // stays visible during crop fade
+                                    2 -> 1f       // stays visible during enlarge
+                                    3 -> saveAnim.value
+                                    else -> 1f
+                                }
                                 CropOverlay(
                                     cropL = editCropL, cropT = editCropT,
                                     cropR = editCropR, cropB = editCropB,
@@ -716,7 +796,9 @@ fun WallpaperEditorScreen(
                                         editCropR = r.coerceIn(0f, 1f)
                                         editCropB = b.coerceIn(0f, 1f)
                                     },
-                                    onCommit = { /* no-op; Save button commits */ }
+                                    onCommit = { /* no-op; Save button commits */ },
+                                    dimColor = dimColorNow,
+                                    outlineAlpha = outlineNow
                                 )
                             }
 
@@ -726,26 +808,90 @@ fun WallpaperEditorScreen(
                             // horizontal / 8 dp vertical content padding,
                             // labelLarge text). Semi-opaque black fill so it
                             // stays readable over any wallpaper image.
-                            if (isCropMode) {
+                            if (isCropMode && saveAnimPhase == 0) {
                                 OutlinedButton(
                                     onClick = {
-                                        // Compose editCrop into cropL/T/R/B.
-                                        // The editable rect is fractional on
-                                        // the already-committed-crop sub-
-                                        // bitmap, so map back to source coords.
-                                        val w = cropR - cropL
-                                        val h = cropB - cropT
-                                        val newL = (cropL + editCropL * w).coerceIn(0f, 1f)
-                                        val newR = (cropL + editCropR * w).coerceIn(newL + 0.01f, 1f)
-                                        val newT = (cropT + editCropT * h).coerceIn(0f, 1f)
-                                        val newB = (cropT + editCropB * h).coerceIn(newT + 0.01f, 1f)
-                                        cropL = newL; cropR = newR
-                                        cropT = newT; cropB = newB
-                                        // Reset handles to edges of new sub-
-                                        // bitmap so the user can crop further.
-                                        editCropL = 0f; editCropT = 0f
-                                        editCropR = 1f; editCropB = 1f
-                                        commitEdit()
+                                        scope.launch {
+                                            // Snapshot pre-save edit rectangle
+                                            // so the zoom phase knows where to
+                                            // zoom into.
+                                            preSaveEcL = editCropL
+                                            preSaveEcT = editCropT
+                                            preSaveEcR = editCropR
+                                            preSaveEcB = editCropB
+                                            // Phase 1 — CROP: dim bands fade
+                                            // toward full black (uncropped
+                                            // portion disappears). ~400 ms.
+                                            saveAnimPhase = 1
+                                            saveAnim.snapTo(0f)
+                                            saveAnim.animateTo(
+                                                1f,
+                                                androidx.compose.animation.core.tween(
+                                                    durationMillis = 400,
+                                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                                )
+                                            )
+                                            // Phase 2 — ENLARGE: image + grey
+                                            // outline zoom together to match
+                                            // the new bounds. ~600 ms.
+                                            saveAnimPhase = 2
+                                            saveAnim.snapTo(0f)
+                                            saveAnim.animateTo(
+                                                1f,
+                                                androidx.compose.animation.core.tween(
+                                                    durationMillis = 600,
+                                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                                )
+                                            )
+                                            // Commit: compose editCrop into
+                                            // cropL/T/R/B (source-space) and
+                                            // reset editCrop to edges of the
+                                            // new sub-bitmap.
+                                            val w = cropR - cropL
+                                            val h = cropB - cropT
+                                            val newL = (cropL + preSaveEcL * w).coerceIn(0f, 1f)
+                                            val newR = (cropL + preSaveEcR * w).coerceIn(newL + 0.01f, 1f)
+                                            val newT = (cropT + preSaveEcT * h).coerceIn(0f, 1f)
+                                            val newB = (cropT + preSaveEcB * h).coerceIn(newT + 0.01f, 1f)
+                                            cropL = newL; cropR = newR
+                                            cropT = newT; cropB = newB
+                                            editCropL = 0f; editCropT = 0f
+                                            editCropR = 1f; editCropB = 1f
+                                            commitEdit()
+                                            // Phase 3 — RETURN: outline fades
+                                            // back in at the new edges AND
+                                            // the preview-box aspect morphs
+                                            // from the pre-save aspect to the
+                                            // post-commit aspect so the box
+                                            // border glides into place
+                                            // instead of snapping. ~280 ms.
+                                            val preAspect = sourceBitmap.width.toFloat() *
+                                                (w) / (sourceBitmap.height * (h))
+                                            val postAspect = sourceBitmap.width.toFloat() *
+                                                (newR - newL) / (sourceBitmap.height * (newB - newT))
+                                            aspectOverride = preAspect
+                                            saveAnimPhase = 3
+                                            saveAnim.snapTo(0f)
+                                            launch {
+                                                androidx.compose.animation.core.animate(
+                                                    initialValue = preAspect,
+                                                    targetValue = postAspect,
+                                                    animationSpec = androidx.compose.animation.core.tween(
+                                                        durationMillis = 280,
+                                                        easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                                    )
+                                                ) { value, _ -> aspectOverride = value }
+                                            }
+                                            saveAnim.animateTo(
+                                                1f,
+                                                androidx.compose.animation.core.tween(
+                                                    durationMillis = 280,
+                                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                                )
+                                            )
+                                            aspectOverride = null
+                                            saveAnimPhase = 0
+                                        }
                                     },
                                     shape = RoundedCornerShape(12.dp),
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -1495,7 +1641,18 @@ fun WallpaperEditorScreen(
 private fun BoxScope.CropOverlay(
     cropL: Float, cropT: Float, cropR: Float, cropB: Float,
     onCropChange: (Float, Float, Float, Float) -> Unit,
-    onCommit: () -> Unit = {}
+    onCommit: () -> Unit = {},
+    /** Final colour (alpha included) for the four bands OUTSIDE the crop
+     *  rectangle. Default is the standard translucent dark dim; the editor's
+     *  save-animation fades this to the editor background colour during
+     *  phase 1 so the uncropped area blends seamlessly with the surrounding
+     *  chrome before the image zooms. */
+    dimColor: Color = Color.Black.copy(alpha = 0.55f),
+    /** Alpha on the Canvas that draws the dashed outline, corner L-markers
+     *  and rule-of-thirds grid. Stays 1.0 normally so the outline is visible
+     *  during the zoom phase ("enlarges the image + grey outline"), but the
+     *  editor drops it during phase 3 to bring handles back in smoothly. */
+    outlineAlpha: Float = 1f
 ) {
     val density = LocalDensity.current
     var boxWidthPx by remember { mutableFloatStateOf(1f) }
@@ -1525,7 +1682,7 @@ private fun BoxScope.CropOverlay(
         val topPx = cropT * boxHeightPx
         val rightPx = cropR * boxWidthPx
         val bottomPx = cropB * boxHeightPx
-        val dim = Color.Black.copy(alpha = 0.55f)
+        val dim = dimColor
 
         // Dim bands outside the crop rect
         Box(modifier = Modifier.offset { IntOffset(0, 0) }.size(
@@ -1554,6 +1711,7 @@ private fun BoxScope.CropOverlay(
                     width = with(density) { (rightPx - leftPx).toDp() },
                     height = with(density) { (bottomPx - topPx).toDp() }
                 )
+                .graphicsLayer { this.alpha = outlineAlpha.coerceIn(0f, 1f) }
         ) {
             val strokePx = with(density) { 2.dp.toPx() }
             val cornerLenPx = with(density) { 18.dp.toPx() }  // length of solid corner marker
