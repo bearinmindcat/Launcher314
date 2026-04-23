@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.Color
@@ -610,19 +612,40 @@ fun LauncherWithDrawer(
             val stretchFromScale = if (previewEdit.scale < 1f)
                 rubberbandAttenuate(1f - previewEdit.scale, 0.5f, 0.55f)
             else 0f
-            val stretchX = stretchFromOvershootX + stretchFromScale
-            val stretchY = stretchFromOvershootY + stretchFromScale
-            // Pivot = opposite edge of the drag direction (drag right → anchor
-            // left / pivot.x = 0). Center when no overshoot on that axis.
-            val stretchPivotX = when {
-                overshootX > 0f -> 0f
-                overshootX < 0f -> 1f
-                else -> 0.5f
-            }
-            val stretchPivotY = when {
-                overshootY > 0f -> 0f
-                overshootY < 0f -> 1f
-                else -> 0.5f
+            // Pinch-in stretch is applied to ONE axis only — the one the
+            // user's first finger landed closer to an edge on — and uses the
+            // opposite-edge pivot (so only the touched side moves, the
+            // anchored side stays put).
+            val pinchAnchorState = com.bearinmind.launcher314.data.WallpaperPreviewBus.pinchAnchor
+            val pinchStretchX = if (stretchFromScale > 0f && pinchAnchorState.isHorizontal) stretchFromScale else 0f
+            val pinchStretchY = if (stretchFromScale > 0f && !pinchAnchorState.isHorizontal) stretchFromScale else 0f
+            val stretchX = stretchFromOvershootX + pinchStretchX
+            val stretchY = stretchFromOvershootY + pinchStretchY
+            // Pivot priority:
+            //   1. If there's offset overshoot, anchor opposite the drag dir.
+            //   2. Otherwise if pinch-in stretch active, use the first-finger
+            //      anchor (opposite edge of the touch).
+            //   3. Else center.
+            val stretchPivotX: Float
+            val stretchPivotY: Float
+            when {
+                overshootX != 0f || overshootY != 0f -> {
+                    stretchPivotX = when {
+                        overshootX > 0f -> 0f
+                        overshootX < 0f -> 1f
+                        else -> 0.5f
+                    }
+                    stretchPivotY = when {
+                        overshootY > 0f -> 0f
+                        overshootY < 0f -> 1f
+                        else -> 0.5f
+                    }
+                }
+                stretchFromScale > 0f -> {
+                    stretchPivotX = pinchAnchorState.pivot.pivotFractionX
+                    stretchPivotY = pinchAnchorState.pivot.pivotFractionY
+                }
+                else -> { stretchPivotX = 0.5f; stretchPivotY = 0.5f }
             }
             androidx.compose.foundation.Image(
                 bitmap = previewCropped.asImageBitmap(),
@@ -700,7 +723,11 @@ fun LauncherWithDrawer(
         // Dim overlay applies to BOTH custom and system wallpaper. Keep it behind the
         // rest of the launcher content so text/icons aren't dimmed — it only tints the
         // wallpaper.
-        if (wallpaperDim > 0) {
+        // Skip the global wallpaper-dim overlay while the wallpaper editor's
+        // Preview is active — the user wants to judge the image's true
+        // colors/brightness, not see it multiplied by their launcher's dim
+        // preference. After Apply, normal browsing re-applies dim as set.
+        if (wallpaperDim > 0 && wallpaperPreview == null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -966,6 +993,9 @@ fun LauncherWithDrawer(
             // asked for.
             val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
             val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+            // The pinch anchor (which side the first finger landed on) lives
+            // in `WallpaperPreviewBus.pinchAnchor` so the preview-backdrop
+            // render code (above) can read it too.
             val previewTransformState = androidx.compose.foundation.gestures.rememberTransformableState { zoomChange, panChange, _ ->
                 val prev = com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview ?: return@rememberTransformableState
                 val rawScale = prev.edit.scale * zoomChange
@@ -1029,6 +1059,42 @@ fun LauncherWithDrawer(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // First-finger tracker. Captures the position where
+                        // each new gesture starts, classifies it as
+                        // horizontal-side or vertical-side based on which
+                        // axis it's farther from center, and stores the
+                        // OPPOSITE edge as the pinch pivot. Doesn't consume,
+                        // so transformable still gets the same down event.
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val w = size.width.toFloat().coerceAtLeast(1f)
+                                val h = size.height.toFloat().coerceAtLeast(1f)
+                                val fx = (down.position.x / w).coerceIn(0f, 1f)
+                                val fy = (down.position.y / h).coerceIn(0f, 1f)
+                                val dx = kotlin.math.abs(fx - 0.5f)
+                                val dy = kotlin.math.abs(fy - 0.5f)
+                                com.bearinmind.launcher314.data.WallpaperPreviewBus.pinchAnchor = if (dx >= dy) {
+                                    com.bearinmind.launcher314.data.WallpaperPreviewBus.PinchAnchor(
+                                        pivot = com.bearinmind.launcher314.data.WallpaperPreviewBus
+                                            .ColorFilterIndependentTransformOrigin(
+                                                pivotFractionX = if (fx < 0.5f) 1f else 0f,
+                                                pivotFractionY = 0.5f
+                                            ),
+                                        isHorizontal = true
+                                    )
+                                } else {
+                                    com.bearinmind.launcher314.data.WallpaperPreviewBus.PinchAnchor(
+                                        pivot = com.bearinmind.launcher314.data.WallpaperPreviewBus
+                                            .ColorFilterIndependentTransformOrigin(
+                                                pivotFractionX = 0.5f,
+                                                pivotFractionY = if (fy < 0.5f) 1f else 0f
+                                            ),
+                                        isHorizontal = false
+                                    )
+                                }
+                            }
+                        }
                         .transformable(previewTransformState)
                         .clickable(
                             interactionSource = sinkInteraction,

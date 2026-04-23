@@ -569,6 +569,26 @@ fun WallpaperEditorScreen(
                     // pinned IconRow (sibling outside this Column) can stay in sync.
                     val activeCategory = activeCategoryShared
                     val isCropMode = currentSection == "crop"
+                    // "Live" crop handles manipulated by the CropOverlay —
+                    // always expressed in 0..1 fractional coords of the
+                    // CURRENTLY displayed (already-committed-crop) bitmap.
+                    // Tapping Save composes these values into the persisted
+                    // source-space crop (cropL/T/R/B on DeviceWallpaperEdit)
+                    // and resets the editable rect to full-edges so the user
+                    // can keep cropping on the new, tighter image.
+                    var editCropL by remember { mutableFloatStateOf(0f) }
+                    var editCropT by remember { mutableFloatStateOf(0f) }
+                    var editCropR by remember { mutableFloatStateOf(1f) }
+                    var editCropB by remember { mutableFloatStateOf(1f) }
+                    // Reset editable rect whenever the user re-enters the Crop
+                    // section (so it doesn't retain stale mid-drag values
+                    // from a previous editing pass).
+                    LaunchedEffect(currentSection) {
+                        if (currentSection == "crop") {
+                            editCropL = 0f; editCropT = 0f
+                            editCropR = 1f; editCropB = 1f
+                        }
+                    }
 
                     // Preview takes ALL remaining space after the intrinsic Controls
                     // and IconRow heights. Crop mode just shrinks Controls (no slider
@@ -588,7 +608,31 @@ fun WallpaperEditorScreen(
                         // separate toggled mode. The crop overlay lives in a sibling Box so
                         // its outline draws ON TOP of the image's border instead of being
                         // clipped inside.
-                        val previewAspect = sourceBitmap.width.toFloat() / sourceBitmap.height.toFloat()
+                        // When NOT in crop mode and the user has trimmed the
+                        // image, show the cropped sub-bitmap at the preview's
+                        // native aspect ratio — so saving the crop actually
+                        // visually "commits" (the preview now displays only
+                        // what will become the wallpaper). In crop mode the
+                        // FULL source is used so handles can reach every edge.
+                        val cropInset = cropL > 0.001f || cropT > 0.001f ||
+                            cropR < 0.999f || cropB < 0.999f
+                        // Preview always renders the already-committed crop
+                        // sub-bitmap. The live-editing rectangle (editCrop
+                        // state) draws on top via the CropOverlay handles.
+                        val editorDisplayBitmap = remember(
+                            sourceBitmap, cropL, cropT, cropR, cropB
+                        ) {
+                            if (!cropInset) sourceBitmap
+                            else {
+                                val l = (cropL * sourceBitmap.width).toInt().coerceIn(0, sourceBitmap.width - 1)
+                                val t = (cropT * sourceBitmap.height).toInt().coerceIn(0, sourceBitmap.height - 1)
+                                val r = (cropR * sourceBitmap.width).toInt().coerceIn(l + 1, sourceBitmap.width)
+                                val b = (cropB * sourceBitmap.height).toInt().coerceIn(t + 1, sourceBitmap.height)
+                                android.graphics.Bitmap.createBitmap(sourceBitmap, l, t, r - l, b - t)
+                            }
+                        }
+                        val previewAspect = editorDisplayBitmap.width.toFloat() /
+                            editorDisplayBitmap.height.toFloat()
                         // Force the preview to fill the available HEIGHT and then derive the
                         // narrower width from the image's aspect ratio — this keeps the box
                         // exactly the image's shape, no dark extension on the sides for tall
@@ -597,6 +641,11 @@ fun WallpaperEditorScreen(
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .aspectRatio(previewAspect)
+                                // Clip to the preview box so `BlurEffect`
+                                // (which paints a few extra pixels past the
+                                // layout bounds) can't bleed the blurred
+                                // halo outside the framed area.
+                                .clip(androidx.compose.ui.graphics.RectangleShape)
                                 .border(1.dp, Color(0xFF555555)),
                             contentAlignment = Alignment.Center
                         ) {
@@ -619,37 +668,103 @@ fun WallpaperEditorScreen(
                             // no distortion). FillBounds avoids the tiny rounding-letterbox
                             // that ContentScale.Fit produced — the crop outline now starts
                             // flush with the image edges.
-                            Image(
-                                bitmap = sourceBitmap.asImageBitmap(),
-                                contentDescription = null,
-                                contentScale = ContentScale.FillBounds,
-                                colorFilter = previewColorFilter,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer {
-                                        rotationZ = rotation.toFloat()
-                                        scaleX = scale * (if (flipH) -1f else 1f)
-                                        scaleY = scale * (if (flipV) -1f else 1f)
-                                        translationX = offsetX
-                                        translationY = offsetY
-                                    }
-                                    .then(blurMod)
-                            )
+                            // Crossfade the image when the displayed sub-
+                            // bitmap changes (i.e. after a Save composes a
+                            // new committed crop). Handles and preview box
+                            // re-layout to the new aspect in the same ~300ms
+                            // window, so the whole transition feels unified.
+                            androidx.compose.animation.Crossfade(
+                                targetState = editorDisplayBitmap,
+                                animationSpec = androidx.compose.animation.core.tween(
+                                    durationMillis = 320,
+                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                ),
+                                label = "cropSaveCrossfade"
+                            ) { bmp ->
+                                Image(
+                                    bitmap = bmp.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    colorFilter = previewColorFilter,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer {
+                                            rotationZ = rotation.toFloat()
+                                            scaleX = scale * (if (flipH) -1f else 1f)
+                                            scaleY = scale * (if (flipV) -1f else 1f)
+                                            translationX = offsetX
+                                            translationY = offsetY
+                                        }
+                                        .then(blurMod)
+                                )
+                            }
 
                             // Crop overlay — only visible when the Crop category is the
                             // active editing mode. Other modes (Brightness, Contrast, etc.)
                             // hide the outline/handles so the user sees the clean image.
+                            // CropOverlay now manipulates the LIVE edit
+                            // rectangle (editCrop), which is 0..1 on the
+                            // already-cropped displayed sub-bitmap. Save
+                            // composes it into cropL/T/R/B.
                             if (isCropMode) {
                                 CropOverlay(
-                                    cropL = cropL, cropT = cropT, cropR = cropR, cropB = cropB,
+                                    cropL = editCropL, cropT = editCropT,
+                                    cropR = editCropR, cropB = editCropB,
                                     onCropChange = { l, t, r, b ->
-                                        cropL = l.coerceIn(0f, 1f)
-                                        cropT = t.coerceIn(0f, 1f)
-                                        cropR = r.coerceIn(0f, 1f)
-                                        cropB = b.coerceIn(0f, 1f)
+                                        editCropL = l.coerceIn(0f, 1f)
+                                        editCropT = t.coerceIn(0f, 1f)
+                                        editCropR = r.coerceIn(0f, 1f)
+                                        editCropB = b.coerceIn(0f, 1f)
                                     },
-                                    onCommit = { commitEdit() }
+                                    onCommit = { /* no-op; Save button commits */ }
                                 )
+                            }
+
+                            // Crop-mode "Save" button — same OutlinedButton
+                            // style as the top-bar Reset / Preview / Apply
+                            // (12 dp rounded corners, 1 dp #888 border, 16 dp
+                            // horizontal / 8 dp vertical content padding,
+                            // labelLarge text). Semi-opaque black fill so it
+                            // stays readable over any wallpaper image.
+                            if (isCropMode) {
+                                OutlinedButton(
+                                    onClick = {
+                                        // Compose editCrop into cropL/T/R/B.
+                                        // The editable rect is fractional on
+                                        // the already-committed-crop sub-
+                                        // bitmap, so map back to source coords.
+                                        val w = cropR - cropL
+                                        val h = cropB - cropT
+                                        val newL = (cropL + editCropL * w).coerceIn(0f, 1f)
+                                        val newR = (cropL + editCropR * w).coerceIn(newL + 0.01f, 1f)
+                                        val newT = (cropT + editCropT * h).coerceIn(0f, 1f)
+                                        val newB = (cropT + editCropB * h).coerceIn(newT + 0.01f, 1f)
+                                        cropL = newL; cropR = newR
+                                        cropT = newT; cropB = newB
+                                        // Reset handles to edges of new sub-
+                                        // bitmap so the user can crop further.
+                                        editCropL = 0f; editCropT = 0f
+                                        editCropR = 1f; editCropB = 1f
+                                        commitEdit()
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                        horizontal = 16.dp,
+                                        vertical = 8.dp
+                                    ),
+                                    border = BorderStroke(1.dp, Color(0xFF888888)),
+                                    colors = androidx.compose.material3.ButtonDefaults
+                                        .outlinedButtonColors(containerColor = Color.Black.copy(alpha = 0.55f)),
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 8.dp, end = 8.dp)
+                                ) {
+                                    Text(
+                                        "Save",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }
                             }
 
                             // Vignette preview overlay
@@ -848,6 +963,13 @@ fun WallpaperEditorScreen(
                                                 onValueChangeFinished = { commitEdit() },
                                                 onDoubleTap = { sharpness = 0; commitEdit() }
                                             )
+                                            "blur" -> ThumbDragHorizontalSlider(
+                                                currentValue = blur.toFloat(),
+                                                config = SliderConfigs.wallpaperPercent,
+                                                onValueChange = { blur = it.toInt() },
+                                                onValueChangeFinished = { commitEdit() },
+                                                onDoubleTap = { blur = 0; commitEdit() }
+                                            )
                                         }
                                     }
                                     // (label is no longer shown here — each
@@ -883,7 +1005,7 @@ fun WallpaperEditorScreen(
                             else -> listOf(
                                 "brightness", "exposure", "contrast",
                                 "highlights", "shadows", "saturation", "tint", "temperature",
-                                "sharpness"
+                                "sharpness", "blur"
                             )
                         }
                     }
@@ -1102,6 +1224,7 @@ fun WallpaperEditorScreen(
                                     "tint" -> tint != 0
                                     "temperature" -> temperature != 0
                                     "sharpness" -> sharpness != 0
+                                    "blur" -> blur != 0
                                     else -> false
                                 }
                             }
@@ -1145,6 +1268,7 @@ fun WallpaperEditorScreen(
                                         "tint" -> tint = 0
                                         "temperature" -> temperature = 0
                                         "sharpness" -> sharpness = 0
+                                        "blur" -> blur = 0
                                     }
                                     commitEdit()
                                 })
@@ -1162,6 +1286,7 @@ fun WallpaperEditorScreen(
                                 "tint" -> tint
                                 "temperature" -> temperature
                                 "sharpness" -> sharpness
+                                "blur" -> blur
                                 else -> 0
                             } else 0
                             val categoryName = when (key) {
@@ -1175,6 +1300,7 @@ fun WallpaperEditorScreen(
                                 "tint" -> "Tint"
                                 "temperature" -> "Temperature"
                                 "sharpness" -> "Sharpness"
+                                "blur" -> "Blur"
                                 // filters
                                 "filter_none" -> "Original"
                                 "filter_mono" -> "Mono"
@@ -1242,6 +1368,7 @@ fun WallpaperEditorScreen(
                                         androidx.compose.ui.res.painterResource(com.bearinmind.launcher314.R.drawable.ic_triangle_rounded_tonality),
                                         "Sharpness", isSelected, activated, displayValue, onTap, onDoubleTap
                                     )
+                                    "blur" -> CategoryIcon(Icons.Outlined.BlurOn, "Blur", isSelected, activated, displayValue, onTap, onDoubleTap)
                                     // --- filters (live thumbnails of the cropped source with each filter applied) ---
                                     "filter_none",
                                     "filter_mono",
@@ -1485,6 +1612,10 @@ private fun BoxScope.CropOverlay(
             drawLine(gridColor, GeoOffset(0f, h / 3f), GeoOffset(w, h / 3f), strokeWidth = 1f)
             drawLine(gridColor, GeoOffset(0f, 2 * h / 3f), GeoOffset(w, 2 * h / 3f), strokeWidth = 1f)
         }
+
+        // (Save chip moved OUT of the CropOverlay — it's now pinned to the
+        // preview box so it stays in a fixed position instead of floating
+        // with the crop rectangle as the user drags handles around.)
 
         // Invisible drag zones — same pattern as widget-resize: 32dp edges + 48dp
         // corners. Zones are declared EDGES FIRST then corners so corners end up
