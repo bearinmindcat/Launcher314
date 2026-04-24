@@ -53,6 +53,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -1034,6 +1040,26 @@ fun DraggableGridCell(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // TalkBack entry point for the folder tile. The
+                        // pointerInput below handles sighted users' tap /
+                        // long-press / drag as before; this semantics block
+                        // exists solely so the folder is focusable and
+                        // activatable via accessibility services. Merging
+                        // descendants collapses the preview icons + label
+                        // into a single focusable node, avoiding noisy
+                        // traversal across decorative children.
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = cell.folder.name
+                            onClick(label = "Open folder") {
+                                onTap()
+                                true
+                            }
+                            onLongClick(label = "Show folder options") {
+                                showContextMenu = true
+                                true
+                            }
+                        }
                         .pointerInput(isWidgetDragging) {
                             if (isWidgetDragging) return@pointerInput
                             val touchSlop = viewConfiguration.touchSlop
