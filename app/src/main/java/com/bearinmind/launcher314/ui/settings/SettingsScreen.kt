@@ -342,23 +342,9 @@ fun SettingsScreen(
                     )
                 }
 
-                Divider(color = Color.Gray.copy(alpha = 0.2f))
-
-                // Expand the Wallpaper section by default if we're returning
-                // from a preview round-trip (editor needs to auto-reopen inside
-                // this section's content).
-                var wallpaperSectionExpanded by remember {
-                    mutableStateOf(
-                        com.bearinmind.launcher314.data.WallpaperPreviewBus.pendingResumeEdit != null
-                    )
-                }
-                CollapsibleSection(
-                    title = "Wallpaper",
-                    expanded = wallpaperSectionExpanded,
-                    onToggle = { wallpaperSectionExpanded = !wallpaperSectionExpanded }
-                ) {
-                    WallpaperPersonalizationCard(onPreviewLauncher = onPreviewLauncher)
-                }
+                // (Wallpaper section removed — the wallpaper picker now lives
+                // in the launcher's home-screen long-press menu, which opens
+                // a chooser dialog and routes Custom into the same editor.)
             }
 
             Divider(color = Color.Gray.copy(alpha = 0.2f))

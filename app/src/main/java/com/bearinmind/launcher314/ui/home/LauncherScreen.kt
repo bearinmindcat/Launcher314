@@ -81,7 +81,9 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import com.bearinmind.launcher314.data.DeviceWallpaperEdit
 import com.bearinmind.launcher314.data.WALLPAPER_MODE_DEVICE
+import com.bearinmind.launcher314.data.WallpaperPreviewBus
 import com.bearinmind.launcher314.data.getDeviceWallpaperEdit
+import com.bearinmind.launcher314.data.getDeviceWallpaperSourcePath
 import com.bearinmind.launcher314.data.setDeviceWallpaperEdit
 import com.bearinmind.launcher314.data.setWallpaperMode
 import com.bearinmind.launcher314.helpers.WallpaperHelper
@@ -822,6 +824,20 @@ fun LauncherScreen(
                     customWallpaperSourcePath = saved
                 }
             }
+        }
+    }
+    // Auto-reopen the editor after a Preview round-trip. WallpaperPreviewBus
+    // holds `pendingResumeEdit` whenever the editor's Preview button was
+    // tapped; the launcher's preview-backdrop renderer (LauncherWithDrawer)
+    // clears `activePreview` when the user taps Exit/Apply. Watching both
+    // lets us reopen the editor on the same source the moment the preview
+    // overlay is dismissed (Exit), preserving in-flight edit state.
+    val previewActive = WallpaperPreviewBus.activePreview
+    val pendingResume = WallpaperPreviewBus.pendingResumeEdit
+    LaunchedEffect(previewActive, pendingResume) {
+        if (previewActive == null && pendingResume != null && customWallpaperSourcePath == null) {
+            val saved = getDeviceWallpaperSourcePath(context)
+            if (saved != null) customWallpaperSourcePath = saved
         }
     }
 
@@ -5693,12 +5709,19 @@ fun LauncherScreen(
         }
 
         // Wallpaper editor — opens after the user picks an image via the
-        // Custom path. Same component used inside the Settings card so the
-        // editing experience is identical.
+        // Custom path. If the editor was previously dismissed via Preview,
+        // restore the in-flight edit (rather than re-reading saved prefs).
+        // Consume the pending value so a fresh open later starts from prefs.
         customWallpaperSourcePath?.let { path ->
             val sourceFile = remember(path) { File(path) }
             if (sourceFile.exists()) {
-                val initialEdit = remember(path) { getDeviceWallpaperEdit(context) }
+                val resume = WallpaperPreviewBus.pendingResumeEdit
+                val initialEdit = remember(path, resume) {
+                    if (resume != null) {
+                        WallpaperPreviewBus.pendingResumeEdit = null
+                        resume
+                    } else getDeviceWallpaperEdit(context)
+                }
                 WallpaperEditorScreen(
                     sourceFile = sourceFile,
                     initialEdit = initialEdit,
@@ -5706,7 +5729,13 @@ fun LauncherScreen(
                     onApplied = {
                         customWallpaperSourcePath = null
                         setWallpaperMode(context, WALLPAPER_MODE_DEVICE)
-                    }
+                    },
+                    // Editor dismisses itself after setting the preview
+                    // bus; just close our local state so the preview backdrop
+                    // (rendered by LauncherWithDrawer) becomes visible. The
+                    // auto-reopen LaunchedEffect above brings the editor back
+                    // when the user taps Exit on the preview overlay.
+                    onRequestPreviewLauncher = { customWallpaperSourcePath = null }
                 )
             } else {
                 customWallpaperSourcePath = null

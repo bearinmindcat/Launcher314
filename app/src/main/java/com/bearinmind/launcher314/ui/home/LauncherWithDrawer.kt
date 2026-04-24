@@ -1130,8 +1130,12 @@ fun LauncherWithDrawer(
                 ) {
                     androidx.compose.material3.OutlinedButton(
                         onClick = {
+                            // Just clear the preview backdrop. The launcher's
+                            // pending-resume watcher reopens the editor with
+                            // the in-flight edit state — no settings round-
+                            // trip needed since the wallpaper section there
+                            // was removed.
                             com.bearinmind.launcher314.data.WallpaperPreviewBus.activePreview = null
-                            onSettingsClick()
                         },
                         enabled = !isApplyingPreview,
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
