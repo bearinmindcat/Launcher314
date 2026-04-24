@@ -999,6 +999,11 @@ fun DraggableGridCell(
             is HomeGridCell.Folder -> {
                 // Folder cell - shows 2x2 preview grid of app icons
                 var showFolderRemoveConfirm by remember { mutableStateOf(false) }
+                // Tracks the folder icon's on-screen bounds (already accounting
+                // for the 1.265× scale-up that happens when the popup shows) so
+                // AnimatedPopup can anchor tight to the folder — same pattern
+                // the app-icon cell uses above.
+                var folderIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
                 val isFolderScaledUp = showContextMenu || isDragging || showFolderRemoveConfirm || isCustomizing
                 val animatedFolderScale by animateFloatAsState(
                     targetValue = if (isFolderScaledUp) 1.265f else 1f,
@@ -1183,6 +1188,19 @@ fun DraggableGridCell(
                             Box(
                                 modifier = Modifier
                                     .size(folderBoxSize)
+                                    .onGloballyPositioned { coords ->
+                                        // Always use the final target scale (1.265f) so popup doesn't stutter during animation
+                                        val targetScale = 1.265f
+                                        val pos = coords.positionInRoot()
+                                        val w = coords.size.width * targetScale
+                                        val h = coords.size.height * targetScale
+                                        val offsetX = (coords.size.width - w) / 2f
+                                        val offsetY = (coords.size.height - h) / 2f
+                                        folderIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                                            pos.x + offsetX, pos.y + offsetY,
+                                            pos.x + offsetX + w, pos.y + offsetY + h
+                                        )
+                                    }
                                     .graphicsLayer {
                                         scaleX = combinedScale
                                         scaleY = combinedScale
@@ -1435,8 +1453,9 @@ fun DraggableGridCell(
 
                     // Context menu
                     AnimatedPopup(
-                            visible = showContextMenu,
-                            onDismissRequest = { showContextMenu = false }
+                            visible = showContextMenu && folderIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                            onDismissRequest = { showContextMenu = false },
+                            iconBoundsInRoot = folderIconBoundsInRoot
                         ) {
                                     Box(
                                         modifier = Modifier
