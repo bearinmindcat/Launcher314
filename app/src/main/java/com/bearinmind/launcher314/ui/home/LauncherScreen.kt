@@ -25,6 +25,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,6 +76,16 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.bearinmind.launcher314.data.DeviceWallpaperEdit
+import com.bearinmind.launcher314.data.WALLPAPER_MODE_DEVICE
+import com.bearinmind.launcher314.data.getDeviceWallpaperEdit
+import com.bearinmind.launcher314.data.setDeviceWallpaperEdit
+import com.bearinmind.launcher314.data.setWallpaperMode
+import com.bearinmind.launcher314.helpers.WallpaperHelper
+import com.bearinmind.launcher314.ui.settings.WallpaperEditorScreen
 import com.bearinmind.launcher314.helpers.getIconShape
 import com.bearinmind.launcher314.helpers.getShapedExpDir
 import com.bearinmind.launcher314.helpers.getBgTintedDir
@@ -124,6 +135,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -787,6 +799,31 @@ fun LauncherScreen(
     // Launcher settings menu (shown on long-press of empty area)
     var showLauncherSettingsMenu by remember { mutableStateOf(false) }
     var launcherMenuPosition by remember { mutableStateOf(Offset.Zero) }
+
+    // Wallpaper picker dialog — appears when the user taps the menu's
+    // "Wallpaper" entry. Three buttons: Cancel, Default (system picker),
+    // Custom (our editor).
+    var showWallpaperPickDialog by remember { mutableStateOf(false) }
+    // When non-null, opens the WallpaperEditorScreen on the imported source
+    // and stays open until the user dismisses or applies the edit.
+    var customWallpaperSourcePath by remember { mutableStateOf<String?>(null) }
+    val pickCustomWallpaper = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            dropScope.launch {
+                val saved = withContext(Dispatchers.IO) {
+                    WallpaperHelper.importDeviceWallpaperSource(context, uri)
+                }
+                if (saved != null) {
+                    // Reset edits so the new image starts clean (no stale
+                    // scale/crop carried over from a prior wallpaper).
+                    setDeviceWallpaperEdit(context, DeviceWallpaperEdit())
+                    customWallpaperSourcePath = saved
+                }
+            }
+        }
+    }
 
     // Swipe detection for app drawer
     var swipeOffset by remember { mutableFloatStateOf(0f) }
@@ -5487,12 +5524,14 @@ fun LauncherScreen(
                             )
                         }
                     )
-                    // Wallpaper option
+                    // Wallpaper option — shows a chooser dialog (Cancel /
+                    // Default / Custom) so the user can pick between the
+                    // system picker and our custom editor.
                     DropdownMenuItem(
                         text = { Text("Wallpaper") },
                         onClick = {
                             showLauncherSettingsMenu = false
-                            openWallpaperPicker(context)
+                            showWallpaperPickDialog = true
                         },
                         leadingIcon = {
                             Icon(
@@ -5569,6 +5608,109 @@ fun LauncherScreen(
                             )
                         }
                     )
+        }
+
+        // "Pick a new wallpaper" chooser. Mirrors the DeviceAudioEQ Reset
+        // dialog styling: 1E1E1E rounded surface, light/medium grey title +
+        // body, 1px divider, three equal-width OutlinedButtons across the
+        // bottom (Cancel / Default / Custom).
+        if (showWallpaperPickDialog) {
+            Dialog(onDismissRequest = { showWallpaperPickDialog = false }) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF1E1E1E)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(
+                            start = 24.dp, top = 20.dp, end = 24.dp, bottom = 16.dp
+                        )
+                    ) {
+                        Text(
+                            text = "Pick a new wallpaper",
+                            color = Color(0xFFE2E2E2),
+                            fontSize = 20.sp,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        Text(
+                            text = "Pick a new wallpaper using a default system picker or a custom picker with multiple effects",
+                            color = Color(0xFFAAAAAA),
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Color(0xFF444444))
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = { showWallpaperPickDialog = false },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFF444444)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Color(0xFFEF9A9A),
+                                    containerColor = Color.Transparent
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) { Text("Cancel") }
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    showWallpaperPickDialog = false
+                                    openWallpaperPicker(context)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFF444444)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Color(0xFFDDDDDD),
+                                    containerColor = Color.Transparent
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) { Text("Default") }
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    showWallpaperPickDialog = false
+                                    pickCustomWallpaper.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFF444444)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Color(0xFFDDDDDD),
+                                    containerColor = Color.Transparent
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) { Text("Custom") }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Wallpaper editor — opens after the user picks an image via the
+        // Custom path. Same component used inside the Settings card so the
+        // editing experience is identical.
+        customWallpaperSourcePath?.let { path ->
+            val sourceFile = remember(path) { File(path) }
+            if (sourceFile.exists()) {
+                val initialEdit = remember(path) { getDeviceWallpaperEdit(context) }
+                WallpaperEditorScreen(
+                    sourceFile = sourceFile,
+                    initialEdit = initialEdit,
+                    onDismiss = { customWallpaperSourcePath = null },
+                    onApplied = {
+                        customWallpaperSourcePath = null
+                        setWallpaperMode(context, WALLPAPER_MODE_DEVICE)
+                    }
+                )
+            } else {
+                customWallpaperSourcePath = null
+            }
         }
 }
 

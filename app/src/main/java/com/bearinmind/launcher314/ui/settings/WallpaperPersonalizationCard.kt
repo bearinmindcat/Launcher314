@@ -192,7 +192,6 @@ fun WallpaperPersonalizationCard(
             WALLPAPER_MODE_DEVICE -> DeviceWallpaperControls(
                 deviceSourcePath = deviceSourcePath,
                 cacheVersion = cacheVersion,
-                dim = dim,
                 onPickAndEdit = {
                     pickDeviceSource.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
@@ -203,8 +202,7 @@ fun WallpaperPersonalizationCard(
                     mode = WALLPAPER_MODE_SYSTEM
                     setWallpaperMode(context, WALLPAPER_MODE_SYSTEM)
                     cacheVersion = getWallpaperCacheVersion(context)
-                },
-                onDimChange = { dim = it; setWallpaperDim(context, it) }
+                }
             )
             else -> {
                 // SYSTEM mode — just show dim slider (the only knob that applies to system wallpaper)
@@ -306,11 +304,9 @@ private fun CustomOverlayControls(
 private fun DeviceWallpaperControls(
     deviceSourcePath: String?,
     cacheVersion: Int,
-    dim: Int,
     onPickAndEdit: () -> Unit,
     onEditAgain: () -> Unit,
-    onClear: () -> Unit,
-    onDimChange: (Int) -> Unit
+    onClear: () -> Unit
 ) {
     Text(
         "Edits and sets the real Android wallpaper. Shows in Recents and other apps.",
@@ -342,12 +338,7 @@ private fun DeviceWallpaperControls(
             OutlinedButton(onClick = onClear) { Text("Clear") }
         }
     }
-    Spacer(modifier = Modifier.height(12.dp))
-    Text("Launcher dim", style = MaterialTheme.typography.labelMedium)
-    ThumbDragHorizontalSlider(
-        currentValue = dim.toFloat(),
-        config = SliderConfigs.wallpaperPercent,
-        onValueChange = { onDimChange(it.roundToInt()) },
-        onValueChangeFinished = { onDimChange(dim) }
-    )
+    // Launcher dim slider lives inside the wallpaper editor's Effects section
+    // now (so it sits next to brightness/contrast/blur). No standalone slider
+    // here.
 }

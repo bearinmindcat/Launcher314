@@ -49,6 +49,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.BlurOn
+import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.Crop
@@ -112,7 +113,9 @@ import com.bearinmind.launcher314.data.DeviceWallpaperEdit
 import com.bearinmind.launcher314.data.WALLPAPER_MODE_DEVICE
 import com.bearinmind.launcher314.data.WP_FILTER_NONE
 import com.bearinmind.launcher314.data.bumpWallpaperCacheVersion
+import com.bearinmind.launcher314.data.getWallpaperDim
 import com.bearinmind.launcher314.data.setDeviceWallpaperEdit
+import com.bearinmind.launcher314.data.setWallpaperDim
 import com.bearinmind.launcher314.data.setWallpaperMode
 import com.bearinmind.launcher314.helpers.WallpaperHelper
 import com.bearinmind.launcher314.ui.components.SliderConfigs
@@ -177,6 +180,11 @@ fun WallpaperEditorScreen(
     var blur by remember { mutableIntStateOf(initialEdit.blur) }
     var vignette by remember { mutableIntStateOf(initialEdit.vignette) }
     var filter by remember { mutableStateOf(initialEdit.filter) }
+    // Launcher dim — separate prefs key (not part of DeviceWallpaperEdit) since
+    // it's a launcher overlay applied on top of the wallpaper at render time,
+    // not a property of the bake. Writes through to SharedPreferences on every
+    // change so the launcher's reactive read picks it up live in Preview.
+    var dimEffect by remember { mutableIntStateOf(getWallpaperDim(context)) }
     var isApplying by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
@@ -911,6 +919,20 @@ fun WallpaperEditorScreen(
                                 }
                             }
 
+                            // Launcher dim preview overlay — mirrors the
+                            // black-alpha overlay that LauncherWithDrawer
+                            // applies on top of the wallpaper at render time
+                            // (see `wallpaperDimPercent` there). Drawn here
+                            // so dragging the Dim slider gives immediate
+                            // feedback inside the editor preview.
+                            if (dimEffect > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = (dimEffect / 100f).coerceIn(0f, 1f)))
+                                )
+                            }
+
                             // Vignette preview overlay
                             if (vignette > 0) {
                                 val alphaMax = (vignette / 100f * 0.85f).coerceIn(0f, 1f)
@@ -1114,6 +1136,21 @@ fun WallpaperEditorScreen(
                                                 onValueChangeFinished = { commitEdit() },
                                                 onDoubleTap = { blur = 0; commitEdit() }
                                             )
+                                            "dim" -> ThumbDragHorizontalSlider(
+                                                currentValue = dimEffect.toFloat(),
+                                                config = SliderConfigs.wallpaperPercent,
+                                                onValueChange = {
+                                                    dimEffect = it.toInt()
+                                                    setWallpaperDim(context, dimEffect)
+                                                },
+                                                onValueChangeFinished = {
+                                                    setWallpaperDim(context, dimEffect)
+                                                },
+                                                onDoubleTap = {
+                                                    dimEffect = 0
+                                                    setWallpaperDim(context, 0)
+                                                }
+                                            )
                                         }
                                     }
                                     // (label is no longer shown here — each
@@ -1149,7 +1186,7 @@ fun WallpaperEditorScreen(
                             else -> listOf(
                                 "brightness", "exposure", "contrast",
                                 "highlights", "shadows", "saturation", "tint", "temperature",
-                                "sharpness", "blur"
+                                "sharpness", "blur", "dim"
                             )
                         }
                     }
@@ -1369,6 +1406,7 @@ fun WallpaperEditorScreen(
                                     "temperature" -> temperature != 0
                                     "sharpness" -> sharpness != 0
                                     "blur" -> blur != 0
+                                    "dim" -> dimEffect != 0
                                     else -> false
                                 }
                             }
@@ -1413,6 +1451,10 @@ fun WallpaperEditorScreen(
                                         "temperature" -> temperature = 0
                                         "sharpness" -> sharpness = 0
                                         "blur" -> blur = 0
+                                        "dim" -> {
+                                            dimEffect = 0
+                                            setWallpaperDim(context, 0)
+                                        }
                                     }
                                     commitEdit()
                                 })
@@ -1431,6 +1473,7 @@ fun WallpaperEditorScreen(
                                 "temperature" -> temperature
                                 "sharpness" -> sharpness
                                 "blur" -> blur
+                                "dim" -> dimEffect
                                 else -> 0
                             } else 0
                             val categoryName = when (key) {
@@ -1445,6 +1488,7 @@ fun WallpaperEditorScreen(
                                 "temperature" -> "Temperature"
                                 "sharpness" -> "Sharpness"
                                 "blur" -> "Blur"
+                                "dim" -> "Dim"
                                 // filters
                                 "filter_none" -> "Original"
                                 "filter_mono" -> "Mono"
@@ -1513,6 +1557,7 @@ fun WallpaperEditorScreen(
                                         "Sharpness", isSelected, activated, displayValue, onTap, onDoubleTap
                                     )
                                     "blur" -> CategoryIcon(Icons.Outlined.BlurOn, "Blur", isSelected, activated, displayValue, onTap, onDoubleTap)
+                                    "dim" -> CategoryIcon(Icons.Outlined.Brightness4, "Dim", isSelected, activated, displayValue, onTap, onDoubleTap)
                                     // --- filters (live thumbnails of the cropped source with each filter applied) ---
                                     "filter_none",
                                     "filter_mono",
