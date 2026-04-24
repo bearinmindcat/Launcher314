@@ -87,6 +87,21 @@ object WidgetManager {
         } catch (e: Exception) {
             // Host might already be listening
         }
+        // Re-bind every cached host view to its provider. After the host has
+        // been stopped (onStop -> onStart) the AppWidgetService only pushes
+        // the latest RemoteViews to bindings that are re-established on
+        // re-connect; cached views from before the stop otherwise stay
+        // frozen at whatever RemoteViews they had the moment we stopped
+        // listening. See issue #11.
+        val manager = appWidgetManager ?: return
+        for ((id, view) in widgetViews) {
+            val providerInfo = manager.getAppWidgetInfo(id) ?: continue
+            try {
+                view.setAppWidget(id, providerInfo)
+            } catch (e: Exception) {
+                android.util.Log.w("WidgetManager", "Failed to rebind widget id=$id on resume", e)
+            }
+        }
     }
 
     /**
