@@ -93,6 +93,11 @@ internal fun FolderItem(
         com.bearinmind.launcher314.data.loadAppCustomizations(drawerFolderContext).customizations["folder_${folder.id}"]
     }
     var showContextMenu by remember { mutableStateOf(false) }
+    // Tracks the folder icon's on-screen bounds (accounting for the 1.265×
+    // scale-up when the popup opens) so AnimatedPopup can anchor tight to
+    // the folder — same pattern used by FolderAppItem / the home-screen
+    // folder cell.
+    var folderIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     // Get the first 4 apps in this folder for preview (filter empty gap markers)
     val previewApps = remember(folder.appPackageNames, allApps) {
@@ -260,6 +265,19 @@ internal fun FolderItem(
             BoxWithConstraints(
                 modifier = Modifier
                     .size(iconSize.dp)
+                    .onGloballyPositioned { coords ->
+                        // Always use the final target scale (1.265f) so popup doesn't stutter during animation
+                        val targetScale = 1.265f
+                        val pos = coords.positionInRoot()
+                        val w = coords.size.width * targetScale
+                        val h = coords.size.height * targetScale
+                        val offsetX = (coords.size.width - w) / 2f
+                        val offsetY = (coords.size.height - h) / 2f
+                        folderIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                            pos.x + offsetX, pos.y + offsetY,
+                            pos.x + offsetX + w, pos.y + offsetY + h
+                        )
+                    }
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
@@ -416,8 +434,9 @@ internal fun FolderItem(
         // Context menu for folder
         var showDeleteConfirmDialog by remember { mutableStateOf(false) }
             AnimatedPopup(
-                visible = showContextMenu,
-                onDismissRequest = { showContextMenu = false }
+                visible = showContextMenu && folderIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                onDismissRequest = { showContextMenu = false },
+                iconBoundsInRoot = folderIconBoundsInRoot
             ) {
                         // Folder name header
                         Box(
