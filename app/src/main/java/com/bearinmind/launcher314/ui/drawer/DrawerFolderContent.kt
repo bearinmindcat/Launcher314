@@ -350,6 +350,44 @@ internal fun FolderContentScreen(
                                 val cellApp = pkg?.let { p -> allApps.find { it.packageName == p } }
                                 val isDragged = cellApp != null && draggedPkg == cellApp.packageName
 
+                                // Per-cell press feedback — mirrors the home-screen folder cell
+                                // pattern. `isFingerDown` shows a 25%-black overlay while the
+                                // finger is on the cell, `flashOverlay` is a one-shot 40% pulse
+                                // fired on long-press (matches the home-screen "did the menu
+                                // arm?" flash). The combined alpha is whichever is brighter.
+                                var isFingerDown by remember(cellIdx) { mutableStateOf(false) }
+                                var flashOverlay by remember(cellIdx) { mutableStateOf(false) }
+                                val flashAlpha by animateFloatAsState(
+                                    targetValue = if (flashOverlay) 0.4f else 0f,
+                                    animationSpec = if (flashOverlay) tween(durationMillis = 80)
+                                        else tween(durationMillis = 150),
+                                    label = "drawerFolderFlashAlpha_$cellIdx",
+                                    finishedListener = { if (flashOverlay) flashOverlay = false }
+                                )
+                                val cellOverlayAlpha = maxOf(if (isFingerDown) 0.25f else 0f, flashAlpha)
+                                // Scale-up when this cell is the long-press target (context menu
+                                // open or being dragged). Same 1.265 scale as HomeFolderAppItem.
+                                val cellScale by animateFloatAsState(
+                                    targetValue = if (contextMenuCellIdx == cellIdx || isDragged) 1.265f else 1f,
+                                    animationSpec = tween(durationMillis = 150),
+                                    label = "drawerFolderCellScale_$cellIdx"
+                                )
+                                // Fade the app-name label out when the icon scales up — same
+                                // pattern the closed drawer-folder cell (FolderItem) and the
+                                // home-screen folder cell (AppGridMovement.kt:1012) use, so
+                                // the larger icon doesn't visually crowd into its label.
+                                val cellLabelAlpha by animateFloatAsState(
+                                    targetValue = if (contextMenuCellIdx == cellIdx || isDragged) 0f else 1f,
+                                    animationSpec = tween(durationMillis = 150),
+                                    label = "drawerFolderCellLabelAlpha_$cellIdx"
+                                )
+                                // Per-cell icon bounds (already scaled to 1.265×) so AnimatedPopup
+                                // can anchor the long-press menu tight to the icon — same fix
+                                // applied to the home-screen folder cell + drawer folder cell.
+                                var cellIconBoundsInRoot by remember(cellIdx) {
+                                    mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)
+                                }
+
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
@@ -370,6 +408,8 @@ internal fun FolderContentScreen(
                                                     startPosition.y < 0 || startPosition.y > size.height
                                                 ) return@awaitEachGesture
 
+                                                isFingerDown = true
+
                                                 val longPress = awaitLongPressOrCancellation(down.id)
 
                                                 if (longPress != null) {
@@ -377,6 +417,7 @@ internal fun FolderContentScreen(
                                                     if (currentCellApp != null && draggedPkg == null) {
                                                         // Long press on app cell - show context menu
                                                         hapticFeedback.performLongPress()
+                                                        flashOverlay = true
                                                         contextMenuCellIdx = cellIdx
 
                                                         var dragStarted = false
@@ -555,23 +596,41 @@ internal fun FolderContentScreen(
                                                                 hoveredCell = null
                                                                 dragOverHeader = false
                                                             }
+                                                        } finally {
+                                                            isFingerDown = false
                                                         }
+                                                    } else {
+                                                        // Long-press fired but cell wasn't an app (or
+                                                        // a drag was already in progress). Still need
+                                                        // to clear press feedback.
+                                                        isFingerDown = false
                                                     }
                                                 } else {
-                                                    // Long press cancelled — either finger lifted (tap) or moved (drag/swipe)
-                                                    // Wait for up event to get final position, then check distance
-                                                    val up = waitForUpOrCancellation()
-                                                    if (up != null) {
-                                                        val dx = up.position.x - startPosition.x
-                                                        val dy = up.position.y - startPosition.y
+                                                    // Long press cancelled — either finger lifted (tap) or
+                                                    // moved past slop. The UP event was the one that caused
+                                                    // awaitLongPressOrCancellation to return null, so it has
+                                                    // already been delivered. We must NOT call
+                                                    // waitForUpOrCancellation here: that would suspend until
+                                                    // the NEXT pointer event, which only arrives on the next
+                                                    // tap — and the gesture closes out before that, so the
+                                                    // first tap is silently dropped (issue: drawer-folder
+                                                    // app icons need multiple taps to launch). Read the most
+                                                    // recent change off `currentEvent` instead — same
+                                                    // pattern HomeFolderAppItem in the launcher uses.
+                                                    val upEvent = currentEvent.changes.firstOrNull()
+                                                    if (upEvent != null && !upEvent.pressed) {
+                                                        val dx = upEvent.position.x - startPosition.x
+                                                        val dy = upEvent.position.y - startPosition.y
                                                         val dist = kotlin.math.sqrt(dx * dx + dy * dy)
                                                         if (dist < touchSlop * 2) {
                                                             val currentCellApp = folderCellMap[cellIdx]?.let { p -> allApps.find { it.packageName == p } }
                                                             if (currentCellApp != null && draggedPkg == null) {
+                                                                flashOverlay = true
                                                                 launchApp(context, currentCellApp.packageName)
                                                             }
                                                         }
                                                     }
+                                                    isFingerDown = false
                                                 }
                                             }
                                         },
@@ -636,14 +695,51 @@ internal fun FolderContentScreen(
                                                 } else null
                                                 val displayPath = shapedPath ?: cellApp.iconPath
                                                 val isShaped = shapedPath != null
-                                                AsyncImage(
-                                                    model = File(displayPath),
-                                                    contentDescription = cellApp.name,
-                                                    contentScale = if (isShaped) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
+                                                Box(
                                                     modifier = Modifier
                                                         .size(iconSize.dp)
-                                                        .then(if (!isShaped && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
-                                                )
+                                                        .onGloballyPositioned { coords ->
+                                                            // Always use the final target scale (1.265f) so
+                                                            // the popup anchors to where the icon WILL be,
+                                                            // not where it is mid-animation.
+                                                            val targetScale = 1.265f
+                                                            val pos = coords.positionInRoot()
+                                                            val w = coords.size.width * targetScale
+                                                            val h = coords.size.height * targetScale
+                                                            val offsetX = (coords.size.width - w) / 2f
+                                                            val offsetY = (coords.size.height - h) / 2f
+                                                            cellIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                                                                pos.x + offsetX, pos.y + offsetY,
+                                                                pos.x + offsetX + w, pos.y + offsetY + h
+                                                            )
+                                                        }
+                                                        .graphicsLayer {
+                                                            scaleX = cellScale
+                                                            scaleY = cellScale
+                                                        },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    AsyncImage(
+                                                        model = File(displayPath),
+                                                        contentDescription = cellApp.name,
+                                                        contentScale = if (isShaped) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
+                                                        modifier = Modifier
+                                                            .matchParentSize()
+                                                            .then(if (!isShaped && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
+                                                    )
+                                                    // Press / flash dim overlay — same alpha math as
+                                                    // home-screen folder cells, scoped to the icon so
+                                                    // the label below doesn't flash with it.
+                                                    if (cellOverlayAlpha > 0f) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .matchParentSize()
+                                                                .graphicsLayer { alpha = cellOverlayAlpha }
+                                                                .then(if (iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
+                                                                .background(Color.Black)
+                                                        )
+                                                    }
+                                                }
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = cellApp.name,
@@ -653,7 +749,9 @@ internal fun FolderContentScreen(
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
                                                     textAlign = TextAlign.Center,
-                                                    modifier = Modifier.fillMaxWidth(),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .graphicsLayer { alpha = cellLabelAlpha },
                                                     style = MaterialTheme.typography.bodySmall.copy(
                                                         shadow = androidx.compose.ui.graphics.Shadow(
                                                             color = Color.Black,
@@ -667,8 +765,10 @@ internal fun FolderContentScreen(
 
                                         // Context menu (shown on long press without drag)
                                             AnimatedPopup(
-                                                visible = contextMenuCellIdx == cellIdx,
-                                                onDismissRequest = { contextMenuCellIdx = null }
+                                                visible = contextMenuCellIdx == cellIdx &&
+                                                    cellIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                                                onDismissRequest = { contextMenuCellIdx = null },
+                                                iconBoundsInRoot = cellIconBoundsInRoot
                                             ) {
                                                         Box(
                                                             modifier = Modifier
