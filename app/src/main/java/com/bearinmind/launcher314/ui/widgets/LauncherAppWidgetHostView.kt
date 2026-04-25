@@ -47,6 +47,20 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
 
     // Movement threshold (Fossify uses move_gesture_threshold / 4 ≈ 5dp)
     private val moveGestureThreshold = (density * 5).toInt()
+    // Larger threshold for "this was clearly a swipe, not a tap" — used by
+    // dispatchTouchEvent below to convert the final UP into a CANCEL so the
+    // child RemoteViews stops its click tracker. Provider widgets that don't
+    // respect the system touchSlop (e.g. Breezy Weather's hourly widget —
+    // issue #39) otherwise fire a click at the end of any horizontal swipe
+    // across the widget surface.
+    private val swipeCancelThreshold = (density * 15).toInt()
+    // Per-gesture state for the swipe-vs-tap guard. Reset on every DOWN.
+    private var draggedBeyondTap = false
+    // Only convert UP→CANCEL when the swipe was primarily horizontal — that
+    // way vertical scrollable widgets (calendars, lists) keep their UP and
+    // get to fire the fling animation. Provider widgets almost never have
+    // internal horizontal scroll, so swallowing horizontal UPs is safe.
+    private var swipeWasHorizontal = false
 
     /** Current corner radius in dp. Change this and call invalidateOutline() to update. */
     private var cornerRadiusDp: Float = 0f
@@ -124,6 +138,49 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
         } else {
             super.onTouchEvent(event)
         }
+    }
+
+    /**
+     * Swipe-vs-tap guard for issue #39. RemoteViews widgets like Breezy
+     * Weather's hourly panel attach a click listener on a root container
+     * that doesn't cancel on the system touchSlop, so a horizontal drag
+     * finishing on the widget surface fires a click. We watch every gesture
+     * and — when the finger has drifted past `swipeCancelThreshold` AND the
+     * drift was primarily horizontal — forward the terminal UP as a CANCEL
+     * instead. The widget's click listener never trips because it never
+     * sees the matching UP. Vertical drags still get the real UP so list /
+     * calendar widgets keep their scroll fling intact.
+     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                draggedBeyondTap = false
+                swipeWasHorizontal = false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = abs(actionDownCoords.x - event.rawX)
+                val dy = abs(actionDownCoords.y - event.rawY)
+                if (!draggedBeyondTap &&
+                    (dx > swipeCancelThreshold || dy > swipeCancelThreshold)
+                ) {
+                    draggedBeyondTap = true
+                    swipeWasHorizontal = dx > dy
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (draggedBeyondTap && swipeWasHorizontal) {
+                    val cancel = MotionEvent.obtain(event).apply {
+                        action = MotionEvent.ACTION_CANCEL
+                    }
+                    val result = super.dispatchTouchEvent(cancel)
+                    cancel.recycle()
+                    draggedBeyondTap = false
+                    swipeWasHorizontal = false
+                    return result
+                }
+            }
+        }
+        return super.dispatchTouchEvent(event)
     }
 
     override fun onInterceptTouchEvent(event: MotionEvent?): Boolean {
