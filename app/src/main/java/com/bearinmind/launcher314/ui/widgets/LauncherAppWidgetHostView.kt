@@ -67,6 +67,23 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
 
     init {
         applyRoundedCorners(context)
+        // Strip any inherited padding immediately so newly-created widgets are
+        // already flush before Android's own paths get a chance to add the
+        // default ~8dp.
+        super.setPadding(0, 0, 0, 0)
+    }
+
+    /**
+     * AppWidgetHostView calls setPadding internally — both during construction
+     * and again whenever the provider info is bound — to apply Android's
+     * default widget margin (R.dimen.system_app_widget_internal_padding,
+     * typically 8dp). That default gets stacked on TOP of our user-facing
+     * Widget Spacing slider, so even at 0% the widget never actually touches
+     * its neighbour. Force it to 0 here; the user's slider is then the sole
+     * source of widget padding and 0% behaves like Nova's "0 padding" option.
+     */
+    override fun setPadding(left: Int, top: Int, right: Int, bottom: Int) {
+        super.setPadding(0, 0, 0, 0)
     }
 
     /**
