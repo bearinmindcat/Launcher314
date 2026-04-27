@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
 import com.bearinmind.launcher314.data.getWidgetRoundedCornersEnabled
@@ -121,6 +122,13 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
     var hasLongPressed = false
         private set
 
+    /**
+     * Per-gesture latch: true once we've decided who owns this drag (widget vs.
+     * ancestor pager). Set on the first MOVE big enough to read direction;
+     * reset on every DOWN. Prevents direction-flip flicker mid-drag.
+     */
+    private var directionLocked = false
+
     /** Set to true to ignore all touch events (e.g., during resize) */
     var ignoreTouches = false
 
@@ -213,19 +221,23 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                // FIX: Set the shared widget-touch flag so LauncherWithDrawer's drawer
-                // gesture detector skips ownership. This is the primary defense against
-                // fast vertical swipes being stolen by drawer/notifications, since the
-                // Compose drawer detector can claim on a single large MotionEvent before
-                // our own MOVE handler has a chance to block.
+                // Shared flag: tell the drawer / notifications detector to skip
+                // ownership while a finger is on a widget. Without this, fast
+                // vertical drags can be claimed by the drawer before our own
+                // MOVE handler has had a chance to arbitrate direction.
                 WidgetTouchState.isWidgetTouchActive = true
-                // FIX: For single widgets, block parent on DOWN — rock-solid protection
-                // against ancestor gestures stealing the widget's own scroll (e.g. calendar).
-                // For stack widgets, DON'T block — the parent HorizontalPager needs to
-                // see the DOWN event to track horizontal swipes between widgets.
-                if (!isInStack) {
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                }
+                // NOTE: we deliberately do NOT call requestDisallowInterceptTouchEvent
+                // on DOWN. Doing so blocks the ancestor HorizontalPager from
+                // ever seeing the DOWN — and Compose's drag detector
+                // (`awaitFirstDown` then `awaitTouchSlopOrCancellation`)
+                // suspends until DOWN, so once it misses the DOWN it never
+                // wakes up for the rest of the gesture even if we release the
+                // flag later. Instead we arbitrate on the first MOVE: if the
+                // user drags vertically OR drags horizontally on a widget
+                // whose content can actually scroll horizontally, we block
+                // the parent. Otherwise the parent pager's natural 8dp slop
+                // claim flips the home page (issue #39 / #43).
+                directionLocked = false
                 longPressHandler.postDelayed(
                     longPressRunnable,
                     ViewConfiguration.getLongPressTimeout().toLong()
@@ -244,13 +256,35 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                 val dx = abs(actionDownCoords.x - currentCoords.x)
                 val dy = abs(actionDownCoords.y - currentCoords.y)
 
-                // FIX: For stack widgets, block parent once any vertical motion is present
-                // UNLESS motion is strongly horizontal (dx > dy * 1.5). Relaxed from strict
-                // "dy > dx" so that slightly-diagonal vertical swipes (common for scroll)
-                // still trigger the block — previously required surgical precision.
-                // Strong horizontal motion still passes through so the stack pager works.
-                if (isInStack && dy > 2f && dx < dy * 1.5f) {
-                    parent?.requestDisallowInterceptTouchEvent(true)
+                // Direction-of-drag arbitration. We need to be FASTER than the
+                // ancestor pager's slop (~8dp on most devices) — using a 1dp
+                // threshold gives us seven-ish dp of headroom to commit
+                // ownership before the pager would otherwise claim. Once
+                // committed, we don't re-evaluate direction (the latch stops
+                // mid-drag flickering between widget-owned and pager-owned).
+                if (!directionLocked && (dx > density || dy > density)) {
+                    directionLocked = true
+                    val isHorizontalDrag = dx > dy
+                    val keepWithWidget = if (!isHorizontalDrag) {
+                        // Vertical drags always stay with the widget. List /
+                        // calendar widgets need them for scroll; static widgets
+                        // benefit too since the home-screen pager only handles
+                        // horizontal anyway and the drawer detector already
+                        // skips us via WidgetTouchState.
+                        true
+                    } else {
+                        // Horizontal drag: keep ONLY if some descendant can
+                        // actually scroll horizontally in the drag direction.
+                        // Static widgets (Breezy Weather hourly, weather card,
+                        // photo widget) → false → parent pager flips the
+                        // home page. Widgets with a horizontal RecyclerView /
+                        // ListView / HorizontalScrollView → true → we block.
+                        val direction = if (currentCoords.x < actionDownCoords.x) 1 else -1
+                        anyDescendantCanScrollHorizontally(this, direction)
+                    }
+                    if (keepWithWidget) {
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                    }
                 }
 
                 // If finger moved beyond threshold, cancel long-press
@@ -266,6 +300,26 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
             }
         }
 
+        return false
+    }
+
+    /**
+     * Walks the RemoteViews tree under this host and returns true if any
+     * descendant view reports that it can scroll horizontally in the given
+     * direction (-1 = right-to-left content, +1 = left-to-right content,
+     * matching View.canScrollHorizontally semantics). Used by the MOVE
+     * handler to decide whether a horizontal swipe should propagate up to
+     * the home-screen pager (no scrollable child found → release parent
+     * block) or stay with the widget (a child wants the swipe → keep the
+     * block in place).
+     */
+    private fun anyDescendantCanScrollHorizontally(view: View, direction: Int): Boolean {
+        if (view !== this && view.canScrollHorizontally(direction)) return true
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                if (anyDescendantCanScrollHorizontally(view.getChildAt(i), direction)) return true
+            }
+        }
         return false
     }
 
