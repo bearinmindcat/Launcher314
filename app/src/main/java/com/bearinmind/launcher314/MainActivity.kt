@@ -363,8 +363,18 @@ class MainActivity : ComponentActivity() {
             handlePinShortcutRequest(intent)
         }
 
-        // Initialize widget manager
+        // Initialize widget manager and start the host listening for the
+        // entire lifetime of this Activity instance (Launcher3's pattern).
+        // We deliberately do NOT pair start/stop with onStart/onStop —
+        // doing so means provider RemoteViews pushes that arrive while the
+        // launcher is in the background are never delivered to our host
+        // (only the LATEST view per widget gets cached at the system
+        // service, so multi-step animations / intermediate updates are
+        // lost). Keeping listening across pause/resume lets time-based
+        // widgets (Breezy Weather hourly, Sectograph, etc.) refresh in
+        // real time even while you're using another app.
         WidgetManager.init(this)
+        WidgetManager.startListening()
 
         // Make navigation bar fully transparent — always enable edge-to-edge
         // so WindowInsets padding works consistently on all screens
@@ -401,15 +411,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        // Start listening for widget updates
-        WidgetManager.startListening()
+    override fun onResume() {
+        super.onResume()
+        // API 35+ hint — pairs activity-resumed state with the host so
+        // animation-deferred updates flush at the right moment. No-op
+        // on older platforms.
+        WidgetManager.setActivityResumed(true)
     }
 
-    override fun onStop() {
-        super.onStop()
-        // Stop listening for widget updates
+    override fun onPause() {
+        super.onPause()
+        WidgetManager.setActivityResumed(false)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Mirror startListening() in onCreate. Per Launcher3, the host
+        // should stay listening for the lifetime of the Activity so
+        // provider updates pushed while we're in the background reach
+        // our cached views in real time — onStop is too aggressive
+        // because the system AppWidgetService only buffers the LATEST
+        // RemoteViews per widget while a host is not listening, so any
+        // intermediate frames are silently dropped.
         WidgetManager.stopListening()
     }
 

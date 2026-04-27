@@ -72,6 +72,14 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
         // already flush before Android's own paths get a chance to add the
         // default ~8dp.
         super.setPadding(0, 0, 0, 0)
+        // Match Launcher3's BaseLauncherAppWidgetHostView: hand off RemoteViews
+        // inflation to a background executor so a heavy widget update (e.g.
+        // a calendar refilling its agenda, weather repopulating an hourly
+        // strip) doesn't block the launcher's main thread and visibly stutter
+        // scrolling / drag gestures. The shared AsyncTask thread pool is
+        // sized for short bursts and is the same pool Launcher3 uses.
+        @Suppress("DEPRECATION")
+        setExecutor(android.os.AsyncTask.THREAD_POOL_EXECUTOR)
     }
 
     /**

@@ -245,6 +245,73 @@ object WidgetManager {
     }
 
     /**
+     * Re-bind every cached host view to its current provider info. Called
+     * by `LauncherAppWidgetHost.onProvidersChanged` when *any* provider
+     * package on the device is added / updated / removed. Matches what
+     * Launcher3 does so that a freshly-installed APK (e.g. a widget app
+     * the user just updated from the Play Store) immediately renders
+     * with the new provider's metadata + RemoteViews.
+     */
+    fun rebindAllCachedViews() {
+        val manager = appWidgetManager ?: return
+        for ((id, view) in widgetViews) {
+            val info = manager.getAppWidgetInfo(id) ?: continue
+            try {
+                view.setAppWidget(id, info)
+            } catch (e: Exception) {
+                android.util.Log.w("WidgetManager", "rebindAllCachedViews failed for id=$id", e)
+            }
+        }
+    }
+
+    /**
+     * Re-bind a single cached host view. Called by
+     * `LauncherAppWidgetHost.onProviderChanged` for the specific provider
+     * that was updated.
+     */
+    fun rebindCachedView(appWidgetId: Int, providerInfo: AppWidgetProviderInfo) {
+        val view = widgetViews[appWidgetId] ?: return
+        try {
+            view.setAppWidget(appWidgetId, providerInfo)
+        } catch (e: Exception) {
+            android.util.Log.w("WidgetManager", "rebindCachedView failed for id=$appWidgetId", e)
+        }
+    }
+
+    /**
+     * Called by `LauncherAppWidgetHost.onAppWidgetRemoved` when the
+     * system removes a widget on its own — for example, when the
+     * provider's APK is uninstalled. Strips the persisted `PlacedWidget`
+     * entry, deletes the host ID, and clears the cached view so the
+     * user doesn't see a ghost cell on the home screen.
+     */
+    fun handleProviderRemovedWidget(context: Context, appWidgetId: Int) {
+        widgetViews.remove(appWidgetId)
+        val widgets = loadPlacedWidgets(context).filter { it.appWidgetId != appWidgetId }
+        savePlacedWidgets(context, widgets)
+        try {
+            appWidgetHost?.deleteAppWidgetId(appWidgetId)
+        } catch (_: Exception) {
+            // Already deleted by the system; ignore.
+        }
+    }
+
+    /**
+     * API 35+ hint — pairs activity-resumed state with the host so the
+     * framework can defer non-critical updates while the launcher is
+     * paused (animation hand-off, etc.). No-op on older platforms.
+     */
+    fun setActivityResumed(resumed: Boolean) {
+        if (Build.VERSION.SDK_INT >= 35) {
+            try {
+                appWidgetHost?.setActivityResumed(resumed)
+            } catch (_: Throwable) {
+                // Method not available on this device; ignore.
+            }
+        }
+    }
+
+    /**
      * Re-apply rounded corner settings to all cached widget views.
      * Called when the user changes the rounded corners toggle or radius.
      */

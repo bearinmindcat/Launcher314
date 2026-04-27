@@ -17,6 +17,8 @@ class LauncherAppWidgetHost(
     hostId: Int
 ) : AppWidgetHost(context, hostId) {
 
+    private val hostContext: Context = context.applicationContext
+
     override fun onCreateView(
         context: Context,
         appWidgetId: Int,
@@ -24,6 +26,43 @@ class LauncherAppWidgetHost(
     ): AppWidgetHostView {
         val scaledContext = createScaledContext(context, appWidgetId)
         return LauncherAppWidgetHostView(scaledContext)
+    }
+
+    /**
+     * Called by the system when ANY widget provider package on the device
+     * is added / updated / removed. Launcher3 uses this hook to re-bind
+     * every cached host view so the new provider info (icon, label, sizing
+     * constraints) is reflected without restarting the launcher. Without
+     * this, an updated APK would still render with stale provider info
+     * until the user kills the launcher process.
+     */
+    override fun onProvidersChanged() {
+        super.onProvidersChanged()
+        WidgetManager.rebindAllCachedViews()
+    }
+
+    /**
+     * Called when a SINGLE provider's info changes (typically when the
+     * provider's APK is reinstalled). Re-bind only the affected cached
+     * view so its `AppWidgetProviderInfo` is current.
+     */
+    override fun onProviderChanged(appWidgetId: Int, appWidget: AppWidgetProviderInfo?) {
+        super.onProviderChanged(appWidgetId, appWidget)
+        if (appWidget != null) {
+            WidgetManager.rebindCachedView(appWidgetId, appWidget)
+        }
+    }
+
+    /**
+     * Called by the system when a widget is removed because its provider
+     * package was uninstalled (or the provider deleted the widget). We
+     * delete the host-side allocation, drop the cached view, and remove
+     * the persisted `PlacedWidget` so the user doesn't see a "ghost" cell
+     * on the home screen.
+     */
+    override fun onAppWidgetRemoved(appWidgetId: Int) {
+        super.onAppWidgetRemoved(appWidgetId)
+        WidgetManager.handleProviderRemovedWidget(hostContext, appWidgetId)
     }
 
     /**
