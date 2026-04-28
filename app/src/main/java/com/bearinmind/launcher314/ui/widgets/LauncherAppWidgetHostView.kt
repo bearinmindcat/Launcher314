@@ -126,6 +126,20 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
         }
     }
 
+    /**
+     * If the widget gets detached from the window mid-gesture (e.g.
+     * because totalPages changed and the page hosting this widget was
+     * removed/recreated), no UP / CANCEL ever flows through our touch
+     * handlers — and the global `WidgetTouchState.isWidgetTouchActive`
+     * flag stays `true`, locking out the drawer-open swipe detector
+     * forever. Clearing it here is the last-resort safety net.
+     */
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        WidgetTouchState.isWidgetTouchActive = false
+        resetTouches()
+    }
+
     /** True if long-press was detected and fired */
     var hasLongPressed = false
         private set
@@ -189,6 +203,14 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
             MotionEvent.ACTION_DOWN -> {
                 draggedBeyondTap = false
                 swipeWasHorizontal = false
+                // Mirror the flag set inside onInterceptTouchEvent here too,
+                // because if onInterceptTouchEvent gets short-circuited by
+                // hasLongPressed / ignoreTouches, ACTION_UP can bypass the
+                // intercept handler entirely — and the flag wouldn't get
+                // reset, leaving the drawer-open detector locked out
+                // forever (root cause of "swipe up doesn't work after
+                // adding/removing a screen").
+                WidgetTouchState.isWidgetTouchActive = true
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = abs(actionDownCoords.x - event.rawX)
@@ -201,6 +223,10 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                 }
             }
             MotionEvent.ACTION_UP -> {
+                // Always clear the global widget-touch flag on UP so the
+                // drawer-open detector can claim the next gesture even if
+                // ACTION_UP didn't pass through onInterceptTouchEvent.
+                WidgetTouchState.isWidgetTouchActive = false
                 if (draggedBeyondTap && swipeWasHorizontal) {
                     val cancel = MotionEvent.obtain(event).apply {
                         action = MotionEvent.ACTION_CANCEL
@@ -211,6 +237,10 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                     swipeWasHorizontal = false
                     return result
                 }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                // Same reasoning as the UP branch.
+                WidgetTouchState.isWidgetTouchActive = false
             }
         }
         return super.dispatchTouchEvent(event)

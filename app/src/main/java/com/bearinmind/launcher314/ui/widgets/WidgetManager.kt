@@ -300,14 +300,19 @@ object WidgetManager {
      * API 35+ hint — pairs activity-resumed state with the host so the
      * framework can defer non-critical updates while the launcher is
      * paused (animation hand-off, etc.). No-op on older platforms.
+     *
+     * Called via reflection because AGP 8.2.0 (this project's plugin)
+     * doesn't expose the API 35 stub at compile time even with
+     * compileSdk = 35, so a direct method reference fails to compile.
      */
     fun setActivityResumed(resumed: Boolean) {
-        if (Build.VERSION.SDK_INT >= 35) {
-            try {
-                appWidgetHost?.setActivityResumed(resumed)
-            } catch (_: Throwable) {
-                // Method not available on this device; ignore.
-            }
+        if (Build.VERSION.SDK_INT < 35) return
+        val host = appWidgetHost ?: return
+        try {
+            val method = host.javaClass.getMethod("setActivityResumed", java.lang.Boolean.TYPE)
+            method.invoke(host, resumed)
+        } catch (_: Throwable) {
+            // Method not available on this device; ignore.
         }
     }
 

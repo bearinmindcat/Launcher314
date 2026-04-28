@@ -5579,8 +5579,11 @@ fun LauncherScreen(
                             prefs.edit().putInt("launcher_total_pages", totalPages).apply()
                             showLauncherSettingsMenu = false
                             dropScope.launch {
-                                delay(350) // Match dot animation duration (300ms) + margin
-                                addingLastDot = false
+                                try {
+                                    delay(350) // Match dot animation duration (300ms) + margin
+                                } finally {
+                                    addingLastDot = false
+                                }
                             }
                         },
                         leadingIcon = {
@@ -5604,13 +5607,66 @@ fun LauncherScreen(
                             if (canRemove) {
                                 showLauncherSettingsMenu = false
                                 removingLastDot = true
-                                val targetPage = pagerState.currentPage - 1
+                                // Capture which page the user actually wants
+                                // gone — previously this code only ever
+                                // decremented totalPages, which removes the
+                                // LAST page regardless of where the user is,
+                                // so removing a middle page silently did
+                                // nothing visible (apps still rendered at
+                                // their original page index).
+                                val pageToRemove = pagerState.currentPage
+                                val targetAfter = (pageToRemove - 1).coerceAtLeast(0)
                                 dropScope.launch {
-                                    pagerState.animateScrollToPage(targetPage)
-                                    delay(350) // Let dot fade-out animation complete (300ms + margin)
-                                    totalPages -= 1
-                                    removingLastDot = false
-                                    prefs.edit().putInt("launcher_total_pages", totalPages).apply()
+                                    try {
+                                        pagerState.animateScrollToPage(targetAfter)
+                                        delay(350) // Let dot fade-out animation complete (300ms + margin)
+
+                                        // 1) Strip every widget that lived on the
+                                        //    removed page (deletes the host ID +
+                                        //    cached view for each).
+                                        val widgetsBefore = WidgetManager.loadPlacedWidgets(context)
+                                        widgetsBefore
+                                            .filter { it.page == pageToRemove }
+                                            .forEach { WidgetManager.removePlacedWidget(context, it.appWidgetId) }
+                                        // 2) Shift any widget on a later page
+                                        //    down by 1 so its index lines up with
+                                        //    the new pager layout.
+                                        val widgetsShifted = WidgetManager.loadPlacedWidgets(context).map {
+                                            if (it.page > pageToRemove) it.copy(page = it.page - 1) else it
+                                        }
+                                        WidgetManager.savePlacedWidgets(context, widgetsShifted)
+                                        placedWidgets = widgetsShifted
+
+                                        // 3) Apps + home folders: filter and shift
+                                        //    in one pass, then persist.
+                                        val newApps = homeApps
+                                            .filter { it.page != pageToRemove }
+                                            .map { if (it.page > pageToRemove) it.copy(page = it.page - 1) else it }
+                                        val newFolders = homeFolders
+                                            .filter { it.page != pageToRemove }
+                                            .map { if (it.page > pageToRemove) it.copy(page = it.page - 1) else it }
+                                        homeApps = newApps
+                                        homeFolders = newFolders
+                                        saveHomeScreenData(
+                                            context,
+                                            HomeScreenData(
+                                                apps = newApps,
+                                                dockApps = dockApps,
+                                                folders = newFolders,
+                                                dockFolders = dockFolders
+                                            )
+                                        )
+
+                                        // 4) Drop the page count + persist.
+                                        totalPages -= 1
+                                        prefs.edit().putInt("launcher_total_pages", totalPages).apply()
+                                    } finally {
+                                        // Always clear the animation flag so
+                                        // the last dot doesn't stay invisible
+                                        // if something inside the try threw
+                                        // (e.g. animateScrollToPage canceled).
+                                        removingLastDot = false
+                                    }
                                 }
                             }
                         },
