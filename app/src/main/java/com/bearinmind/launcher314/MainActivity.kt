@@ -424,6 +424,66 @@ class MainActivity : ComponentActivity() {
         WidgetManager.setActivityResumed(false)
     }
 
+    /**
+     * Layered on top of the always-listening Launcher3 pattern: an extra
+     * safety-net rebind every ~5 minutes while the launcher is in the
+     * foreground. The Launcher3 listener already delivers provider pushes
+     * in real time, so this is a no-op in the common case — but it catches
+     * the rare edge case where a host view's cached RemoteViews diverged
+     * from what the system service holds (e.g. a brief binder disconnect
+     * during process pressure). Only fires while onStart..onStop, so no
+     * background battery cost.
+     */
+    private val widgetRefreshIntervalMs = 5 * 60_000L
+    private var lastWidgetRebindMs: Long = 0L
+    private val timeTickReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: android.content.Context, i: Intent) {
+            val now = System.currentTimeMillis()
+            if (now - lastWidgetRebindMs >= widgetRefreshIntervalMs) {
+                lastWidgetRebindMs = now
+                WidgetManager.rebindAllCachedViews()
+            }
+        }
+    }
+    private var timeTickReceiverRegistered = false
+
+    override fun onStart() {
+        super.onStart()
+        // Resume-time rebind: when the user comes back to our launcher
+        // (after using a different launcher, or after we were
+        // backgrounded long enough that the OS killed adjacent activity),
+        // immediately re-bind every cached widget host view to its
+        // current provider info. Catches anything that drifted while we
+        // weren't the foreground host. Resets the throttle timer so the
+        // 5-minute TIME_TICK pass doesn't fire a second redundant rebind
+        // right after this one.
+        WidgetManager.rebindAllCachedViews()
+        lastWidgetRebindMs = System.currentTimeMillis()
+
+        if (!timeTickReceiverRegistered) {
+            val filter = android.content.IntentFilter().apply {
+                addAction(Intent.ACTION_TIME_TICK)
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_DATE_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            }
+            registerReceiver(timeTickReceiver, filter)
+            timeTickReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (timeTickReceiverRegistered) {
+            try {
+                unregisterReceiver(timeTickReceiver)
+            } catch (_: IllegalArgumentException) {
+                // already unregistered — ignore
+            }
+            timeTickReceiverRegistered = false
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         // Mirror startListening() in onCreate. Per Launcher3, the host
