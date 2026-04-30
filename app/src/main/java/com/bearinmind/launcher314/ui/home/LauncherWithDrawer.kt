@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.bearinmind.launcher314.data.HomeScreenApp
+import com.bearinmind.launcher314.data.dispatch
 import com.bearinmind.launcher314.data.HomeScreenData
 import com.bearinmind.launcher314.data.HomeFolder
 import com.bearinmind.launcher314.ui.drawer.AppDrawerScreen
@@ -98,6 +99,34 @@ fun LauncherWithDrawer(
 
     // Track if app drawer should be shown
     var showAppDrawer by remember { mutableStateOf(false) }
+
+    // Recent Apps overlay state — toggled by GestureAction.ShowRecentApps.
+    // The overlay composable itself lands in a later phase; the flag is
+    // wired up now so the dispatcher has a target.
+    var showRecentAppsOverlay by remember { mutableStateOf(false) }
+
+    // Bridge between the gesture dispatcher and the host's UI state.
+    // Each callback wraps the existing state mutation we already used to
+    // perform from inline branches.
+    val gestureUiCallbacks = remember {
+        object : com.bearinmind.launcher314.data.GestureUiCallbacks {
+            override fun openDrawer() {
+                coroutineScope.launch {
+                    showAppDrawer = true
+                    swipeUpY.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    )
+                }
+            }
+            override fun showRecentApps() {
+                showRecentAppsOverlay = true
+            }
+        }
+    }
 
     // Reset search active state when drawer closes
     LaunchedEffect(showAppDrawer) {
@@ -746,7 +775,13 @@ fun LauncherWithDrawer(
         // Layer 1: Home screen (launcher) with gesture detection
         // Only handles the OPENING gesture (swipe up on home screen).
         // Layer 2's nestedScroll handles the CLOSING gesture (swipe down on drawer).
-        val swipeDownEnabled = com.bearinmind.launcher314.data.getSwipeDownNotifications(context)
+        // Swipe-down is "enabled" iff the user hasn't reassigned the swipe-down
+        // gesture to None — the dispatcher itself decides what the action is.
+        val swipeDownEnabled = com.bearinmind.launcher314.data
+            .getGestureEnabled(context, com.bearinmind.launcher314.data.GestureId.SWIPE_DOWN) &&
+            com.bearinmind.launcher314.data
+                .getGestureAction(context, com.bearinmind.launcher314.data.GestureId.SWIPE_DOWN) !=
+                com.bearinmind.launcher314.data.GestureAction.None
 
         // Resolve global text color for home screen labels (re-read when refresh triggers)
         var homeTextColorRaw by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
@@ -815,9 +850,22 @@ fun LauncherWithDrawer(
                         var isSwipeDown = false
                         var totalDragAmount = overSlop
 
+                        // Only translate the drawer mid-drag when swipe-up is
+                        // assigned to OpenDrawer (the default). When the user
+                        // reassigns swipe-up to "open an app" or similar, the
+                        // drawer must NOT slide up while the finger moves —
+                        // the action fires on release without visual drawer
+                        // motion. `swipeUpMovesDrawer` is captured at gesture
+                        // start so it doesn't change mid-drag.
+                        val swipeUpEnabled = com.bearinmind.launcher314.data
+                            .getGestureEnabled(context, com.bearinmind.launcher314.data.GestureId.SWIPE_UP)
+                        val swipeUpMovesDrawer = swipeUpEnabled && com.bearinmind.launcher314.data
+                            .getGestureAction(context, com.bearinmind.launcher314.data.GestureId.SWIPE_UP)
+                            .let { it is com.bearinmind.launcher314.data.GestureAction.OpenDrawer }
+
                         // Process the slop-trigger event as the first drag.
                         if (totalDragAmount > 50f && swipeDownEnabled) isSwipeDown = true
-                        if (!isSwipeDown) {
+                        if (!isSwipeDown && swipeUpMovesDrawer) {
                             coroutineScope.launch {
                                 swipeUpY.snapTo((swipeUpY.value + overSlop).coerceIn(0f, screenHeight))
                             }
@@ -830,7 +878,7 @@ fun LauncherWithDrawer(
                             if (totalDragAmount > 50f && !isSwipeDown && swipeDownEnabled) {
                                 isSwipeDown = true
                             }
-                            if (!isSwipeDown) {
+                            if (!isSwipeDown && swipeUpMovesDrawer) {
                                 coroutineScope.launch {
                                     swipeUpY.snapTo((swipeUpY.value + dy).coerceIn(0f, screenHeight))
                                 }
@@ -841,15 +889,27 @@ fun LauncherWithDrawer(
                         if (success) {
                             // onDragEnd equivalent
                             if (isSwipeDown && totalDragAmount > actionThreshold) {
-                                val mode = com.bearinmind.launcher314.data.getSwipeDownMode(context)
-                                if (mode == 1) {
-                                    com.bearinmind.launcher314.helpers.NotificationPanelHelper.expandQuickSettings(context)
-                                } else {
-                                    com.bearinmind.launcher314.helpers.NotificationPanelHelper.expandNotificationPanel(context)
+                                // Dispatch swipe-down via the user-assigned action
+                                // (replaces the old hardcoded notifications/quick-
+                                // settings branch). Default seeded to OpenNotifications
+                                // by migrateLegacyGesturePrefs so behavior is
+                                // unchanged for existing users.
+                                com.bearinmind.launcher314.data.getGestureAction(
+                                    context,
+                                    com.bearinmind.launcher314.data.GestureId.SWIPE_DOWN
+                                ).let { action ->
+                                    action.dispatch(context, gestureUiCallbacks)
                                 }
                             } else {
                                 coroutineScope.launch {
-                                    if (swipeUpY.value < screenHeight - actionThreshold) {
+                                    val swipeUpAction = com.bearinmind.launcher314.data.getGestureAction(
+                                        context,
+                                        com.bearinmind.launcher314.data.GestureId.SWIPE_UP
+                                    )
+                                    if (swipeUpY.value < screenHeight - actionThreshold &&
+                                        swipeUpAction is com.bearinmind.launcher314.data.GestureAction.OpenDrawer) {
+                                        // Drawer is mostly up + assigned action is OpenDrawer
+                                        // → finish the drawer-open animation.
                                         swipeUpY.animateTo(
                                             targetValue = 0f,
                                             animationSpec = spring(
@@ -858,6 +918,11 @@ fun LauncherWithDrawer(
                                             )
                                         )
                                     } else {
+                                        // Either the drag was too short to "commit"
+                                        // OR swipe-up is reassigned to a non-drawer
+                                        // action. Snap drawer back closed and (in the
+                                        // reassigned case) fire the action on release
+                                        // when the user clearly swiped upward enough.
                                         swipeUpY.animateTo(
                                             targetValue = screenHeight,
                                             animationSpec = tween(
@@ -867,6 +932,12 @@ fun LauncherWithDrawer(
                                         )
                                         showAppDrawer = false
                                         homeRefreshTrigger++
+                                        if (swipeUpEnabled &&
+                                            swipeUpAction !is com.bearinmind.launcher314.data.GestureAction.OpenDrawer &&
+                                            swipeUpAction != com.bearinmind.launcher314.data.GestureAction.None &&
+                                            totalDragAmount < -actionThreshold) {
+                                            swipeUpAction.dispatch(context, gestureUiCallbacks)
+                                        }
                                     }
                                 }
                             }
@@ -890,6 +961,7 @@ fun LauncherWithDrawer(
                 }
         ) {
             LauncherScreen(
+                gestureUiCallbacks = gestureUiCallbacks,
                 onOpenAppDrawer = {
                     coroutineScope.launch {
                         showAppDrawer = true
@@ -1220,6 +1292,14 @@ fun LauncherWithDrawer(
             }
         }
     }
+
+    // Recent Apps overlay (issue #40, Phase 4). Triggered when the user
+    // assigns a gesture to ShowRecentApps. Overlays the entire launcher; a
+    // backdrop tap or the Close button dismisses it.
+    com.bearinmind.launcher314.ui.home.RecentAppsOverlay(
+        visible = showRecentAppsOverlay,
+        onDismiss = { showRecentAppsOverlay = false }
+    )
 }
 
 /**

@@ -80,6 +80,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import com.bearinmind.launcher314.data.DeviceWallpaperEdit
+import com.bearinmind.launcher314.data.dispatch
 import com.bearinmind.launcher314.data.WALLPAPER_MODE_DEVICE
 import com.bearinmind.launcher314.data.WallpaperPreviewBus
 import com.bearinmind.launcher314.data.getDeviceWallpaperEdit
@@ -102,7 +103,6 @@ import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.data.getGlobalIconShape
 import com.bearinmind.launcher314.data.getGlobalIconBgColor
 import com.bearinmind.launcher314.data.getDockEnabled
-import com.bearinmind.launcher314.data.getDoubleTapLockEnabled
 import com.bearinmind.launcher314.data.getWidgetPaddingPercent
 import com.bearinmind.launcher314.data.getWidgetRoundedCornersEnabled
 import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
@@ -524,7 +524,8 @@ fun LauncherScreen(
     externalDragInitialPos: Offset = Offset.Zero,
     externalDragFingerPos: Offset = Offset.Zero,
     externalDragDropSignal: Int = 0,
-    onExternalDragComplete: () -> Unit = {}
+    onExternalDragComplete: () -> Unit = {},
+    gestureUiCallbacks: com.bearinmind.launcher314.data.GestureUiCallbacks? = null
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -2338,11 +2339,83 @@ fun LauncherScreen(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = {
-                        if (getDoubleTapLockEnabled(context)) {
+                        // Issue #40: dispatch via the user-assigned action.
+                        // Falls back to the legacy lock-screen behavior if
+                        // the gestureUiCallbacks aren't wired (e.g. preview).
+                        if (!com.bearinmind.launcher314.data.getGestureEnabled(
+                                context,
+                                com.bearinmind.launcher314.data.GestureId.DOUBLE_TAP
+                            )) return@detectTapGestures
+                        val action = com.bearinmind.launcher314.data.getGestureAction(
+                            context,
+                            com.bearinmind.launcher314.data.GestureId.DOUBLE_TAP
+                        )
+                        if (gestureUiCallbacks != null) {
+                            action.dispatch(context, gestureUiCallbacks)
+                        } else if (action is com.bearinmind.launcher314.data.GestureAction.LockScreen) {
                             AppDrawerAccessibilityService.lockScreen(context)
                         }
                     }
                 )
+            }
+            // Issue #40: swipe-right detector. Fires only on home page 0 (where
+            // the HorizontalPager has nothing to scroll to leftward), so it
+            // never collides with normal page-changes. On any other page, the
+            // pager handles the horizontal drag normally and this block bails.
+            .pointerInput(isEditMode, isWidgetBeingDragged, widgetResizeState.isResizing) {
+                if (isEditMode || isWidgetBeingDragged || widgetResizeState.isResizing) {
+                    return@pointerInput
+                }
+                val touchSlop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (pagerState.currentPage != 0) return@awaitEachGesture
+                    if (gestureUiCallbacks == null) return@awaitEachGesture
+                    if (!com.bearinmind.launcher314.data.getGestureEnabled(
+                            context,
+                            com.bearinmind.launcher314.data.GestureId.SWIPE_RIGHT
+                        )) return@awaitEachGesture
+                    val action = com.bearinmind.launcher314.data.getGestureAction(
+                        context,
+                        com.bearinmind.launcher314.data.GestureId.SWIPE_RIGHT
+                    )
+                    if (action is com.bearinmind.launcher314.data.GestureAction.None) {
+                        return@awaitEachGesture
+                    }
+
+                    val startX = down.position.x
+                    val startY = down.position.y
+                    var maxDx = 0f
+                    var committed = false
+                    do {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        val dx = change.position.x - startX
+                        val dy = change.position.y - startY
+                        if (!committed) {
+                            // Bail if drag becomes vertical (swipe-up etc.) or if
+                            // we left page 0 mid-gesture (a paging swipe started).
+                            if (kotlin.math.abs(dy) > touchSlop &&
+                                kotlin.math.abs(dy) > kotlin.math.abs(dx)) {
+                                return@awaitEachGesture
+                            }
+                            if (pagerState.currentPage != 0) return@awaitEachGesture
+                            if (dx > touchSlop) {
+                                committed = true
+                                change.consume()
+                            }
+                        } else {
+                            change.consume()
+                        }
+                        if (dx > maxDx) maxDx = dx
+                        if (!change.pressed) break
+                    } while (true)
+
+                    val threshold = size.width * 0.20f
+                    if (committed && maxDx > threshold) {
+                        action.dispatch(context, gestureUiCallbacks)
+                    }
+                }
             }
             // FIX: Tap anywhere on the home screen background to exit widget resize
             // mode. Previously resize mode persisted indefinitely (even across GitHub

@@ -30,6 +30,11 @@
     <!-- Shortcut support -->
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
 
+    <!-- Recent Apps view (issue #40). PACKAGE_USAGE_STATS is a "special" permission;
+         the user grants it manually via Settings → Apps → Special access → Usage access. -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

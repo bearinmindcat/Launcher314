@@ -376,6 +376,13 @@ class MainActivity : ComponentActivity() {
         WidgetManager.init(this)
         WidgetManager.startListening()
 
+        // One-shot migration of legacy per-gesture preferences (issue #40).
+        // Idempotent — guarded by an internal flag — so this call costs ~one
+        // SharedPreferences read on every cold start. Must run BEFORE any
+        // composable mounts so the first read of the new keys returns the
+        // migrated values.
+        com.bearinmind.launcher314.data.migrateLegacyGesturePrefs(this)
+
         // Make navigation bar fully transparent — always enable edge-to-edge
         // so WindowInsets padding works consistently on all screens
         applyTransparentNavigation(this)
@@ -766,6 +773,9 @@ fun MainScreen(
                             },
                             onHideAppsClick = {
                                 navController.navigate("hide_apps")
+                            },
+                            onPickAppForGesture = { gestureId ->
+                                navController.navigate("app_picker/${gestureId.name}")
                             }
                         )
             }
@@ -781,6 +791,13 @@ fun MainScreen(
             }
             composable("hide_apps") {
                 HideAppsScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable("app_picker/{gestureId}") { backStack ->
+                val gestureId = backStack.arguments?.getString("gestureId") ?: return@composable
+                com.bearinmind.launcher314.ui.settings.AppPickerScreen(
+                    gestureId = gestureId,
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -870,6 +887,9 @@ fun MainScreen(
                         },
                         onHideAppsClick = {
                             navController.navigate("hide_apps")
+                        },
+                        onPickAppForGesture = { gestureId ->
+                            navController.navigate("app_picker/${gestureId.name}")
                         }
                     )
                 }
@@ -885,6 +905,13 @@ fun MainScreen(
                 }
                 composable("hide_apps") {
                     HideAppsScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable("app_picker/{gestureId}") { backStack ->
+                    val gestureId = backStack.arguments?.getString("gestureId") ?: return@composable
+                    com.bearinmind.launcher314.ui.settings.AppPickerScreen(
+                        gestureId = gestureId,
                         onBack = { navController.popBackStack() }
                     )
                 }

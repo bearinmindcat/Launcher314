@@ -556,3 +556,116 @@ fun setGlobalTextColorIntensity(context: Context, intensity: Int) {
     val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_GLOBAL_TEXT_COLOR_INTENSITY, intensity).commit()
 }
+
+// ============================================================================
+// GESTURE ACTIONS (issue #40)
+// ----------------------------------------------------------------------------
+// Per-gesture user-assigned actions. Each gesture stores a fixed-vocabulary
+// action key (see GestureAction.storageKey) and a companion target-package key
+// used only when the action is OpenApp. A one-time migration translates the
+// legacy swipe-down-mode int + double-tap-lock boolean into the new schema.
+// ============================================================================
+
+private const val KEY_GESTURE_PREFIX = "gesture_action_"
+private const val KEY_GESTURE_PKG_PREFIX = "gesture_target_pkg_"
+private const val KEY_GESTURE_ENABLED_PREFIX = "gesture_enabled_"
+private const val KEY_GESTURE_MIGRATION_DONE = "gesture_migration_v1_done"
+
+private fun gestureKey(id: GestureId): String = KEY_GESTURE_PREFIX + id.name.lowercase()
+private fun gesturePkgKey(id: GestureId): String = KEY_GESTURE_PKG_PREFIX + id.name.lowercase()
+private fun gestureEnabledKey(id: GestureId): String = KEY_GESTURE_ENABLED_PREFIX + id.name.lowercase()
+
+fun getGestureEnabled(context: Context, id: GestureId): Boolean {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(gestureEnabledKey(id), true)
+}
+
+fun setGestureEnabled(context: Context, id: GestureId, enabled: Boolean) {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(gestureEnabledKey(id), enabled).apply()
+}
+
+/** Default action when the user hasn't picked one yet. */
+private fun defaultAction(id: GestureId): GestureAction = when (id) {
+    GestureId.SWIPE_UP -> GestureAction.OpenDrawer
+    GestureId.SWIPE_DOWN -> GestureAction.OpenNotifications
+    GestureId.SWIPE_LEFT -> GestureAction.None
+    GestureId.SWIPE_RIGHT -> GestureAction.None
+    GestureId.DOUBLE_TAP -> GestureAction.None
+}
+
+fun getGestureAction(context: Context, id: GestureId): GestureAction {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val key = prefs.getString(gestureKey(id), null) ?: return defaultAction(id)
+    val pkg = prefs.getString(gesturePkgKey(id), "") ?: ""
+    return GestureAction.fromStorageKey(key, pkg)
+}
+
+fun setGestureAction(context: Context, id: GestureId, action: GestureAction) {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val editor = prefs.edit()
+    editor.putString(gestureKey(id), action.storageKey)
+    if (action is GestureAction.OpenApp) {
+        editor.putString(gesturePkgKey(id), action.packageName)
+    } else {
+        editor.remove(gesturePkgKey(id))
+    }
+    editor.apply()
+}
+
+/**
+ * One-shot migration from the old fixed-purpose preferences to the new
+ * per-gesture action schema. Idempotent — guarded by a flag in prefs.
+ *
+ * - swipe-down: legacy `swipe_down_mode` (0 = Notifications, 1 = Quick Settings)
+ *   maps to OpenNotifications / OpenQuickSettings respectively.
+ * - double-tap: legacy `double_tap_lock_enabled = true` maps to LockScreen,
+ *   false maps to None.
+ * - swipe-up: always seeded to OpenDrawer (matches prior hardcoded behavior).
+ */
+fun migrateLegacyGesturePrefs(context: Context) {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    if (prefs.getBoolean(KEY_GESTURE_MIGRATION_DONE, false)) return
+
+    val editor = prefs.edit()
+
+    // Swipe up — always defaulted to drawer.
+    editor.putString(gestureKey(GestureId.SWIPE_UP), GestureAction.OpenDrawer.storageKey)
+
+    // Swipe down — translate legacy mode.
+    val legacyMode = prefs.getInt(KEY_SWIPE_DOWN_MODE, 0)
+    val swipeDownAction = if (legacyMode == 1) GestureAction.OpenQuickSettings else GestureAction.OpenNotifications
+    editor.putString(gestureKey(GestureId.SWIPE_DOWN), swipeDownAction.storageKey)
+
+    // Double-tap — translate legacy lock toggle.
+    val legacyLock = prefs.getBoolean(KEY_DOUBLE_TAP_LOCK, false)
+    val doubleTapAction: GestureAction = if (legacyLock) GestureAction.LockScreen else GestureAction.None
+    editor.putString(gestureKey(GestureId.DOUBLE_TAP), doubleTapAction.storageKey)
+
+    editor.putBoolean(KEY_GESTURE_MIGRATION_DONE, true)
+    editor.apply()
+}
+
+// Recent Apps overlay (issue #40, Phase 4) preferences.
+private const val KEY_RECENT_APPS_SORT = "recent_apps_sort"   // 0 = recency, 1 = frequency
+private const val KEY_RECENT_APPS_COUNT = "recent_apps_count" // 1..30
+
+fun getRecentAppsSort(context: Context): Int {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_RECENT_APPS_SORT, 0).coerceIn(0, 1)
+}
+
+fun setRecentAppsSort(context: Context, sort: Int) {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_RECENT_APPS_SORT, sort.coerceIn(0, 1)).apply()
+}
+
+fun getRecentAppsCount(context: Context): Int {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_RECENT_APPS_COUNT, 12).coerceIn(1, 30)
+}
+
+fun setRecentAppsCount(context: Context, count: Int) {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_RECENT_APPS_COUNT, count.coerceIn(1, 30)).apply()
+}
