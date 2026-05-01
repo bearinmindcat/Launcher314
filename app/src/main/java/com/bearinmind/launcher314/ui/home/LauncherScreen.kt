@@ -716,6 +716,11 @@ fun LauncherScreen(
     // Grid area box position and size (for edge-scroll indicator positioning)
     var gridAreaBoxOffset by remember { mutableStateOf(Offset.Zero) }
     var gridAreaBoxSize by remember { mutableStateOf(IntSize.Zero) }
+    // Root Box and dock Box positions in root coords — used by the swipe-right
+    // detector (issue #40) to bail when the gesture starts inside the dock so it
+    // doesn't fight the dock's HorizontalPager page-changes.
+    var rootBoxTopY by remember { mutableFloatStateOf(0f) }
+    var dockTopY by remember { mutableFloatStateOf(Float.MAX_VALUE) }
     // Edge-scroll hover state — true when drag is in the left/right edge zone
     var isHoveringLeftEdge by remember { mutableStateOf(false) }
     var isHoveringRightEdge by remember { mutableStateOf(false) }
@@ -2176,6 +2181,7 @@ fun LauncherScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { rootBoxTopY = it.positionInRoot().y }
             // Root-level drag continuation: when a page transition cancels the cell-level
             // gesture, this parent handler picks up the ongoing drag. As a PARENT pointerInput
             // (not a sibling Box), events flow through the normal hierarchy — children process
@@ -2371,6 +2377,11 @@ fun LauncherScreen(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     if (pagerState.currentPage != 0) return@awaitEachGesture
                     if (gestureUiCallbacks == null) return@awaitEachGesture
+                    // Bail if the touch starts inside the dock — the dock has its
+                    // own HorizontalPager for paging dock items and we don't want
+                    // those page-change swipes to also fire the swipe-right action.
+                    val touchRootY = down.position.y + rootBoxTopY
+                    if (touchRootY >= dockTopY) return@awaitEachGesture
                     if (!com.bearinmind.launcher314.data.getGestureEnabled(
                             context,
                             com.bearinmind.launcher314.data.GestureId.SWIPE_RIGHT
@@ -3790,7 +3801,9 @@ fun LauncherScreen(
             val dockDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
 
             if (isDockEnabled) Box(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { dockTopY = it.positionInRoot().y }
             ) {
                 Box(
                     modifier = Modifier
