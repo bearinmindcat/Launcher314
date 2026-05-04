@@ -704,7 +704,7 @@ fun SettingsScreen(
             SettingsSection(title = "Development Information") {
                 SettingsClickableItem(
                     title = "Version",
-                    subtitle = "v0.0.12-beta",
+                    subtitle = "v0.0.13-beta",
                     onClick = { }
                 )
                 SettingsClickableItem(
@@ -930,39 +930,88 @@ fun IconTextPersonalizationCard(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Font selection button — aligned with slider track (same padding)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 76.dp)
+        // Font button + Hide-text checkbox — same layout as the dock-columns
+        // slider/checkbox row in HomeScreen settings: control on the left
+        // (weight 1f, 16.dp start padding), 72.dp checkbox column on the right.
+        var hideIconText by remember {
+            mutableStateOf(com.bearinmind.launcher314.data.getHideIconText(context))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            Button(
-                onClick = onFontsClick,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                shape = RoundedCornerShape(8.dp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp)
             ) {
-                Text(
-                    text = selectedFontName,
-                    fontFamily = selectedFontFamily ?: FontFamily.Default
+                Button(
+                    onClick = onFontsClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = selectedFontName,
+                        fontFamily = selectedFontFamily ?: FontFamily.Default
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .width(72.dp)
+                    .height(48.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Checkbox(
+                    checked = hideIconText,
+                    onCheckedChange = { checked ->
+                        hideIconText = checked
+                        com.bearinmind.launcher314.data.setHideIconText(context, checked)
+                    },
+                    modifier = Modifier.offset(x = 10.dp),
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.primary,
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 )
             }
         }
 
-        // "Font" label centered below button, matching slider label style
-        Text(
-            text = "Font",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 76.dp, top = 4.dp),
-            textAlign = TextAlign.Center
-        )
+        // "Font" + "Hide text" labels below their respective controls
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Text(
+                text = "Font",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp, top = 4.dp),
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Hide text",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .width(72.dp)
+                    .offset(x = 10.dp)
+                    .padding(top = 4.dp),
+                textAlign = TextAlign.Center
+            )
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 

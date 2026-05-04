@@ -252,6 +252,7 @@ private fun OverlayLabel(
     textAlpha: Float
 ) {
     if (appInfo.customization?.hideLabel == true) return
+    if (com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) return
     val label = appInfo.customization?.customLabel?.takeIf { it.isNotEmpty() } ?: appInfo.name
     Spacer(modifier = Modifier.height(gridIconTextSpacer))
     Text(
@@ -365,7 +366,7 @@ private fun OverlayAppContent(
             )
         }
         // Always render label (alpha 0 when hidden) to match cell layout
-        if (showLabel) {
+        if (showLabel && !com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) {
             Spacer(modifier = Modifier.height(gridIconTextSpacer))
             Text(
                 text = displayLabel,
@@ -474,7 +475,7 @@ private fun OverlayFolderContent(
             Box(modifier = Modifier.matchParentSize().border(1.dp, folderBorderColor, folderShape))
         }
         val folderHideLabel = folderCust?.hideLabel ?: false
-        if (!folderHideLabel && showLabel) {
+        if (!folderHideLabel && showLabel && !com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) {
             Spacer(modifier = Modifier.height(gridIconTextSpacer))
             val folderLabelColor = if (isInvalid) Color(0xFFFF6B6B)
                 else if (folderCust?.labelColor != null) {
@@ -6008,17 +6009,19 @@ private fun HomeFolderAppItem(
                         scaleY = scale
                     }
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = app.name,
-                fontSize = labelFontSize,
-                fontFamily = labelFontFamily ?: FontFamily.Default,
-                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (!com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = app.name,
+                    fontSize = labelFontSize,
+                    fontFamily = labelFontFamily ?: FontFamily.Default,
+                    color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
             AnimatedPopup(

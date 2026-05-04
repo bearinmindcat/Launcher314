@@ -18,6 +18,7 @@ private const val KEY_SCROLLBAR_HEIGHT_PERCENT = "scrollbar_height_percent"
 private const val KEY_DRAWER_GRID_ROWS = "drawer_grid_rows"
 private const val KEY_DRAWER_PAGED_MODE = "drawer_paged_mode"
 private const val KEY_ICON_TEXT_SIZE_PERCENT = "icon_text_size_percent"
+private const val KEY_HIDE_ICON_TEXT = "hide_icon_text"
 private const val KEY_SELECTED_FONT = "selected_font_id"
 private const val KEY_IMPORTED_FONTS = "imported_font_paths"
 private const val KEY_SELECTED_ICON_PACK = "selected_icon_pack"
@@ -257,6 +258,17 @@ fun getIconTextSizePercent(context: Context): Int {
 fun setIconTextSizePercent(context: Context, percent: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_ICON_TEXT_SIZE_PERCENT, percent).apply()
+}
+
+/** System-wide toggle: when true, icon labels (apps, folders, dock items) are hidden. */
+fun getHideIconText(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_HIDE_ICON_TEXT, false)
+}
+
+fun setHideIconText(context: Context, hide: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_HIDE_ICON_TEXT, hide).apply()
 }
 
 // ============================================================================

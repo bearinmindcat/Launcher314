@@ -410,7 +410,7 @@ internal fun FolderItem(
                 Color(b.red * i, b.green * i, b.blue * i, b.alpha)
             } else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
             val drawerFolderFontSize = drawerFolderCust?.iconTextSizePercent?.let { 12.sp * it / 100f } ?: labelFontSize
-            if (drawerFolderCust?.hideLabel != true) Text(
+            if (drawerFolderCust?.hideLabel != true && !com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) Text(
                 text = drawerFolderCust?.customLabel ?: folder.name,
                 fontSize = drawerFolderFontSize,
                 fontFamily = drawerFolderFontFamily,
@@ -563,17 +563,19 @@ internal fun AppItem(
             contentScale = ContentScale.Fit,
             modifier = Modifier.size(48.dp)
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = app.name,
-            fontSize = labelFontSize,
-            fontFamily = labelFontFamily ?: FontFamily.Default,
-            color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
+        if (!com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = app.name,
+                fontSize = labelFontSize,
+                fontFamily = labelFontFamily ?: FontFamily.Default,
+                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }
 
@@ -736,19 +738,21 @@ internal fun FolderAppItem(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = app.name,
-                fontSize = labelFontSize,
-                fontFamily = labelFontFamily ?: FontFamily.Default,
-                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { alpha = labelAlpha }
-            )
+            if (!com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = app.name,
+                    fontSize = labelFontSize,
+                    fontFamily = labelFontFamily ?: FontFamily.Default,
+                    color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = labelAlpha }
+                )
+            }
         }
 
         // Single app context menu dropdown
@@ -1345,19 +1349,21 @@ internal fun SelectableAppItem(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = app.name,
-                fontSize = labelFontSize,
-                fontFamily = labelFontFamily ?: FontFamily.Default,
-                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { alpha = labelAlpha }
-            )
+            if (!com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = app.name,
+                    fontSize = labelFontSize,
+                    fontFamily = labelFontFamily ?: FontFamily.Default,
+                    color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = labelAlpha }
+                )
+            }
         }
 
         // Single app context menu dropdown

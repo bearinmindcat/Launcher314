@@ -658,7 +658,8 @@ fun DraggableGridCell(
                             // Label: respect per-app customization (hide or rename)
                             // Always render to keep icon position stable; fade alpha when hidden
                             val customization = cell.appInfo.customization
-                            val labelHidden = customization?.hideLabel == true
+                            val labelHidden = customization?.hideLabel == true ||
+                                com.bearinmind.launcher314.ui.theme.LocalHideIconText.current
                             val hideLabelAlpha by animateFloatAsState(
                                 targetValue = if (labelHidden) 0f else 1f,
                                 animationSpec = tween(durationMillis = 250),
@@ -1417,7 +1418,8 @@ fun DraggableGridCell(
 
                             val folderDisplayName = if (isHovered && !isDragging) "Folder"
                                 else folderCustomization?.customLabel ?: cell.folder.name
-                            val folderHideLabel = folderCustomization?.hideLabel ?: false
+                            val folderHideLabel = folderCustomization?.hideLabel ?: false ||
+                                com.bearinmind.launcher314.ui.theme.LocalHideIconText.current
                             val folderFontSize = folderCustomization?.iconTextSizePercent?.let { 12.sp * it / 100f } ?: appNameFontSize
                             val folderFontFamily = folderCustomization?.labelFontId?.let { id ->
                                 FontManager.bundledFonts.find { it.id == id }?.fontFamily

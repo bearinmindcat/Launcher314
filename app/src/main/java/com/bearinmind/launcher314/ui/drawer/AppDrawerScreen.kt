@@ -501,9 +501,11 @@ fun AppDrawerScreen(
         if (bgc != null) Color(bgc).copy(alpha = (intensity / 100f).coerceIn(0f, 1f))
         else Color.White.copy(alpha = 0.3f)
     }
+    val drawerHideIconText = com.bearinmind.launcher314.data.getHideIconText(context)
     androidx.compose.runtime.CompositionLocalProvider(
         com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides resolvedTextColor,
-        com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor provides drawerFolderBorder
+        com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor provides drawerFolderBorder,
+        com.bearinmind.launcher314.ui.theme.LocalHideIconText provides drawerHideIconText
     ) {
     Box(
         modifier = Modifier
