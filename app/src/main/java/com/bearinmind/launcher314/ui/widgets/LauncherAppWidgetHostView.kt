@@ -209,8 +209,11 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                 // intercept handler entirely — and the flag wouldn't get
                 // reset, leaving the drawer-open detector locked out
                 // forever (root cause of "swipe up doesn't work after
-                // adding/removing a screen").
-                WidgetTouchState.isWidgetTouchActive = true
+                // adding/removing a screen"). Only set the flag for widgets
+                // that actually have scrollable content — static widgets
+                // (weather card, photo, clock) shouldn't lock out the
+                // drawer-open swipe.
+                WidgetTouchState.isWidgetTouchActive = hasScrollableDescendant()
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = abs(actionDownCoords.x - event.rawX)
@@ -263,7 +266,10 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                 // ownership while a finger is on a widget. Without this, fast
                 // vertical drags can be claimed by the drawer before our own
                 // MOVE handler has had a chance to arbitrate direction.
-                WidgetTouchState.isWidgetTouchActive = true
+                // Only static widgets (no scrollable descendants) leave the
+                // flag false so swipe-up over a weather/photo card opens the
+                // drawer normally.
+                WidgetTouchState.isWidgetTouchActive = hasScrollableDescendant()
                 // NOTE: we deliberately do NOT call requestDisallowInterceptTouchEvent
                 // on DOWN. Doing so blocks the ancestor HorizontalPager from
                 // ever seeing the DOWN — and Compose's drag detector
@@ -304,12 +310,15 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                     directionLocked = true
                     val isHorizontalDrag = dx > dy
                     val keepWithWidget = if (!isHorizontalDrag) {
-                        // Vertical drags always stay with the widget. List /
-                        // calendar widgets need them for scroll; static widgets
-                        // benefit too since the home-screen pager only handles
-                        // horizontal anyway and the drawer detector already
-                        // skips us via WidgetTouchState.
-                        true
+                        // Vertical drag: keep ONLY if some descendant can
+                        // actually scroll vertically in the drag direction.
+                        // Static widgets (weather card, photo, clock) →
+                        // false → drawer-open swipe-up reaches the home
+                        // detector. Widgets with a vertical RecyclerView /
+                        // calendar agenda / scrollable list → true → we
+                        // block so the user can scroll the widget.
+                        val direction = if (currentCoords.y < actionDownCoords.y) 1 else -1
+                        anyDescendantCanScrollVertically(this, direction)
                     } else {
                         // Horizontal drag: keep ONLY if some descendant can
                         // actually scroll horizontally in the drag direction.
@@ -322,6 +331,12 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
                     }
                     if (keepWithWidget) {
                         parent?.requestDisallowInterceptTouchEvent(true)
+                    } else {
+                        // Static widget couldn't claim the drag — release the
+                        // global lock so the drawer / notifications detector
+                        // can take over (in case it was set true at DOWN by a
+                        // mistakenly-flagged scroll-state read race).
+                        WidgetTouchState.isWidgetTouchActive = false
                     }
                 }
 
@@ -360,6 +375,33 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
         }
         return false
     }
+
+    /** Vertical counterpart of [anyDescendantCanScrollHorizontally]. */
+    private fun anyDescendantCanScrollVertically(view: View, direction: Int): Boolean {
+        if (view !== this && view.canScrollVertically(direction)) return true
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                if (anyDescendantCanScrollVertically(view.getChildAt(i), direction)) return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * True if any descendant of this widget host can scroll in any direction.
+     * Used at DOWN to decide whether to set the global
+     * [WidgetTouchState.isWidgetTouchActive] flag — static widgets (weather,
+     * photo, clock) report false, so the drawer-open / notifications swipe
+     * detectors stay armed and can claim the gesture. Scrollable widgets
+     * (calendar agenda, list, horizontal hourly strip) report true and lock
+     * the detectors out so vertical scrolls / horizontal scrolls reach the
+     * widget's own RemoteViews.
+     */
+    private fun hasScrollableDescendant(): Boolean =
+        anyDescendantCanScrollVertically(this, 1) ||
+        anyDescendantCanScrollVertically(this, -1) ||
+        anyDescendantCanScrollHorizontally(this, 1) ||
+        anyDescendantCanScrollHorizontally(this, -1)
 
     /**
      * Reset touch state and cancel any pending long-press detection.
