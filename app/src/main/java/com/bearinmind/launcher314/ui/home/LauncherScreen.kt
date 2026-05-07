@@ -24,6 +24,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -2472,9 +2473,30 @@ fun LauncherScreen(
                         CircularProgressIndicator(color = Color.White)
                     }
                 } else {
+                    // Custom snap spec for the home page swipe — matches
+                    // AOSP Launcher3 / Lawnchair's Workspace exactly:
+                    //   curve: f(t) = (t-1)^5 + 1  (quintic ease-out — fast
+                    //          start, decelerates aggressively to a soft
+                    //          landing). From AOSP Interpolators.SCROLL.
+                    //   duration: 750 ms (phone). From Trebuchet's
+                    //          config_pageSnapAnimationDuration.
+                    // Default decay path is preserved so a hard flick still
+                    // flings naturally before the snap takes over.
+                    val homePageSnapSpec = remember {
+                        val scrollEasing = androidx.compose.animation.core.Easing { t ->
+                            val u = t - 1f
+                            u * u * u * u * u + 1f
+                        }
+                        tween<Float>(durationMillis = 750, easing = scrollEasing)
+                    }
+                    val homePagerFlingBehavior = PagerDefaults.flingBehavior(
+                        state = pagerState,
+                        snapAnimationSpec = homePageSnapSpec
+                    )
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
+                        flingBehavior = homePagerFlingBehavior,
                         // Disable manual swipe during drag to prevent conflicts
                         userScrollEnabled = draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged && !isStackSwipeActive
                     ) { page ->
