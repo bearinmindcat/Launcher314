@@ -134,6 +134,7 @@ internal fun MainDrawerContent(
     onSortDirectionChanged: (Boolean) -> Unit,
     onFolderClick: (AppFolder) -> Unit,
     onAppClick: (String) -> Unit,
+    onImeSearch: () -> Unit = {},
     onUninstallApp: (AppInfo) -> Unit,
     onAppInfo: (AppInfo) -> Unit,
     onSettingsClick: () -> Unit,
@@ -677,6 +678,12 @@ internal fun MainDrawerContent(
                     }
                 },
                 singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                ),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onSearch = { onImeSearch() }
+                ),
                 shape = RoundedCornerShape(24.dp),
                 colors = TextFieldDefaults.colors(
                     focusedTextColor = Color.White,

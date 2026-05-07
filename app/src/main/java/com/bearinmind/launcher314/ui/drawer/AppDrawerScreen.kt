@@ -438,6 +438,21 @@ fun AppDrawerScreen(
         }
     }
 
+    // Auto-launch single search match after a short typing pause. The
+    // LaunchedEffect cancels and restarts on every keystroke, so the
+    // delay only completes when the user has stopped typing.
+    val autoLaunchSearchEnabled = remember {
+        com.bearinmind.launcher314.data.getAutoLaunchSearchResult(context)
+    }
+    LaunchedEffect(searchQuery, filteredApps, autoLaunchSearchEnabled) {
+        if (!autoLaunchSearchEnabled) return@LaunchedEffect
+        if (searchQuery.isBlank()) return@LaunchedEffect
+        if (filteredApps.size != 1) return@LaunchedEffect
+        kotlinx.coroutines.delay(500)
+        val target = filteredApps.singleOrNull() ?: return@LaunchedEffect
+        launchApp(context, target.packageName)
+    }
+
     // Animation values
     val animationProgress by animateFloatAsState(
         targetValue = if (isFolderVisible) 1f else 0f,
@@ -569,6 +584,11 @@ fun AppDrawerScreen(
                 openFolder = latestFolder
             },
             onAppClick = { launchApp(context, it) },
+            onImeSearch = {
+                if (autoLaunchSearchEnabled) {
+                    filteredApps.firstOrNull()?.let { launchApp(context, it.packageName) }
+                }
+            },
             onUninstallApp = { app -> uninstallApp(context, app.packageName) },
             onAppInfo = { app -> openAppInfo(context, app.packageName) },
             onSettingsClick = onSettingsClick,

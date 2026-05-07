@@ -430,6 +430,20 @@ fun SettingsScreen(
                     }
                 )
 
+                // Auto-launch search results toggle
+                var autoLaunchSearchResult by remember {
+                    mutableStateOf(com.bearinmind.launcher314.data.getAutoLaunchSearchResult(context))
+                }
+                SettingsToggleItem(
+                    title = "Launch app from search results",
+                    subtitle = "Launches app from search results if only one app exists; press \"enter\" on keyboard to launch the first option if multiple",
+                    checked = autoLaunchSearchResult,
+                    onCheckedChange = {
+                        autoLaunchSearchResult = !autoLaunchSearchResult
+                        com.bearinmind.launcher314.data.setAutoLaunchSearchResult(context, autoLaunchSearchResult)
+                    }
+                )
+
                 // Double-tap to lock screen toggle
                 var doubleTapLockEnabled by remember { mutableStateOf(getDoubleTapLockEnabled(context)) }
                 var isServiceEnabled by remember { mutableStateOf(AppDrawerAccessibilityService.isAccessibilityServiceEnabled(context)) }

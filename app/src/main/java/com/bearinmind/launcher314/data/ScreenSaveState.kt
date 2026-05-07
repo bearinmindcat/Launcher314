@@ -330,6 +330,23 @@ fun setAutoOpenKeyboard(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_AUTO_OPEN_KEYBOARD, enabled).apply()
 }
 
+private const val KEY_AUTO_LAUNCH_SEARCH_RESULT = "auto_launch_search_result"
+
+/**
+ * When true, the app-drawer search auto-launches the only match (after a
+ * short typing pause) and Enter / IME Search launches the top of the
+ * current filtered list. Default off.
+ */
+fun getAutoLaunchSearchResult(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_AUTO_LAUNCH_SEARCH_RESULT, false)
+}
+
+fun setAutoLaunchSearchResult(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_AUTO_LAUNCH_SEARCH_RESULT, enabled).apply()
+}
+
 // ============================================================================
 // REVERSE DRAWER SEARCH BAR
 // ============================================================================
