@@ -1038,8 +1038,15 @@ fun LauncherWithDrawer(
                         onDragToHomeDrop = onDrawerDragToHomeDrop
                     )
                 )
-                // Block taps/interactions while drawer is not fully open (swiping, animating, or held mid-swipe)
-                if (swipeUpY.isRunning || swipeUpY.value > 10f) {
+                // Block taps/interactions while the drawer is still visibly
+                // mid-transition (icons not yet at their resting position).
+                // FIX: previously also gated on `swipeUpY.isRunning`, which kept
+                // the blocker alive for the full ~600-1000 ms tail of the
+                // StiffnessLow spring after the drawer was visually open. That
+                // made swipe-down-to-close feel unresponsive immediately after
+                // swipe-up-to-open. Once value <= 10f the drawer is "open
+                // enough" and stray-tap risk is gone.
+                if (swipeUpY.value > 10f) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
