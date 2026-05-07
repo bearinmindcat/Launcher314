@@ -48,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
+import com.bearinmind.launcher314.R
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -919,6 +921,24 @@ fun DraggableGridCell(
                                             }
                                         }
                                     }
+
+                                    // 6. Experimental — placeholder entry. Hooks
+                                    // for the Total-Launcher-style "free-floating"
+                                    // icons (icons unlocked from the grid and
+                                    // movable independently) will land here.
+                                    DropdownMenuItem(
+                                        text = { Text("Experimental") },
+                                        onClick = {
+                                            showContextMenu = false
+                                            // TODO: wire experimental free-position mode
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_experiment),
+                                                contentDescription = null
+                                            )
+                                        }
+                                    )
                         }
 
                 // Bulk action menu (shown when long-pressing a selected app in selection mode)
@@ -2006,6 +2026,21 @@ fun DockSlot(
                                     }
                                 }
                             }
+
+                            // 6. Experimental — mirrors the home-grid menu.
+                            DropdownMenuItem(
+                                text = { Text("Experimental") },
+                                onClick = {
+                                    showContextMenu = false
+                                    // TODO: wire experimental free-position mode
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_experiment),
+                                        contentDescription = null
+                                    )
+                                }
+                            )
                 }
         } else if (folderData != null) {
             // Dock folder content - 2x2 mini icon grid
