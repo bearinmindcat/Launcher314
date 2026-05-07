@@ -154,11 +154,19 @@ class MainActivity : ComponentActivity() {
         val gridColumns = getHomeGridSize(this)
         val gridRows = getHomeGridRows(this)
 
-        // Find first available position for the widget
-        val availablePos = findAvailablePositionForWidget(widget.cellWidth, widget.cellHeight, gridColumns, gridRows)
+        // Land the widget on whichever home page the user was viewing when
+        // they opened the widget picker. LauncherScreen persists the current
+        // page in `launcher_prefs` on every page change.
+        val targetPage = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
+            .getInt("launcher_current_page", 0)
+
+        // Find first available position for the widget on the target page
+        val availablePos = findAvailablePositionForWidget(
+            widget.cellWidth, widget.cellHeight, gridColumns, gridRows, targetPage
+        )
 
         if (availablePos == null) {
-            Toast.makeText(this, "Not enough space for widget", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Not enough space for widget on this page", Toast.LENGTH_SHORT).show()
             WidgetManager.deleteWidgetId(pendingWidgetId)
             pendingWidgetId = -1
             pendingWidgetInfo = null
@@ -173,7 +181,8 @@ class MainActivity : ComponentActivity() {
             startColumn = availablePos.first,
             startRow = availablePos.second,
             columnSpan = widget.cellWidth,
-            rowSpan = widget.cellHeight
+            rowSpan = widget.cellHeight,
+            page = targetPage
         )
         WidgetManager.addPlacedWidget(this, placedWidget)
 
@@ -192,11 +201,11 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Find the first available position for a widget on the grid.
-     * Returns Pair(column, row) or null if no space available.
+     * Find the first available position for a widget on the grid for the
+     * given page. Returns Pair(column, row) or null if no space available.
      */
-    private fun findAvailablePositionForWidget(widgetCols: Int, widgetRows: Int, gridColumns: Int, gridRows: Int): Pair<Int, Int>? {
-        val occupiedCells = getOccupiedCells(gridColumns)
+    private fun findAvailablePositionForWidget(widgetCols: Int, widgetRows: Int, gridColumns: Int, gridRows: Int, page: Int = 0): Pair<Int, Int>? {
+        val occupiedCells = getOccupiedCells(gridColumns, page)
 
         // Try each possible starting position
         for (startRow in 0 until gridRows) {
@@ -734,7 +743,12 @@ fun MainScreen(
                     gridColumns = gridColumns,
                     gridRows = gridRows,
                     getOccupiedCells = {
-                        activity?.getOccupiedCells(gridColumns) ?: emptySet()
+                        // Match the page that addWidgetToHomeScreen will
+                        // target so the pre-flight space check looks at
+                        // the user's current page instead of page 0.
+                        val curPage = context.getSharedPreferences("launcher_prefs", android.content.Context.MODE_PRIVATE)
+                            .getInt("launcher_current_page", 0)
+                        activity?.getOccupiedCells(gridColumns, curPage) ?: emptySet()
                     }
                 )
             }
@@ -838,7 +852,12 @@ fun MainScreen(
                         gridColumns = gridColumns,
                         gridRows = gridRows,
                         getOccupiedCells = {
-                            activity?.getOccupiedCells(gridColumns) ?: emptySet()
+                            // Match the page that addWidgetToHomeScreen will
+                            // target so the pre-flight space check looks at
+                            // the user's current page instead of page 0.
+                            val curPage = context.getSharedPreferences("launcher_prefs", android.content.Context.MODE_PRIVATE)
+                                .getInt("launcher_current_page", 0)
+                            activity?.getOccupiedCells(gridColumns, curPage) ?: emptySet()
                         }
                     )
                 }

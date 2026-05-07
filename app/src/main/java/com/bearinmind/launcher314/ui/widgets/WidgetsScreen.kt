@@ -221,7 +221,7 @@ fun WidgetsScreen(
                 } else {
                     Column {
                         Text(
-                            text = "Add \"${selectedWidget!!.label}\" to your home screen?",
+                            text = "Add \"${selectedWidget!!.label}\" to your current screen?",
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                         Text(
@@ -243,7 +243,7 @@ fun WidgetsScreen(
                             selectedWidget = null
                         }
                     ) {
-                        Text("Add to Home")
+                        Text("Add to Screen")
                     }
                 } else {
                     TextButton(

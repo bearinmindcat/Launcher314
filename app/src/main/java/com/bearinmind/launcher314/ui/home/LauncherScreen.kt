@@ -793,6 +793,13 @@ fun LauncherScreen(
     val pagerState = rememberPagerState(pageCount = { totalPages })
     val currentPage by remember { derivedStateOf { pagerState.currentPage } }
 
+    // Persist the current home page index so MainActivity's add-widget flow
+    // can land the widget on the page the user is actually viewing instead
+    // of always defaulting to page 0.
+    LaunchedEffect(pagerState.currentPage) {
+        prefs.edit().putInt("launcher_current_page", pagerState.currentPage).apply()
+    }
+
     var removingLastDot by remember { mutableStateOf(false) }
     var addingLastDot by remember { mutableStateOf(false) }
 
