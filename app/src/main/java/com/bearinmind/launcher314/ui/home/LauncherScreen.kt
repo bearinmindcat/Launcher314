@@ -34,6 +34,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -72,6 +73,9 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -980,13 +984,16 @@ fun LauncherScreen(
             }
         }
 
-        // Place apps for this specific page only
+        // Place apps for this specific page only. Apps with the experimental
+        // detachedFromGrid flag are skipped here so the cell stays empty;
+        // they get rendered separately as a free-floating overlay (issue #48).
         homeApps.filter { it.page == page }.forEach { homeApp ->
             if (homeApp.position < totalCells) {
                 val currentCell = cells[homeApp.position]
                 if (currentCell is HomeGridCell.Empty) {
                     allAvailableApps.find { it.packageName == homeApp.packageName }?.let { appInfo ->
                         val cust = appCustomizations.customizations[homeApp.packageName]
+                        if (cust?.detachedFromGrid == true) return@let
                         val customizedInfo = if (cust != null) appInfo.copy(customization = cust) else appInfo
                         cells[homeApp.position] = HomeGridCell.App(customizedInfo, homeApp.position)
                     }
@@ -3683,6 +3690,293 @@ fun LauncherScreen(
                                         widgetResizeState = WidgetResizeState()
                                     }
                                 )
+                            }
+
+                            // Detached (free-floating) icons for this page — issue #48.
+                            // Apps whose customization.detachedFromGrid == true skip
+                            // the grid render path (see buildGridCellsForPage) and
+                            // get drawn here at their saved (detachedX, detachedY).
+                            // Long-press initiates a drag; on release the new
+                            // position is persisted back into AppCustomization.
+                            val detachedAppsForPage = remember(homeApps, allAvailableApps, appCustomizations, page) {
+                                homeApps.filter { it.page == page }.mapNotNull { homeApp ->
+                                    val cust = appCustomizations.customizations[homeApp.packageName]
+                                    if (cust?.detachedFromGrid != true) return@mapNotNull null
+                                    val info = allAvailableApps.find { it.packageName == homeApp.packageName }
+                                        ?: return@mapNotNull null
+                                    Triple(homeApp, info.copy(customization = cust), cust)
+                                }
+                            }
+                            val detachedHaptic = rememberHapticFeedback()
+                            // Defer rendering until the grid has measured cellSize so
+                            // we have a real cell pixel size to anchor "detach in place".
+                            if (cellSize != IntSize.Zero) {
+                                detachedAppsForPage.forEach { (homeApp, appInfo, cust) ->
+                                    key(homeApp.packageName) {
+                                        // Default position = the icon's original grid cell
+                                        // (top-left in pixels within the grid Box) so toggling
+                                        // detach makes the icon stay in place visually.
+                                        val defaultX = (homeApp.position % gridColumns) * cellSize.width.toFloat()
+                                        val defaultY = (homeApp.position / gridColumns) * cellSize.height.toFloat()
+                                        var posX by remember { mutableStateOf(cust.detachedX ?: defaultX) }
+                                        var posY by remember { mutableStateOf(cust.detachedY ?: defaultY) }
+                                        // In-flight drag offset, applied visually via
+                                        // graphicsLayer.translation so the outer Box's
+                                        // layout position stays stable for the duration of
+                                        // the gesture (otherwise positionChange() cancels
+                                        // out as the layout shifts under the pointer).
+                                        var dragOffsetX by remember { mutableStateOf(0f) }
+                                        var dragOffsetY by remember { mutableStateOf(0f) }
+                                        var isDragging by remember { mutableStateOf(false) }
+                                        var showContextMenu by remember { mutableStateOf(false) }
+                                        var iconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+                                        var isFingerDown by remember { mutableStateOf(false) }
+                                        var flashOverlay by remember { mutableStateOf(false) }
+                                        val isCustomizingThis = customizingApp?.packageName == homeApp.packageName
+                                        // Match the grid icon's interaction state machine: scale up
+                                        // on long-press, drag, or while the customize dialog is
+                                        // open. 1.265× matches DraggableGridCell exactly.
+                                        val isScaledUp = showContextMenu || isDragging || isCustomizingThis
+                                        val scale by animateFloatAsState(
+                                            targetValue = if (isScaledUp) 1.265f else 1f,
+                                            animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
+                                            label = "detachedScale_${homeApp.packageName}"
+                                        )
+                                        val effectiveScale = if (isScaledUp) scale else 1f
+                                        val flashAlpha by animateFloatAsState(
+                                            targetValue = if (flashOverlay) 0.4f else 0f,
+                                            animationSpec = if (flashOverlay) tween(80) else tween(150),
+                                            label = "detachedFlash_${homeApp.packageName}",
+                                            finishedListener = { if (flashOverlay) flashOverlay = false }
+                                        )
+                                        val overlayAlpha = maxOf(if (isFingerDown) 0.25f else 0f, flashAlpha)
+                                        LaunchedEffect(cust.detachedX, cust.detachedY) {
+                                            cust.detachedX?.let { if (it != posX) posX = it }
+                                            cust.detachedY?.let { if (it != posY) posY = it }
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .offset { IntOffset(posX.toInt(), posY.toInt()) }
+                                                .size(
+                                                    width = with(LocalDensity.current) { cellSize.width.toDp() },
+                                                    height = with(LocalDensity.current) { cellSize.height.toDp() }
+                                                )
+                                                // NOTE: graphicsLayer scale is applied to the
+                                                // INNER visual Box below, not here. Putting it on
+                                                // the same Box as pointerInput would inverse-
+                                                // transform pointer deltas (a 10 px finger move
+                                                // would land as ~7.9 px in layout space at 1.265×
+                                                // scale), making the icon stutter behind the
+                                                // finger during drag. See drag-patterns memory
+                                                // note on `graphicsLayer scale distorts pointer
+                                                // deltas`.
+                                                .pointerInput(homeApp.packageName) {
+                                                    val touchSlop = viewConfiguration.touchSlop
+                                                    awaitEachGesture {
+                                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                                        val startPos = down.position
+                                                        isFingerDown = true
+                                                        // Wait for long-press timeout; if user
+                                                        // releases first, treat as a tap and launch.
+                                                        val longPress = awaitLongPressOrCancellation(down.id)
+                                                        if (longPress == null) {
+                                                            isFingerDown = false
+                                                            // Was a tap — launch
+                                                            launchApp(context, homeApp.packageName)
+                                                            return@awaitEachGesture
+                                                        }
+                                                        // Long-press fired — show popup AND scale up
+                                                        // immediately, exactly like grid icons. If the
+                                                        // user starts moving past touchSlop we hide the
+                                                        // popup and switch to drag mode.
+                                                        showContextMenu = true
+                                                        flashOverlay = true
+                                                        detachedHaptic.performLongPress()
+                                                        var dragStarted = false
+                                                        try {
+                                                            while (true) {
+                                                                val event = awaitPointerEvent()
+                                                                val change = event.changes.firstOrNull { it.id == down.id }
+                                                                    ?: break
+                                                                if (change.pressed) {
+                                                                    val dx = change.position.x - startPos.x
+                                                                    val dy = change.position.y - startPos.y
+                                                                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                                                    if (!dragStarted && dist > touchSlop) {
+                                                                        dragStarted = true
+                                                                        showContextMenu = false
+                                                                        isDragging = true
+                                                                    }
+                                                                    if (dragStarted) {
+                                                                        // Outer Box stays at (posX, posY)
+                                                                        // throughout the drag; visual
+                                                                        // offset accumulates here and is
+                                                                        // applied via graphicsLayer on
+                                                                        // the inner visual Box. This keeps
+                                                                        // the pointerInput's local coord
+                                                                        // system stable so positionChange
+                                                                        // reflects raw finger motion.
+                                                                        val delta = change.positionChange()
+                                                                        dragOffsetX += delta.x
+                                                                        dragOffsetY += delta.y
+                                                                        change.consume()
+                                                                    }
+                                                                } else {
+                                                                    isFingerDown = false
+                                                                    if (dragStarted) {
+                                                                        // Drag end — commit the in-flight
+                                                                        // visual offset into posX/posY,
+                                                                        // zero the offset, and persist.
+                                                                        isDragging = false
+                                                                        val newX = posX + dragOffsetX
+                                                                        val newY = posY + dragOffsetY
+                                                                        posX = newX
+                                                                        posY = newY
+                                                                        dragOffsetX = 0f
+                                                                        dragOffsetY = 0f
+                                                                        val newCust = cust.copy(
+                                                                            detachedX = newX,
+                                                                            detachedY = newY
+                                                                        )
+                                                                        appCustomizations = setCustomization(
+                                                                            context,
+                                                                            appCustomizations,
+                                                                            homeApp.packageName,
+                                                                            newCust
+                                                                        )
+                                                                    }
+                                                                    // If not dragged, popup stays
+                                                                    // open until user dismisses it.
+                                                                    break
+                                                                }
+                                                            }
+                                                        } catch (_: Throwable) {
+                                                            isFingerDown = false
+                                                            isDragging = false
+                                                            dragOffsetX = 0f
+                                                            dragOffsetY = 0f
+                                                        }
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            // Inner visual Box owns the graphicsLayer scale +
+                                            // the live drag translation so the OUTER pointerInput
+                                            // sees raw, un-scaled, un-translated finger coords.
+                                            // Without this split the drag stutters: 1/1.265 from
+                                            // the scale and the layout-shift feedback loop from
+                                            // moving the layout under the pointer.
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .graphicsLayer {
+                                                        translationX = dragOffsetX
+                                                        translationY = dragOffsetY
+                                                        scaleX = effectiveScale
+                                                        scaleY = effectiveScale
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                OverlayAppContent(
+                                                    context = context,
+                                                    appInfo = appInfo,
+                                                    iconSizeDp = iconSizeDp,
+                                                    iconSizePercent = iconSizePercent,
+                                                    gridIconTextSpacer = gridIconTextSpacer,
+                                                    gridAppNameFont = gridAppNameFont,
+                                                    selectedFontFamily = selectedFontFamily,
+                                                    textAlpha = 1f,
+                                                    globalIconShape = globalIconShape,
+                                                    showLabel = true,
+                                                    globalIconBgColor = globalIconBgColor
+                                                )
+                                                // Invisible anchor matching the icon's visible
+                                                // bounds for popup positioning. Lives inside the
+                                                // scaled Box so positionInRoot reflects the
+                                                // visually-enlarged icon when scaled up.
+                                                val perAppPercent = appInfo.customization?.iconSizePercent ?: iconSizePercent
+                                                val perAppIconDp = (iconSizeDp * perAppPercent / iconSizePercent.toFloat()).dp
+                                                val labelOffsetDp = gridIconTextSpacer + 16.dp
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(perAppIconDp)
+                                                        .align(Alignment.Center)
+                                                        .offset(y = -(labelOffsetDp / 2))
+                                                        .onGloballyPositioned { coords ->
+                                                            iconBoundsInRoot = coords.boundsInRoot()
+                                                        }
+                                                )
+                                            }
+                                        }
+
+                                        // Long-press popup — same actions as a regular grid app.
+                                        com.bearinmind.launcher314.ui.components.AnimatedPopup(
+                                            visible = showContextMenu && iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                                            onDismissRequest = { showContextMenu = false },
+                                            iconBoundsInRoot = iconBoundsInRoot
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .defaultMinSize(minHeight = 48.dp)
+                                                    .padding(horizontal = 16.dp),
+                                                contentAlignment = Alignment.CenterStart
+                                            ) {
+                                                Text(
+                                                    text = appInfo.name,
+                                                    fontWeight = FontWeight.Bold,
+                                                    lineHeight = 22.sp,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.padding(end = 28.dp)
+                                                )
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.CenterEnd)
+                                                        .size(36.dp)
+                                                        .clip(CircleShape)
+                                                        .clickable {
+                                                            showContextMenu = false
+                                                            openAppInfo(context, homeApp.packageName)
+                                                        },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Info,
+                                                        contentDescription = "App info"
+                                                    )
+                                                }
+                                            }
+                                            Divider()
+                                            DropdownMenuItem(
+                                                text = { Text("Remove from home") },
+                                                onClick = {
+                                                    showContextMenu = false
+                                                    saveHomeApps(homeApps.filter {
+                                                        !(it.packageName == homeApp.packageName && it.page == page && it.position == homeApp.position)
+                                                    })
+                                                },
+                                                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Uninstall") },
+                                                onClick = {
+                                                    showContextMenu = false
+                                                    uninstallApp(context, homeApp.packageName)
+                                                },
+                                                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Customize") },
+                                                onClick = {
+                                                    showContextMenu = false
+                                                    customizingApp = appInfo
+                                                },
+                                                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         } // End of inner Box (contains grid + widget overlay)
                     } // End of padded Column

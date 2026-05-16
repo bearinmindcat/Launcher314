@@ -23,7 +23,14 @@ data class AppCustomization(
     val labelFontId: String? = null,
     val labelColor: Long? = null,
     val labelColorIntensity: Int? = null,
-    val customIconPackName: String? = null
+    val customIconPackName: String? = null,
+    // Experimental — Issue #48. When `detachedFromGrid` is true the icon is
+    // skipped in the home-grid render and instead drawn as a free-floating
+    // overlay on the page, positioned by detachedX/detachedY in pixels
+    // (top-left of the page content area). Null x/y → initial placement.
+    val detachedFromGrid: Boolean = false,
+    val detachedX: Float? = null,
+    val detachedY: Float? = null
 )
 
 @Serializable

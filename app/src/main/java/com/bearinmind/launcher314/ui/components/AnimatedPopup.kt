@@ -41,22 +41,32 @@ private class ArrowPopupPositionProvider(
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize
     ): IntOffset {
-        // Horizontal: center popup on anchor, clamped to screen edges
-        val x = (anchorBounds.left + anchorBounds.right - popupContentSize.width) / 2
-        val clampedX = x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
-
-        // Use actual icon bounds if available, otherwise estimate
-        val gap = gapPx
+        // Use the icon's actual visual bounds for centering whenever the
+        // caller provided them (e.g. detached free-floating icons whose
+        // popup composable lives outside the icon's layout slot, so the
+        // anchorBounds Compose hands us is unrelated to the icon's
+        // position). Falls back to anchorBounds when no icon bounds were
+        // supplied — preserves original behavior for grid cells whose
+        // popup composable is nested inside the cell.
+        val useIconBounds = iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero
+        val anchorCenterX: Float
         val iconTop: Int
         val iconBottom: Int
-        if (iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero) {
+        if (useIconBounds) {
+            anchorCenterX = (iconBoundsInRoot.left + iconBoundsInRoot.right) / 2f
             iconTop = iconBoundsInRoot.top.toInt()
             iconBottom = iconBoundsInRoot.bottom.toInt()
         } else {
-            // Fallback: use full anchor bounds
+            anchorCenterX = (anchorBounds.left + anchorBounds.right) / 2f
             iconTop = anchorBounds.top
             iconBottom = anchorBounds.bottom
         }
+
+        // Horizontal: center popup on anchor center, clamped to screen edges
+        val x = (anchorCenterX - popupContentSize.width / 2f).toInt()
+        val clampedX = x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
+
+        val gap = gapPx
         val belowY = iconBottom + gap
         val aboveY = iconTop - popupContentSize.height - gap
 
@@ -70,12 +80,11 @@ private class ArrowPopupPositionProvider(
             isAbove = true
             y = aboveY
         } else {
-            isAbove = windowSize.height - anchorBounds.bottom < anchorBounds.top
+            isAbove = windowSize.height - iconBottom < iconTop
             y = if (isAbove) aboveY else belowY
         }
 
         // Arrow tip X = anchor center, relative to popup's left edge
-        val anchorCenterX = (anchorBounds.left + anchorBounds.right) / 2f
         val arrowX = anchorCenterX - clampedX
 
         onPlacement(isAbove, arrowX)

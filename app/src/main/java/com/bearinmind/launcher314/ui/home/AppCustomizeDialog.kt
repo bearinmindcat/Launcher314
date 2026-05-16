@@ -119,6 +119,8 @@ fun AppCustomizeDialog(
         (currentCustomization?.iconSizePercent ?: globalIconSizePercent).toFloat().coerceIn(SliderConfigs.perAppIconSize.minValue, SliderConfigs.perAppIconSize.maxValue)
     ) }
     var tintBackgroundOnly by remember { mutableStateOf(currentCustomization?.iconTintBackgroundOnly ?: false) }
+    // Issue #48 — Experimental: detach the icon from the grid.
+    var detachedFromGrid by remember { mutableStateOf(currentCustomization?.detachedFromGrid ?: false) }
     var selectedShapeExp by remember { mutableStateOf(currentCustomization?.iconShapeExp) }
     var customIconPath by remember { mutableStateOf(currentCustomization?.customIconPath) }
     var selectedTextSizePercent by remember { mutableStateOf(
@@ -185,7 +187,7 @@ fun AppCustomizeDialog(
     }
 
     // Which expandable section is open (mutually exclusive)
-    var expandedSection by remember { mutableStateOf(0) } // 0=none, 1=shape(EXP), 2=tint, 3=size, 4=icon
+    var expandedSection by remember { mutableStateOf(0) } // 0=none, 1=shape(EXP), 2=tint, 3=size, 4=label, 5=experimental
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -588,6 +590,37 @@ fun AppCustomizeDialog(
                         )
                     }
 
+                    // Experimental button — placeholder section for upcoming
+                    // Total-Launcher-style "free-floating icon" features. Lives
+                    // alongside the other customization tabs so the icon
+                    // long-press menu stays clean. Issue #48.
+                    val experimentalColor = when {
+                        expandedSection == 5 -> MaterialTheme.colorScheme.primary
+                        else -> Color.White.copy(alpha = 0.4f)
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(selectedShape).clickable {
+                                expandedSection = if (expandedSection == 5) 0 else 5
+                            }
+                            .then(if (expandedSection == 5) Modifier.background(selectedBg, selectedShape) else Modifier)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_experiment),
+                            contentDescription = "Experimental",
+                            modifier = iconSize,
+                            tint = experimentalColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Exp.",
+                            color = experimentalColor,
+                            fontSize = 11.sp
+                        )
+                    }
+
                 }
 
                 // Expandable section content (single AnimatedContent for smooth transitions)
@@ -892,6 +925,47 @@ fun AppCustomizeDialog(
                                 )
                             }
                         }
+                        5 -> {
+                            // Experimental section — UI shell for the upcoming
+                            // Total-Launcher-style "free-floating icons" feature
+                            // (icons unlocked from the grid and movable
+                            // independently). Issue #48. The toggle is local
+                            // state only for now; wiring to AppCustomization
+                            // persistence + actual free-position rendering
+                            // comes in a follow-up commit.
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 32.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Detach from grid",
+                                        color = Color.White.copy(alpha = 0.87f),
+                                        fontSize = 14.sp
+                                    )
+                                    Switch(
+                                        checked = detachedFromGrid,
+                                        onCheckedChange = { detachedFromGrid = it }
+                                    )
+                                }
+                                Text(
+                                    text = if (detachedFromGrid) "Long-press the icon to drag it freely on the page."
+                                    else "Lets you place this icon anywhere on the home page, off the grid.",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(horizontal = 32.dp)
+                                )
+                            }
+                        }
                         else -> {
                             // No section expanded — empty spacer (0 height)
                             Spacer(modifier = Modifier.fillMaxWidth())
@@ -967,7 +1041,14 @@ fun AppCustomizeDialog(
                                 labelFontId = selectedFontId,
                                 labelColor = selectedLabelColor,
                                 labelColorIntensity = if (selectedLabelColor != null) labelColorIntensity.roundToInt().takeIf { it != 100 } else null,
-                                customIconPackName = selectedIconPackName
+                                customIconPackName = selectedIconPackName,
+                                detachedFromGrid = detachedFromGrid,
+                                // Preserve existing position if toggling on/off mid-edit — null
+                                // only when the user explicitly re-attaches and we want to
+                                // forget the saved coords. For now keep them so toggling back
+                                // on returns the icon to its previous free position.
+                                detachedX = currentCustomization?.detachedX,
+                                detachedY = currentCustomization?.detachedY
                             )
                             onSave(newCustomization)
                         },
