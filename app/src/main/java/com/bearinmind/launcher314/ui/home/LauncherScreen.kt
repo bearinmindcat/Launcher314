@@ -56,6 +56,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.OpenWith
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -644,6 +645,11 @@ fun LauncherScreen(
     var allAvailableApps by remember { mutableStateOf<List<HomeAppInfo>>(emptyList()) }
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(appContext) }
     var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
+    // Detached-icon edit mode — lives at LauncherScreen scope (not per-page) so
+    // the HorizontalPager's userScrollEnabled can lock pager swipes while a
+    // detached icon is being edited, and so only ONE icon across all pages can
+    // be in edit mode at a time. Issue #48.
+    var editingPackageName by remember { mutableStateOf<String?>(null) }
     var iconCacheVersion by remember { mutableIntStateOf(0) }
     var customizingApp by remember { mutableStateOf<HomeAppInfo?>(null) }
     var customizingFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.HomeFolder?>(null) }
@@ -2511,8 +2517,10 @@ fun LauncherScreen(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
                         flingBehavior = homePagerFlingBehavior,
-                        // Disable manual swipe during drag to prevent conflicts
-                        userScrollEnabled = draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged && !isStackSwipeActive
+                        // Disable manual swipe during drag, when a detached
+                        // icon is in edit mode, or when widgets are being
+                        // manipulated.
+                        userScrollEnabled = draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged && !isStackSwipeActive && editingPackageName == null
                     ) { page ->
                     // Grid with drag and drop - using Column/Row for proper space distribution
                     // The outer Column applies padding so both grid cells AND widgets respect the same bounds
@@ -3708,6 +3716,69 @@ fun LauncherScreen(
                                 }
                             }
                             val detachedHaptic = rememberHapticFeedback()
+                            // Active-edit overlay state for the Total-Launcher-style
+                            // bracket + crosshair + coord labels. Per-page (only the
+                            // page containing the editing icon renders the overlay).
+                            // editingPackageName itself is hoisted to LauncherScreen
+                            // scope so the pager swipe can be locked while editing.
+                            var activeEditBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+                            // Edit-mode modal blocker — rendered BEFORE the
+                            // detached icons so the icons sit on top of it for
+                            // pointer-dispatch priority. Consumes every event
+                            // that lands OUTSIDE the editing icon's bracket
+                            // area, blocking parent gestures (swipe-up for
+                            // drawer, swipe-down for notifications, page-pager
+                            // swipes, taps on other apps/widgets). Touches
+                            // inside the icon are passed through (no consume),
+                            // so the icon's own pointerInput handles drag. A
+                            // tap outside that ends without dragging exits
+                            // edit mode.
+                            if (editingPackageName != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .pointerInput(editingPackageName) {
+                                            awaitEachGesture {
+                                                val down = awaitFirstDown(requireUnconsumed = false)
+                                                val bounds = activeEditBounds
+                                                if (bounds != null && bounds.contains(down.position)) {
+                                                    // Inside icon — don't consume,
+                                                    // let icon's pointerInput handle.
+                                                    return@awaitEachGesture
+                                                }
+                                                // Outside icon — fully claim this
+                                                // gesture so no parent handler fires.
+                                                down.consume()
+                                                val touchSlop = viewConfiguration.touchSlop
+                                                val startPos = down.position
+                                                var moved = false
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                                        ?: break
+                                                    if (change.pressed) {
+                                                        val dx = change.position.x - startPos.x
+                                                        val dy = change.position.y - startPos.y
+                                                        if (kotlin.math.sqrt(dx * dx + dy * dy) > touchSlop) {
+                                                            moved = true
+                                                        }
+                                                        change.consume()
+                                                    } else {
+                                                        if (!moved) {
+                                                            // Tap outside — exit edit mode.
+                                                            editingPackageName = null
+                                                            activeEditBounds = null
+                                                        }
+                                                        change.consume()
+                                                        break
+                                                    }
+                                                }
+                                            }
+                                        }
+                                )
+                            }
+
                             // Defer rendering until the grid has measured cellSize so
                             // we have a real cell pixel size to anchor "detach in place".
                             if (cellSize != IntSize.Zero) {
@@ -3733,10 +3804,16 @@ fun LauncherScreen(
                                         var isFingerDown by remember { mutableStateOf(false) }
                                         var flashOverlay by remember { mutableStateOf(false) }
                                         val isCustomizingThis = customizingApp?.packageName == homeApp.packageName
+                                        val inEditMode = editingPackageName == homeApp.packageName
+                                        // Read the live inEditMode via rememberUpdatedState
+                                        // so the pointerInput coroutine doesn't have to
+                                        // restart (and lose in-flight pointers) when the
+                                        // user enters edit mode after a drag.
+                                        val inEditModeState = rememberUpdatedState(inEditMode)
                                         // Match the grid icon's interaction state machine: scale up
-                                        // on long-press, drag, or while the customize dialog is
-                                        // open. 1.265× matches DraggableGridCell exactly.
-                                        val isScaledUp = showContextMenu || isDragging || isCustomizingThis
+                                        // on long-press, drag, edit mode, or while the customize
+                                        // dialog is open. 1.265× matches DraggableGridCell exactly.
+                                        val isScaledUp = showContextMenu || isDragging || isCustomizingThis || inEditMode
                                         val scale by animateFloatAsState(
                                             targetValue = if (isScaledUp) 1.265f else 1f,
                                             animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
@@ -3750,6 +3827,20 @@ fun LauncherScreen(
                                             finishedListener = { if (flashOverlay) flashOverlay = false }
                                         )
                                         val overlayAlpha = maxOf(if (isFingerDown) 0.25f else 0f, flashAlpha)
+                                        // Measure the label text once per (text, font-size) so
+                                        // the edit-mode bounding box can fit the icon AND the
+                                        // label (the label is often wider than the icon).
+                                        val labelTextForBox = appInfo.customization?.customLabel?.takeIf { it.isNotEmpty() }
+                                            ?: appInfo.name
+                                        val labelFontSizeForBox = appInfo.customization?.iconTextSizePercent?.let { 12.sp * it / 100f }
+                                            ?: gridAppNameFont
+                                        val textMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
+                                        val measuredLabelWidthPx = remember(labelTextForBox, labelFontSizeForBox) {
+                                            textMeasurer.measure(
+                                                text = labelTextForBox,
+                                                style = androidx.compose.ui.text.TextStyle(fontSize = labelFontSizeForBox)
+                                            ).size.width.toFloat()
+                                        }
                                         LaunchedEffect(cust.detachedX, cust.detachedY) {
                                             cust.detachedX?.let { if (it != posX) posX = it }
                                             cust.detachedY?.let { if (it != posY) posY = it }
@@ -3772,23 +3863,126 @@ fun LauncherScreen(
                                                 // deltas`.
                                                 .pointerInput(homeApp.packageName) {
                                                     val touchSlop = viewConfiguration.touchSlop
+                                                    // Helper: compute the icon's visible bounds
+                                                    // (in PAGE coords) given the current pos +
+                                                    // drag offset. Used to update the editing
+                                                    // overlay (corner brackets + crosshair).
+                                                    val perAppPctEdit = appInfo.customization?.iconSizePercent ?: iconSizePercent
+                                                    val iconPxEdit = with(density) {
+                                                        (iconSizeDp * perAppPctEdit / iconSizePercent.toFloat()).dp.toPx()
+                                                    }
+                                                    val labelOffsetPxEdit = with(density) {
+                                                        (gridIconTextSpacer + 16.dp).toPx()
+                                                    }
+                                                    val scaledIconPxEdit = iconPxEdit * 1.265f
+                                                    // Cap measured label width at the cell width
+                                                    // since OverlayAppContent uses fillMaxWidth +
+                                                    // single-line ellipsis, so the label can never
+                                                    // visually exceed the cell.
+                                                    val cappedLabelWidth = kotlin.math.min(measuredLabelWidthPx, cellSize.width.toFloat())
+                                                    val boundsPaddingPx = with(density) { 8.dp.toPx() }
+                                                    fun updateEditBounds() {
+                                                        val cx = posX + dragOffsetX + cellSize.width / 2f
+                                                        // Icon's vertical center inside the cell.
+                                                        // OverlayAppContent centers a Column of
+                                                        // {icon, spacer, label} vertically, so the
+                                                        // icon center is offset upward from the
+                                                        // cell center by half the label area.
+                                                        val cy = posY + dragOffsetY + cellSize.height / 2f - labelOffsetPxEdit / 2f
+                                                        // Bounding box width = max of scaled icon
+                                                        // and measured label, plus a little padding.
+                                                        val widthPx = kotlin.math.max(scaledIconPxEdit, cappedLabelWidth) + boundsPaddingPx
+                                                        // Bounding box surrounds the icon AND the
+                                                        // label below it. Crosshair calculation in
+                                                        // the Canvas re-derives the icon-only center
+                                                        // from bounds.top + iconSize/2.
+                                                        activeEditBounds = androidx.compose.ui.geometry.Rect(
+                                                            left = cx - widthPx / 2f,
+                                                            top = cy - scaledIconPxEdit / 2f,
+                                                            right = cx + widthPx / 2f,
+                                                            bottom = cy + scaledIconPxEdit / 2f + labelOffsetPxEdit
+                                                        )
+                                                    }
+                                                    fun commitDragEnd() {
+                                                        val newX = posX + dragOffsetX
+                                                        val newY = posY + dragOffsetY
+                                                        posX = newX
+                                                        posY = newY
+                                                        dragOffsetX = 0f
+                                                        dragOffsetY = 0f
+                                                        val newCust = cust.copy(
+                                                            detachedX = newX,
+                                                            detachedY = newY
+                                                        )
+                                                        appCustomizations = setCustomization(
+                                                            context,
+                                                            appCustomizations,
+                                                            homeApp.packageName,
+                                                            newCust
+                                                        )
+                                                    }
                                                     awaitEachGesture {
                                                         val down = awaitFirstDown(requireUnconsumed = false)
                                                         val startPos = down.position
                                                         isFingerDown = true
-                                                        // Wait for long-press timeout; if user
-                                                        // releases first, treat as a tap and launch.
+
+                                                        if (inEditModeState.value) {
+                                                            // Already in edit mode — any touch+drag
+                                                            // repositions, no long-press needed. On
+                                                            // release we commit position but STAY in
+                                                            // edit mode (the page-level tap-outside
+                                                            // handler exits it).
+                                                            var dragStarted = false
+                                                            try {
+                                                                while (true) {
+                                                                    val event = awaitPointerEvent()
+                                                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                                                        ?: break
+                                                                    if (change.pressed) {
+                                                                        val dx = change.position.x - startPos.x
+                                                                        val dy = change.position.y - startPos.y
+                                                                        val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                                                        if (!dragStarted && dist > touchSlop) {
+                                                                            dragStarted = true
+                                                                            isDragging = true
+                                                                            updateEditBounds()
+                                                                        }
+                                                                        if (dragStarted) {
+                                                                            val delta = change.positionChange()
+                                                                            dragOffsetX += delta.x
+                                                                            dragOffsetY += delta.y
+                                                                            updateEditBounds()
+                                                                            change.consume()
+                                                                        }
+                                                                    } else {
+                                                                        isFingerDown = false
+                                                                        if (dragStarted) {
+                                                                            isDragging = false
+                                                                            commitDragEnd()
+                                                                            updateEditBounds() // refresh post-commit
+                                                                        }
+                                                                        // Stay in edit mode.
+                                                                        break
+                                                                    }
+                                                                }
+                                                            } catch (_: Throwable) {
+                                                                isFingerDown = false
+                                                                isDragging = false
+                                                                dragOffsetX = 0f
+                                                                dragOffsetY = 0f
+                                                            }
+                                                            return@awaitEachGesture
+                                                        }
+
+                                                        // Not in edit mode — original flow:
+                                                        // tap → launch, long-press → popup,
+                                                        // long-press + drag → enter edit mode.
                                                         val longPress = awaitLongPressOrCancellation(down.id)
                                                         if (longPress == null) {
                                                             isFingerDown = false
-                                                            // Was a tap — launch
                                                             launchApp(context, homeApp.packageName)
                                                             return@awaitEachGesture
                                                         }
-                                                        // Long-press fired — show popup AND scale up
-                                                        // immediately, exactly like grid icons. If the
-                                                        // user starts moving past touchSlop we hide the
-                                                        // popup and switch to drag mode.
                                                         showContextMenu = true
                                                         flashOverlay = true
                                                         detachedHaptic.performLongPress()
@@ -3806,44 +4000,26 @@ fun LauncherScreen(
                                                                         dragStarted = true
                                                                         showContextMenu = false
                                                                         isDragging = true
+                                                                        updateEditBounds()
                                                                     }
                                                                     if (dragStarted) {
-                                                                        // Outer Box stays at (posX, posY)
-                                                                        // throughout the drag; visual
-                                                                        // offset accumulates here and is
-                                                                        // applied via graphicsLayer on
-                                                                        // the inner visual Box. This keeps
-                                                                        // the pointerInput's local coord
-                                                                        // system stable so positionChange
-                                                                        // reflects raw finger motion.
                                                                         val delta = change.positionChange()
                                                                         dragOffsetX += delta.x
                                                                         dragOffsetY += delta.y
+                                                                        updateEditBounds()
                                                                         change.consume()
                                                                     }
                                                                 } else {
                                                                     isFingerDown = false
                                                                     if (dragStarted) {
-                                                                        // Drag end — commit the in-flight
-                                                                        // visual offset into posX/posY,
-                                                                        // zero the offset, and persist.
                                                                         isDragging = false
-                                                                        val newX = posX + dragOffsetX
-                                                                        val newY = posY + dragOffsetY
-                                                                        posX = newX
-                                                                        posY = newY
-                                                                        dragOffsetX = 0f
-                                                                        dragOffsetY = 0f
-                                                                        val newCust = cust.copy(
-                                                                            detachedX = newX,
-                                                                            detachedY = newY
-                                                                        )
-                                                                        appCustomizations = setCustomization(
-                                                                            context,
-                                                                            appCustomizations,
-                                                                            homeApp.packageName,
-                                                                            newCust
-                                                                        )
+                                                                        commitDragEnd()
+                                                                        // ENTER edit mode — overlay
+                                                                        // persists, future touches
+                                                                        // drag without long-press,
+                                                                        // tap-outside exits.
+                                                                        editingPackageName = homeApp.packageName
+                                                                        updateEditBounds()
                                                                     }
                                                                     // If not dragged, popup stays
                                                                     // open until user dismisses it.
@@ -3975,6 +4151,176 @@ fun LauncherScreen(
                                                 leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                                             )
                                         }
+                                    }
+                                }
+                            }
+
+                            // Total-Launcher-style editing overlay for the
+                            // currently-dragging detached icon (issue #48):
+                            //   - Solid yellow corner brackets at the icon
+                            //   - Dashed yellow lines between the brackets
+                            //   - Dashed crosshair lines from the icon
+                            //     center extending to the page edges
+                            //   - Pixel-coord labels at the crosshair tips
+                            activeEditBounds?.let { bounds ->
+                                val overlayColor = androidx.compose.ui.graphics.Color(0xFFFFC107)
+                                val strokeDp = 2.dp
+                                val cornerLenDp = 18.dp
+                                val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        val strokePx = strokeDp.toPx()
+                                        val cornerPx = cornerLenDp.toPx()
+                                        // Extend crosshair lines past the page padding
+                                        // so they reach the actual screen edges. Parent
+                                        // Box + Column both have graphicsLayer { clip = false },
+                                        // so drawing past `size` is allowed.
+                                        val padHpx = gridHPadding.toPx()
+                                        val padVpx = gridVPadding.toPx()
+                                        val centerX = (bounds.left + bounds.right) / 2f
+                                        // Crosshair Y anchors on the ICON center, not the
+                                        // bounding-box center (which extends below the icon
+                                        // to wrap the label). Icon height is derived by
+                                        // subtracting the label-area portion from total bounds.
+                                        val labelOffsetPxC = (gridIconTextSpacer + 16.dp).toPx()
+                                        val iconHeightPx = (bounds.bottom - bounds.top) - labelOffsetPxC
+                                        val centerY = bounds.top + iconHeightPx / 2f
+
+                                        // Corner brackets (solid L-shapes at each corner)
+                                        // TOP-LEFT
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.left + cornerPx, bounds.top),
+                                            strokeWidth = strokePx)
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top + cornerPx),
+                                            strokeWidth = strokePx)
+                                        // TOP-RIGHT
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.right, bounds.top),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.right - cornerPx, bounds.top),
+                                            strokeWidth = strokePx)
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.right, bounds.top),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.right, bounds.top + cornerPx),
+                                            strokeWidth = strokePx)
+                                        // BOTTOM-LEFT
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.left, bounds.bottom),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.left + cornerPx, bounds.bottom),
+                                            strokeWidth = strokePx)
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.left, bounds.bottom),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.left, bounds.bottom - cornerPx),
+                                            strokeWidth = strokePx)
+                                        // BOTTOM-RIGHT
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.right, bounds.bottom),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.right - cornerPx, bounds.bottom),
+                                            strokeWidth = strokePx)
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.right, bounds.bottom),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.right, bounds.bottom - cornerPx),
+                                            strokeWidth = strokePx)
+
+                                        // Dashed lines between the corner brackets
+                                        // TOP edge
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.left + cornerPx, bounds.top),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.right - cornerPx, bounds.top),
+                                            strokeWidth = strokePx,
+                                            pathEffect = dashEffect)
+                                        // BOTTOM edge
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.left + cornerPx, bounds.bottom),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.right - cornerPx, bounds.bottom),
+                                            strokeWidth = strokePx,
+                                            pathEffect = dashEffect)
+                                        // LEFT edge
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top + cornerPx),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.left, bounds.bottom - cornerPx),
+                                            strokeWidth = strokePx,
+                                            pathEffect = dashEffect)
+                                        // RIGHT edge
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.right, bounds.top + cornerPx),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.right, bounds.bottom - cornerPx),
+                                            strokeWidth = strokePx,
+                                            pathEffect = dashEffect)
+
+                                        // Crosshair: dashed lines from the icon
+                                        // center extending all the way to the
+                                        // screen edges (past the page padding).
+                                        // Horizontal — left of icon
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(-padHpx, centerY),
+                                            end = androidx.compose.ui.geometry.Offset(bounds.left, centerY),
+                                            strokeWidth = strokePx,
+                                            pathEffect = dashEffect)
+                                        // Horizontal — right of icon
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(bounds.right, centerY),
+                                            end = androidx.compose.ui.geometry.Offset(size.width + padHpx, centerY),
+                                            strokeWidth = strokePx,
+                                            pathEffect = dashEffect)
+                                        // Vertical — above icon
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(centerX, -padVpx),
+                                            end = androidx.compose.ui.geometry.Offset(centerX, bounds.top),
+                                            strokeWidth = strokePx,
+                                            pathEffect = dashEffect)
+                                        // Vertical — below icon
+                                        drawLine(overlayColor,
+                                            start = androidx.compose.ui.geometry.Offset(centerX, bounds.bottom),
+                                            end = androidx.compose.ui.geometry.Offset(centerX, size.height + padVpx),
+                                            strokeWidth = strokePx,
+                                            pathEffect = dashEffect)
+                                    }
+
+                                    // Pixel-coord labels at the crosshair tips.
+                                    // Left  = distance from page-left to icon center X.
+                                    // Right = distance from icon center X to page-right.
+                                    // Top   = distance from page-top to icon center Y.
+                                    val centerXpx = (bounds.left + bounds.right) / 2f
+                                    // Icon center Y — derived the same way as in the Canvas
+                                    // (total bounds height minus label-area).
+                                    val labelOffsetPxL = with(LocalDensity.current) {
+                                        (gridIconTextSpacer + 16.dp).toPx()
+                                    }
+                                    val iconHeightPxL = (bounds.bottom - bounds.top) - labelOffsetPxL
+                                    val centerYpx = bounds.top + iconHeightPxL / 2f
+                                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                        val pageWpx = with(LocalDensity.current) { maxWidth.toPx() }
+                                        val leftDp = with(LocalDensity.current) { (bounds.left - 8.dp.toPx()).toDp() }
+                                        val rightLabelDp = with(LocalDensity.current) { (bounds.right + 8.dp.toPx()).toDp() }
+                                        val centerYdpLabel = with(LocalDensity.current) { (centerYpx - 8.dp.toPx()).toDp() }
+                                        Text(
+                                            text = "${centerXpx.toInt()}",
+                                            color = overlayColor,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier
+                                                .align(Alignment.TopStart)
+                                                .offset(x = 4.dp, y = centerYdpLabel)
+                                        )
+                                        Text(
+                                            text = "${(pageWpx - centerXpx).toInt()}",
+                                            color = overlayColor,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = (-4).dp, y = centerYdpLabel)
+                                        )
+                                        val centerXdpLabel = with(LocalDensity.current) { (centerXpx + 4.dp.toPx()).toDp() }
+                                        Text(
+                                            text = "${centerYpx.toInt()}",
+                                            color = overlayColor,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier
+                                                .align(Alignment.TopStart)
+                                                .offset(x = centerXdpLabel, y = 4.dp)
+                                        )
                                     }
                                 }
                             }
