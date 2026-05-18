@@ -3722,6 +3722,11 @@ fun LauncherScreen(
                             // editingPackageName itself is hoisted to LauncherScreen
                             // scope so the pager swipe can be locked while editing.
                             var activeEditBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+                            // Icon's geometric centre in page coords (NOT the
+                            // bounding-box centre, which now drifts when the
+                            // box is widened to wrap a wide label). Drives the
+                            // crosshair anchor in the Canvas.
+                            var activeEditIconCenter by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
 
                             // Edit-mode modal blocker — rendered BEFORE the
                             // detached icons so the icons sit on top of it for
@@ -3769,6 +3774,7 @@ fun LauncherScreen(
                                                             // Tap outside — exit edit mode.
                                                             editingPackageName = null
                                                             activeEditBounds = null
+                                                            activeEditIconCenter = null
                                                         }
                                                         change.consume()
                                                         break
@@ -3827,20 +3833,31 @@ fun LauncherScreen(
                                             finishedListener = { if (flashOverlay) flashOverlay = false }
                                         )
                                         val overlayAlpha = maxOf(if (isFingerDown) 0.25f else 0f, flashAlpha)
-                                        // Measure the label text once per (text, font-size) so
-                                        // the edit-mode bounding box can fit the icon AND the
-                                        // label (the label is often wider than the icon).
+                                        // Measure the label text with the SAME style the actual
+                                        // OverlayAppContent uses (font size + font family) so
+                                        // the bounding box matches the rendered width. Without
+                                        // the font family the measurement under-reports for
+                                        // any custom font that's wider than the default.
                                         val labelTextForBox = appInfo.customization?.customLabel?.takeIf { it.isNotEmpty() }
                                             ?: appInfo.name
                                         val labelFontSizeForBox = appInfo.customization?.iconTextSizePercent?.let { 12.sp * it / 100f }
                                             ?: gridAppNameFont
+                                        val labelFontFamilyForBox = appInfo.customization?.labelFontId?.let { id ->
+                                            FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                                                ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+                                        } ?: selectedFontFamily ?: androidx.compose.ui.text.font.FontFamily.Default
                                         val textMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
-                                        val measuredLabelWidthPx = remember(labelTextForBox, labelFontSizeForBox) {
+                                        val labelMeasured = remember(labelTextForBox, labelFontSizeForBox, labelFontFamilyForBox) {
                                             textMeasurer.measure(
                                                 text = labelTextForBox,
-                                                style = androidx.compose.ui.text.TextStyle(fontSize = labelFontSizeForBox)
-                                            ).size.width.toFloat()
+                                                style = androidx.compose.ui.text.TextStyle(
+                                                    fontSize = labelFontSizeForBox,
+                                                    fontFamily = labelFontFamilyForBox
+                                                )
+                                            )
                                         }
+                                        val measuredLabelWidthPx = labelMeasured.size.width.toFloat()
+                                        val measuredLabelHeightPx = labelMeasured.size.height.toFloat()
                                         LaunchedEffect(cust.detachedX, cust.detachedY) {
                                             cust.detachedX?.let { if (it != posX) posX = it }
                                             cust.detachedY?.let { if (it != posY) posY = it }
@@ -3871,37 +3888,56 @@ fun LauncherScreen(
                                                     val iconPxEdit = with(density) {
                                                         (iconSizeDp * perAppPctEdit / iconSizePercent.toFloat()).dp.toPx()
                                                     }
-                                                    val labelOffsetPxEdit = with(density) {
-                                                        (gridIconTextSpacer + 16.dp).toPx()
-                                                    }
+                                                    // Real label area = spacer + actual measured
+                                                    // label height (was previously hardcoded to
+                                                    // 16.dp which over-estimated for small fonts
+                                                    // and under-estimated for big ones).
+                                                    val labelOffsetPxEdit = with(density) { gridIconTextSpacer.toPx() } +
+                                                        measuredLabelHeightPx
                                                     val scaledIconPxEdit = iconPxEdit * 1.265f
                                                     // Cap measured label width at the cell width
                                                     // since OverlayAppContent uses fillMaxWidth +
                                                     // single-line ellipsis, so the label can never
                                                     // visually exceed the cell.
                                                     val cappedLabelWidth = kotlin.math.min(measuredLabelWidthPx, cellSize.width.toFloat())
-                                                    val boundsPaddingPx = with(density) { 8.dp.toPx() }
+                                                    // Padding around the bounding box — generous
+                                                    // enough to wrap text-shadow blur (~3 px) and
+                                                    // any letter-spacing slack that TextMeasurer
+                                                    // doesn't account for perfectly.
+                                                    val boundsPaddingPx = with(density) { 12.dp.toPx() }
+                                                    // The icon's inner visual Box has a
+                                                    // graphicsLayer { scaleX = 1.265 } applied
+                                                    // while editing. graphicsLayer doesn't change
+                                                    // layout but DOES scale the rendered pixels —
+                                                    // so the icon AND label visually take up
+                                                    // 1.265× their layout size, with the scale
+                                                    // centred on the cell centre. Every spatial
+                                                    // value used to compute the bounding box has
+                                                    // to be multiplied by this scale.
+                                                    val editScale = 1.265f
+                                                    val scaledLabelOffsetPxEdit = labelOffsetPxEdit * editScale
+                                                    val scaledCappedLabelWidth = cappedLabelWidth * editScale
                                                     fun updateEditBounds() {
+                                                        val cellCenterY = posY + dragOffsetY + cellSize.height / 2f
                                                         val cx = posX + dragOffsetX + cellSize.width / 2f
-                                                        // Icon's vertical center inside the cell.
-                                                        // OverlayAppContent centers a Column of
-                                                        // {icon, spacer, label} vertically, so the
-                                                        // icon center is offset upward from the
-                                                        // cell center by half the label area.
-                                                        val cy = posY + dragOffsetY + cellSize.height / 2f - labelOffsetPxEdit / 2f
-                                                        // Bounding box width = max of scaled icon
-                                                        // and measured label, plus a little padding.
-                                                        val widthPx = kotlin.math.max(scaledIconPxEdit, cappedLabelWidth) + boundsPaddingPx
-                                                        // Bounding box surrounds the icon AND the
-                                                        // label below it. Crosshair calculation in
-                                                        // the Canvas re-derives the icon-only center
-                                                        // from bounds.top + iconSize/2.
+                                                        // Visual icon centre: the icon's layout
+                                                        // centre is offset upward from the cell
+                                                        // centre by labelOffsetPx/2, and the scale
+                                                        // multiplies that offset.
+                                                        val cy = cellCenterY - scaledLabelOffsetPxEdit / 2f
+                                                        // Bounding box spans the visually-scaled
+                                                        // icon (already includes 1.265× via
+                                                        // scaledIconPxEdit) and label width.
+                                                        val widthPx = kotlin.math.max(scaledIconPxEdit, scaledCappedLabelWidth) + boundsPaddingPx
                                                         activeEditBounds = androidx.compose.ui.geometry.Rect(
                                                             left = cx - widthPx / 2f,
                                                             top = cy - scaledIconPxEdit / 2f,
                                                             right = cx + widthPx / 2f,
-                                                            bottom = cy + scaledIconPxEdit / 2f + labelOffsetPxEdit
+                                                            // Bottom = visual icon bottom +
+                                                            // scaled (spacer + label height).
+                                                            bottom = cy + scaledIconPxEdit / 2f + scaledLabelOffsetPxEdit
                                                         )
+                                                        activeEditIconCenter = androidx.compose.ui.geometry.Offset(cx, cy)
                                                     }
                                                     fun commitDragEnd() {
                                                         val newX = posX + dragOffsetX
@@ -3961,6 +3997,11 @@ fun LauncherScreen(
                                                                             commitDragEnd()
                                                                             updateEditBounds() // refresh post-commit
                                                                         }
+                                                                        // Consume the release so a rogue
+                                                                        // app underneath the finger
+                                                                        // doesn't fire its clickable when
+                                                                        // we drop the icon over it.
+                                                                        change.consume()
                                                                         // Stay in edit mode.
                                                                         break
                                                                     }
@@ -4020,6 +4061,9 @@ fun LauncherScreen(
                                                                         // tap-outside exits.
                                                                         editingPackageName = homeApp.packageName
                                                                         updateEditBounds()
+                                                                        // Consume release to prevent any
+                                                                        // app underneath from launching.
+                                                                        change.consume()
                                                                     }
                                                                     // If not dragged, popup stays
                                                                     // open until user dismisses it.
@@ -4177,14 +4221,13 @@ fun LauncherScreen(
                                         // so drawing past `size` is allowed.
                                         val padHpx = gridHPadding.toPx()
                                         val padVpx = gridVPadding.toPx()
-                                        val centerX = (bounds.left + bounds.right) / 2f
-                                        // Crosshair Y anchors on the ICON center, not the
-                                        // bounding-box center (which extends below the icon
-                                        // to wrap the label). Icon height is derived by
-                                        // subtracting the label-area portion from total bounds.
-                                        val labelOffsetPxC = (gridIconTextSpacer + 16.dp).toPx()
-                                        val iconHeightPx = (bounds.bottom - bounds.top) - labelOffsetPxC
-                                        val centerY = bounds.top + iconHeightPx / 2f
+                                        // Crosshair anchors on the explicit icon center
+                                        // tracked in state (not derived from the bounding
+                                        // box, since the bounding box is now widened to
+                                        // wrap labels that can be wider than the icon).
+                                        val iconCenter = activeEditIconCenter
+                                        val centerX = iconCenter?.x ?: ((bounds.left + bounds.right) / 2f)
+                                        val centerY = iconCenter?.y ?: ((bounds.top + bounds.bottom) / 2f)
 
                                         // Corner brackets (solid L-shapes at each corner)
                                         // TOP-LEFT
@@ -4283,14 +4326,11 @@ fun LauncherScreen(
                                     // Left  = distance from page-left to icon center X.
                                     // Right = distance from icon center X to page-right.
                                     // Top   = distance from page-top to icon center Y.
-                                    val centerXpx = (bounds.left + bounds.right) / 2f
-                                    // Icon center Y — derived the same way as in the Canvas
-                                    // (total bounds height minus label-area).
-                                    val labelOffsetPxL = with(LocalDensity.current) {
-                                        (gridIconTextSpacer + 16.dp).toPx()
-                                    }
-                                    val iconHeightPxL = (bounds.bottom - bounds.top) - labelOffsetPxL
-                                    val centerYpx = bounds.top + iconHeightPxL / 2f
+                                    // Icon center comes from the explicit tracked
+                                    // state, falling back to bounds center if null.
+                                    val iconCenterLabel = activeEditIconCenter
+                                    val centerXpx = iconCenterLabel?.x ?: ((bounds.left + bounds.right) / 2f)
+                                    val centerYpx = iconCenterLabel?.y ?: ((bounds.top + bounds.bottom) / 2f)
                                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                                         val pageWpx = with(LocalDensity.current) { maxWidth.toPx() }
                                         val leftDp = with(LocalDensity.current) { (bounds.left - 8.dp.toPx()).toDp() }
