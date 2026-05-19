@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.boundsInRoot
@@ -650,6 +651,13 @@ fun LauncherScreen(
     // detached icon is being edited, and so only ONE icon across all pages can
     // be in edit mode at a time. Issue #48.
     var editingPackageName by remember { mutableStateOf<String?>(null) }
+    // Mirror editingPackageName into the static DetachedEditState flag so the
+    // parent LauncherWithDrawer's swipe-down handler can bail and never slide
+    // the drawer up while the user is moving / resizing a detached icon.
+    LaunchedEffect(editingPackageName) {
+        com.bearinmind.launcher314.ui.widgets.DetachedEditState.isEditing =
+            (editingPackageName != null)
+    }
     var iconCacheVersion by remember { mutableIntStateOf(0) }
     var customizingApp by remember { mutableStateOf<HomeAppInfo?>(null) }
     var customizingFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.HomeFolder?>(null) }
@@ -2364,7 +2372,11 @@ fun LauncherScreen(
                     )
                 }
             }
-            .pointerInput(Unit) {
+            .pointerInput(editingPackageName) {
+                // Skip while a detached icon is in edit mode — a stray
+                // double-tap during free-move/resize would otherwise fire
+                // the user's double-tap action (e.g. open an app).
+                if (editingPackageName != null) return@pointerInput
                 detectTapGestures(
                     onDoubleTap = {
                         // Issue #40: dispatch via the user-assigned action.
@@ -2390,8 +2402,11 @@ fun LauncherScreen(
             // the HorizontalPager has nothing to scroll to leftward), so it
             // never collides with normal page-changes. On any other page, the
             // pager handles the horizontal drag normally and this block bails.
-            .pointerInput(isEditMode, isWidgetBeingDragged, widgetResizeState.isResizing) {
-                if (isEditMode || isWidgetBeingDragged || widgetResizeState.isResizing) {
+            // Also bails while a detached icon is in edit mode — a horizontal
+            // drag on the icon body (free-move) would otherwise fire the
+            // swipe-right action on release and launch the assigned app.
+            .pointerInput(isEditMode, isWidgetBeingDragged, widgetResizeState.isResizing, editingPackageName) {
+                if (isEditMode || isWidgetBeingDragged || widgetResizeState.isResizing || editingPackageName != null) {
                     return@pointerInput
                 }
                 val touchSlop = viewConfiguration.touchSlop
@@ -2423,6 +2438,15 @@ fun LauncherScreen(
                     do {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        // Respect consume: if a child handler (a detached icon
+                        // being long-press-dragged, the icon-edit drag handler,
+                        // a widget, anything) has claimed this gesture, bail
+                        // BEFORE we commit. Without this check the swipe-right
+                        // action would fire on release even when the user was
+                        // really just dragging a detached icon rightward.
+                        if (change.isConsumed && !committed) {
+                            return@awaitEachGesture
+                        }
                         val dx = change.position.x - startX
                         val dy = change.position.y - startY
                         if (!committed) {
@@ -2771,20 +2795,32 @@ fun LauncherScreen(
                                                         selectedHomeCells = emptySet()
                                                         homeSelectionModeActive = false
                                                     }
-                                                } else if (cell is HomeGridCell.App && !isEditMode) {
+                                                } else if (cell is HomeGridCell.App && !isEditMode && editingPackageName == null) {
+                                                    // Don't launch the underlying grid app when a
+                                                    // detached icon is in edit mode — a tap on this
+                                                    // cell is almost always a misfire from the user
+                                                    // trying to grab a stretched detached icon whose
+                                                    // visual extent overflows its outer-Box hit area.
                                                     launchApp(context, cell.appInfo.packageName)
-                                                } else if (cell is HomeGridCell.Folder && !isEditMode) {
+                                                } else if (cell is HomeGridCell.Folder && !isEditMode && editingPackageName == null) {
                                                     openHomeFolder = cell.folder
                                                 }
                                             },
                                             onLongPress = { touchPosition ->
-                                                if (cell is HomeGridCell.Empty) {
-                                                    launcherMenuPosition = touchPosition
-                                                    showLauncherSettingsMenu = true
-                                                } else if (cell is HomeGridCell.App) {
-                                                    isEditMode = true
-                                                } else if (cell is HomeGridCell.Folder) {
-                                                    isEditMode = true
+                                                // While a detached icon is in edit mode, modal
+                                                // semantics apply — a long-press on a grid cell
+                                                // must NOT pop up the launcher menu or enter the
+                                                // grid edit mode. The user has to tap-outside
+                                                // first to exit the detached icon's edit mode.
+                                                if (editingPackageName == null) {
+                                                    if (cell is HomeGridCell.Empty) {
+                                                        launcherMenuPosition = touchPosition
+                                                        showLauncherSettingsMenu = true
+                                                    } else if (cell is HomeGridCell.App) {
+                                                        isEditMode = true
+                                                    } else if (cell is HomeGridCell.Folder) {
+                                                        isEditMode = true
+                                                    }
                                                 }
                                             },
                                             onRemove = {
@@ -3727,6 +3763,27 @@ fun LauncherScreen(
                             // box is widened to wrap a wide label). Drives the
                             // crosshair anchor in the Canvas.
                             var activeEditIconCenter by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+                            // In-flight resize multipliers — independent X and Y
+                            // so edge handles can stretch the icon along one
+                            // axis only (true widget-style edge resize). Reset
+                            // to 1.0 when the drag ends; the final values are
+                            // committed into detachedScaleX / detachedScaleY.
+                            var activeResizeMultiplierX by remember { mutableStateOf(1f) }
+                            var activeResizeMultiplierY by remember { mutableStateOf(1f) }
+                            // Which of the 8 handles (0..7, indices listed
+                            // below) is currently being dragged, or null. The
+                            // active one is drawn larger + white in the Canvas
+                            // (the ripple highlight) and adjacent edges fade
+                            // toward white as well, mirroring WidgetResize.
+                            var activeResizeHandle by remember { mutableStateOf<Int?>(null) }
+                            // In-flight position shift during a handle resize.
+                            // Keeps the OPPOSITE handle's edge / corner pinned
+                            // by translating the icon by -anchor * halfSize *
+                            // (multiplier - 1). Applied to graphicsLayer
+                            // translation AND folded into updateEditBounds so
+                            // the bracket follows the icon's visual position.
+                            // Commits into detachedX/Y on release.
+                            var activeResizeShift by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
                             // Edit-mode modal blocker — rendered BEFORE the
                             // detached icons so the icons sit on top of it for
@@ -3744,13 +3801,27 @@ fun LauncherScreen(
                                     modifier = Modifier
                                         .matchParentSize()
                                         .pointerInput(editingPackageName) {
+                                            // Resize-handle hit zones extend ~18dp past the
+                                            // bracket on every edge. Treat that ring as "inside"
+                                            // so the blocker doesn't consume handle touches.
+                                            val handlePadPx = with(density) { 18.dp.toPx() }
                                             awaitEachGesture {
                                                 val down = awaitFirstDown(requireUnconsumed = false)
                                                 val bounds = activeEditBounds
-                                                if (bounds != null && bounds.contains(down.position)) {
-                                                    // Inside icon — don't consume,
-                                                    // let icon's pointerInput handle.
-                                                    return@awaitEachGesture
+                                                if (bounds != null) {
+                                                    val expandedBounds = androidx.compose.ui.geometry.Rect(
+                                                        bounds.left - handlePadPx,
+                                                        bounds.top - handlePadPx,
+                                                        bounds.right + handlePadPx,
+                                                        bounds.bottom + handlePadPx
+                                                    )
+                                                    if (expandedBounds.contains(down.position)) {
+                                                        // Inside icon or its handle ring —
+                                                        // don't consume; let the icon's drag
+                                                        // handler / the handle's drag handler
+                                                        // claim it.
+                                                        return@awaitEachGesture
+                                                    }
                                                 }
                                                 // Outside icon — fully claim this
                                                 // gesture so no parent handler fires.
@@ -3816,16 +3887,18 @@ fun LauncherScreen(
                                         // restart (and lose in-flight pointers) when the
                                         // user enters edit mode after a drag.
                                         val inEditModeState = rememberUpdatedState(inEditMode)
-                                        // Match the grid icon's interaction state machine: scale up
-                                        // on long-press, drag, edit mode, or while the customize
-                                        // dialog is open. 1.265× matches DraggableGridCell exactly.
-                                        val isScaledUp = showContextMenu || isDragging || isCustomizingThis || inEditMode
-                                        val scale by animateFloatAsState(
-                                            targetValue = if (isScaledUp) 1.265f else 1f,
-                                            animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
-                                            label = "detachedScale_${homeApp.packageName}"
-                                        )
-                                        val effectiveScale = if (isScaledUp) scale else 1f
+                                        // Live editingPackageName for the gesture coroutine.
+                                        // When ANOTHER detached icon is in edit mode, this
+                                        // icon's gesture handler must bail so the user is
+                                        // forced to tap-outside first (modal-edit semantics).
+                                        val editingPackageNameState = rememberUpdatedState(editingPackageName)
+                                        // Detached icons NEVER scale up via interaction state — the
+                                        // crosshair + bracket are the visual feedback, and the
+                                        // per-app stored stretch is the user-controlled size.
+                                        // Adding a 1.265× pop on long-press / drag / customize
+                                        // makes the icon jump around relative to its committed
+                                        // bracket bounds, which the user explicitly doesn't want.
+                                        val effectiveScale = 1f
                                         val flashAlpha by animateFloatAsState(
                                             targetValue = if (flashOverlay) 0.4f else 0f,
                                             animationSpec = if (flashOverlay) tween(80) else tween(150),
@@ -3847,10 +3920,18 @@ fun LauncherScreen(
                                                 ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
                                         } ?: selectedFontFamily ?: androidx.compose.ui.text.font.FontFamily.Default
                                         val textMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
-                                        val labelMeasured = remember(labelTextForBox, labelFontSizeForBox, labelFontFamilyForBox) {
+                                        // Measure with the EXACT typography the actual Text
+                                        // composable uses (bodySmall with custom fontSize +
+                                        // fontFamily). bodySmall sets lineHeight = 16.sp at
+                                        // 12.sp font, so the rendered height is ~33% taller
+                                        // than the raw font-metric height — without using
+                                        // the same style the bounding box under-runs the
+                                        // label and the bracket cuts off below the text.
+                                        val bodySmallStyle = MaterialTheme.typography.bodySmall
+                                        val labelMeasured = remember(labelTextForBox, labelFontSizeForBox, labelFontFamilyForBox, bodySmallStyle) {
                                             textMeasurer.measure(
                                                 text = labelTextForBox,
-                                                style = androidx.compose.ui.text.TextStyle(
+                                                style = bodySmallStyle.copy(
                                                     fontSize = labelFontSizeForBox,
                                                     fontFamily = labelFontFamilyForBox
                                                 )
@@ -3858,6 +3939,79 @@ fun LauncherScreen(
                                         }
                                         val measuredLabelWidthPx = labelMeasured.size.width.toFloat()
                                         val measuredLabelHeightPx = labelMeasured.size.height.toFloat()
+
+                                        // ── Bounds-calc constants (hoisted to Composable scope so
+                                        // the LaunchedEffect below + the pointerInput can both
+                                        // use them). ─────────────────────────────────────────────
+                                        val perAppPctOuter = appInfo.customization?.iconSizePercent ?: iconSizePercent
+                                        val iconPxOuter = with(density) {
+                                            (iconSizeDp * perAppPctOuter / iconSizePercent.toFloat()).dp.toPx()
+                                        }
+                                        val labelOffsetPxOuter = with(density) { gridIconTextSpacer.toPx() } + measuredLabelHeightPx
+                                        val cappedLabelWidthOuter = kotlin.math.min(measuredLabelWidthPx, cellSize.width.toFloat())
+                                        val boundsPaddingPxOuter = with(density) { 12.dp.toPx() }
+                                        // Edit mode no longer scales the icon up (the crosshair
+                                        // is the visual cue), so the bracket / icon-visual scale
+                                        // factor is just 1.0 — only the per-axis stored stretch
+                                        // and in-flight resize multiplier change the icon size.
+                                        val editScaleOuter = 1f
+
+                                        // Stored stretch multipliers from prior commits (null = 1.0).
+                                        val storedScaleX = appInfo.customization?.detachedScaleX ?: 1f
+                                        val storedScaleY = appInfo.customization?.detachedScaleY ?: 1f
+
+                                        fun computeEditBoundsAndCenter(): Pair<androidx.compose.ui.geometry.Rect, androidx.compose.ui.geometry.Offset> {
+                                            val rx = if (inEditMode) activeResizeMultiplierX else 1f
+                                            val ry = if (inEditMode) activeResizeMultiplierY else 1f
+                                            val combinedScaleX = editScaleOuter * storedScaleX * rx
+                                            val combinedScaleY = editScaleOuter * storedScaleY * ry
+                                            val effIconWidth = iconPxOuter * combinedScaleX
+                                            val effIconHeight = iconPxOuter * combinedScaleY
+                                            // Label sits below the icon at scaled spacing — uses Y
+                                            // scale only since the label is vertically below icon.
+                                            val effLabelOffset = labelOffsetPxOuter * combinedScaleY
+                                            val effLabelWidth = cappedLabelWidthOuter * combinedScaleX
+                                            // Resize shift pins the opposite edge / corner during
+                                            // a handle drag — fold into the visual center so the
+                                            // bracket follows the icon, not the unshifted layout.
+                                            val shiftX = if (inEditMode) activeResizeShift.x else 0f
+                                            val shiftY = if (inEditMode) activeResizeShift.y else 0f
+                                            val cellCenterY = posY + dragOffsetY + shiftY + cellSize.height / 2f
+                                            val cx = posX + dragOffsetX + shiftX + cellSize.width / 2f
+                                            val cy = cellCenterY - effLabelOffset / 2f
+                                            val widthPx = kotlin.math.max(effIconWidth, effLabelWidth) + boundsPaddingPxOuter
+                                            // Symmetric vertical padding so the label can't
+                                            // ever spill out the bottom due to small label-
+                                            // metric vs. rendered-height drift, and a matching
+                                            // sliver above the icon for visual balance.
+                                            val vPad = boundsPaddingPxOuter / 2f
+                                            return androidx.compose.ui.geometry.Rect(
+                                                left = cx - widthPx / 2f,
+                                                top = cy - effIconHeight / 2f - vPad,
+                                                right = cx + widthPx / 2f,
+                                                bottom = cy + effIconHeight / 2f + effLabelOffset + vPad
+                                            ) to androidx.compose.ui.geometry.Offset(cx, cy)
+                                        }
+
+                                        // Re-derive bounds whenever the in-flight resize, the
+                                        // resize-shift, OR the icon's persisted position changes.
+                                        // posX/posY must be in the key set because on commit two
+                                        // LaunchedEffects fire in source order:
+                                        //   1. this one (mult/shift just reset to 1/Zero), and
+                                        //   2. the LaunchedEffect(cust.detachedX/Y) below which
+                                        //      pushes the new persisted X/Y into posX/posY.
+                                        // Without posX/posY here, (1) computes bounds using the
+                                        // OLD posX → bracket lands at the pre-commit center; then
+                                        // (2) moves the icon to its new position → icon + crosshair
+                                        // diverge until the user touches again. Re-keying on
+                                        // posX/posY makes (2)'s state write force (1) to re-run.
+                                        LaunchedEffect(activeResizeMultiplierX, activeResizeMultiplierY, activeResizeShift, posX, posY) {
+                                            if (inEditMode) {
+                                                val (b, c) = computeEditBoundsAndCenter()
+                                                activeEditBounds = b
+                                                activeEditIconCenter = c
+                                            }
+                                        }
                                         LaunchedEffect(cust.detachedX, cust.detachedY) {
                                             cust.detachedX?.let { if (it != posX) posX = it }
                                             cust.detachedY?.let { if (it != posY) posY = it }
@@ -3914,30 +4068,14 @@ fun LauncherScreen(
                                                     // centred on the cell centre. Every spatial
                                                     // value used to compute the bounding box has
                                                     // to be multiplied by this scale.
-                                                    val editScale = 1.265f
-                                                    val scaledLabelOffsetPxEdit = labelOffsetPxEdit * editScale
-                                                    val scaledCappedLabelWidth = cappedLabelWidth * editScale
                                                     fun updateEditBounds() {
-                                                        val cellCenterY = posY + dragOffsetY + cellSize.height / 2f
-                                                        val cx = posX + dragOffsetX + cellSize.width / 2f
-                                                        // Visual icon centre: the icon's layout
-                                                        // centre is offset upward from the cell
-                                                        // centre by labelOffsetPx/2, and the scale
-                                                        // multiplies that offset.
-                                                        val cy = cellCenterY - scaledLabelOffsetPxEdit / 2f
-                                                        // Bounding box spans the visually-scaled
-                                                        // icon (already includes 1.265× via
-                                                        // scaledIconPxEdit) and label width.
-                                                        val widthPx = kotlin.math.max(scaledIconPxEdit, scaledCappedLabelWidth) + boundsPaddingPx
-                                                        activeEditBounds = androidx.compose.ui.geometry.Rect(
-                                                            left = cx - widthPx / 2f,
-                                                            top = cy - scaledIconPxEdit / 2f,
-                                                            right = cx + widthPx / 2f,
-                                                            // Bottom = visual icon bottom +
-                                                            // scaled (spacer + label height).
-                                                            bottom = cy + scaledIconPxEdit / 2f + scaledLabelOffsetPxEdit
-                                                        )
-                                                        activeEditIconCenter = androidx.compose.ui.geometry.Offset(cx, cy)
+                                                        // Use the hoisted helper at the per-icon
+                                                        // Composable scope so the bounds-calc is
+                                                        // shared with the LaunchedEffect that
+                                                        // tracks activeResizeMultiplier changes.
+                                                        val (b, c) = computeEditBoundsAndCenter()
+                                                        activeEditBounds = b
+                                                        activeEditIconCenter = c
                                                     }
                                                     fun commitDragEnd() {
                                                         val newX = posX + dragOffsetX
@@ -3959,6 +4097,24 @@ fun LauncherScreen(
                                                     }
                                                     awaitEachGesture {
                                                         val down = awaitFirstDown(requireUnconsumed = false)
+                                                        // MODAL bail: if another detached icon is
+                                                        // currently in edit mode, this icon must NOT
+                                                        // react at all — the modal blocker will treat
+                                                        // the touch as a tap-outside and exit the
+                                                        // other icon's edit mode on release. The user
+                                                        // has to then tap THIS icon again to interact
+                                                        // with it.
+                                                        val activeEditPkg = editingPackageNameState.value
+                                                        if (activeEditPkg != null && activeEditPkg != homeApp.packageName) {
+                                                            // Drain events for this pointer until lift
+                                                            // so the gesture scope ends cleanly without
+                                                            // running long-press / launch logic.
+                                                            do {
+                                                                val e = awaitPointerEvent()
+                                                                if (e.changes.all { !it.pressed }) break
+                                                            } while (true)
+                                                            return@awaitEachGesture
+                                                        }
                                                         val startPos = down.position
                                                         isFingerDown = true
 
@@ -3967,7 +4123,13 @@ fun LauncherScreen(
                                                             // repositions, no long-press needed. On
                                                             // release we commit position but STAY in
                                                             // edit mode (the page-level tap-outside
-                                                            // handler exits it).
+                                                            // handler exits it). Consume the down
+                                                            // IMMEDIATELY so the home swipe-up-to-
+                                                            // drawer gesture (and any other parent
+                                                            // detector) can't claim this gesture and
+                                                            // accidentally launch a drawer app like
+                                                            // 1dm on release.
+                                                            down.consume()
                                                             var dragStarted = false
                                                             try {
                                                                 while (true) {
@@ -3988,8 +4150,13 @@ fun LauncherScreen(
                                                                             dragOffsetX += delta.x
                                                                             dragOffsetY += delta.y
                                                                             updateEditBounds()
-                                                                            change.consume()
                                                                         }
+                                                                        // Always consume while pressed in
+                                                                        // edit mode — including pre-slop
+                                                                        // micro-movements — so the home
+                                                                        // swipe-up-to-drawer parent never
+                                                                        // sees this gesture.
+                                                                        change.consume()
                                                                     } else {
                                                                         isFingerDown = false
                                                                         if (dragStarted) {
@@ -4086,14 +4253,29 @@ fun LauncherScreen(
                                             // Without this split the drag stutters: 1/1.265 from
                                             // the scale and the layout-shift feedback loop from
                                             // moving the layout under the pointer.
+                                            // Resize multiplier only applies while THIS icon
+                                            // is the one in edit mode (otherwise the global
+                                            // resize state would scale all detached icons).
+                                            // Independent X / Y stretch — stored on the
+                                            // customization plus the in-flight multiplier
+                                            // while THIS icon is the one being edited.
+                                            val storedStretchX = appInfo.customization?.detachedScaleX ?: 1f
+                                            val storedStretchY = appInfo.customization?.detachedScaleY ?: 1f
+                                            val liveResizeX = if (inEditMode) activeResizeMultiplierX else 1f
+                                            val liveResizeY = if (inEditMode) activeResizeMultiplierY else 1f
+                                            // Resize shift pins the OPPOSITE edge / corner
+                                            // during a handle drag — added to the live drag
+                                            // translation only for THIS icon while editing.
+                                            val resizeShiftX = if (inEditMode) activeResizeShift.x else 0f
+                                            val resizeShiftY = if (inEditMode) activeResizeShift.y else 0f
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxSize()
                                                     .graphicsLayer {
-                                                        translationX = dragOffsetX
-                                                        translationY = dragOffsetY
-                                                        scaleX = effectiveScale
-                                                        scaleY = effectiveScale
+                                                        translationX = dragOffsetX + resizeShiftX
+                                                        translationY = dragOffsetY + resizeShiftY
+                                                        scaleX = effectiveScale * storedStretchX * liveResizeX
+                                                        scaleY = effectiveScale * storedStretchY * liveResizeY
                                                     },
                                                 contentAlignment = Alignment.Center
                                             ) {
@@ -4207,7 +4389,7 @@ fun LauncherScreen(
                             //     center extending to the page edges
                             //   - Pixel-coord labels at the crosshair tips
                             activeEditBounds?.let { bounds ->
-                                val overlayColor = androidx.compose.ui.graphics.Color(0xFFFFC107)
+                                val overlayColor = androidx.compose.ui.graphics.Color(0xFFBDBDBD)
                                 val strokeDp = 2.dp
                                 val cornerLenDp = 18.dp
                                 val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
@@ -4221,15 +4403,19 @@ fun LauncherScreen(
                                         // so drawing past `size` is allowed.
                                         val padHpx = gridHPadding.toPx()
                                         val padVpx = gridVPadding.toPx()
-                                        // Crosshair anchors on the explicit icon center
-                                        // tracked in state (not derived from the bounding
-                                        // box, since the bounding box is now widened to
-                                        // wrap labels that can be wider than the icon).
-                                        val iconCenter = activeEditIconCenter
-                                        val centerX = iconCenter?.x ?: ((bounds.left + bounds.right) / 2f)
-                                        val centerY = iconCenter?.y ?: ((bounds.top + bounds.bottom) / 2f)
+                                        // Crosshair anchors on the BOUNDING-BOX center —
+                                        // halfway between icon top and label bottom —
+                                        // so the side dashed lines visually halve the
+                                        // whole detached element (icon + label), not
+                                        // just the icon.
+                                        val centerX = (bounds.left + bounds.right) / 2f
+                                        val centerY = (bounds.top + bounds.bottom) / 2f
+                                        val activeIdx = activeResizeHandle
+                                        val highlightColor = androidx.compose.ui.graphics.Color.White
 
-                                        // Corner brackets (solid L-shapes at each corner)
+                                        // Corner brackets — decoration only (constant grey).
+                                        // The square markers at the corners are the touch
+                                        // targets, not the brackets themselves.
                                         // TOP-LEFT
                                         drawLine(overlayColor,
                                             start = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top),
@@ -4267,7 +4453,8 @@ fun LauncherScreen(
                                             end = androidx.compose.ui.geometry.Offset(bounds.right, bounds.bottom - cornerPx),
                                             strokeWidth = strokePx)
 
-                                        // Dashed lines between the corner brackets
+                                        // Dashed lines between the corner brackets —
+                                        // decoration only (constant grey, always dashed).
                                         // TOP edge
                                         drawLine(overlayColor,
                                             start = androidx.compose.ui.geometry.Offset(bounds.left + cornerPx, bounds.top),
@@ -4293,15 +4480,50 @@ fun LauncherScreen(
                                             strokeWidth = strokePx,
                                             pathEffect = dashEffect)
 
+                                        // Resize-handle markers — squares for corners,
+                                        // circles for edges. These ARE the touch targets
+                                        // (the 36 dp invisible Box layered on top is keyed
+                                        // to each marker position). Active marker scales
+                                        // up + flips to white as visible feedback.
+                                        val markerPx = 12.dp.toPx()
+                                        val activeMarkerPx = 18.dp.toPx()
+                                        val markerPositions = listOf(
+                                            androidx.compose.ui.geometry.Offset(bounds.left, bounds.top),                                  // 0 TL
+                                            androidx.compose.ui.geometry.Offset((bounds.left + bounds.right) / 2f, bounds.top),           // 1 T
+                                            androidx.compose.ui.geometry.Offset(bounds.right, bounds.top),                                 // 2 TR
+                                            androidx.compose.ui.geometry.Offset(bounds.right, (bounds.top + bounds.bottom) / 2f),          // 3 R
+                                            androidx.compose.ui.geometry.Offset(bounds.right, bounds.bottom),                              // 4 BR
+                                            androidx.compose.ui.geometry.Offset((bounds.left + bounds.right) / 2f, bounds.bottom),        // 5 B
+                                            androidx.compose.ui.geometry.Offset(bounds.left, bounds.bottom),                               // 6 BL
+                                            androidx.compose.ui.geometry.Offset(bounds.left, (bounds.top + bounds.bottom) / 2f)            // 7 L
+                                        )
+                                        markerPositions.forEachIndexed { i, p ->
+                                            val isCorner = (i % 2 == 0)
+                                            val isActive = i == activeIdx
+                                            val mPx = if (isActive) activeMarkerPx else markerPx
+                                            val mColor = if (isActive) highlightColor else overlayColor
+                                            if (isCorner) {
+                                                drawRect(
+                                                    color = mColor,
+                                                    topLeft = androidx.compose.ui.geometry.Offset(
+                                                        p.x - mPx / 2f, p.y - mPx / 2f
+                                                    ),
+                                                    size = androidx.compose.ui.geometry.Size(mPx, mPx)
+                                                )
+                                            } else {
+                                                drawCircle(
+                                                    color = mColor,
+                                                    radius = mPx / 2f,
+                                                    center = p
+                                                )
+                                            }
+                                        }
+
                                         // Crosshair: dashed lines from the icon
                                         // center extending all the way to the
                                         // screen edges (past the page padding).
-                                        // Horizontal — left of icon
-                                        drawLine(overlayColor,
-                                            start = androidx.compose.ui.geometry.Offset(-padHpx, centerY),
-                                            end = androidx.compose.ui.geometry.Offset(bounds.left, centerY),
-                                            strokeWidth = strokePx,
-                                            pathEffect = dashEffect)
+                                        // Only RIGHT + ABOVE arms now — left and
+                                        // below removed per user request.
                                         // Horizontal — right of icon
                                         drawLine(overlayColor,
                                             start = androidx.compose.ui.geometry.Offset(bounds.right, centerY),
@@ -4314,36 +4536,20 @@ fun LauncherScreen(
                                             end = androidx.compose.ui.geometry.Offset(centerX, bounds.top),
                                             strokeWidth = strokePx,
                                             pathEffect = dashEffect)
-                                        // Vertical — below icon
-                                        drawLine(overlayColor,
-                                            start = androidx.compose.ui.geometry.Offset(centerX, bounds.bottom),
-                                            end = androidx.compose.ui.geometry.Offset(centerX, size.height + padVpx),
-                                            strokeWidth = strokePx,
-                                            pathEffect = dashEffect)
+
                                     }
 
                                     // Pixel-coord labels at the crosshair tips.
-                                    // Left  = distance from page-left to icon center X.
-                                    // Right = distance from icon center X to page-right.
-                                    // Top   = distance from page-top to icon center Y.
-                                    // Icon center comes from the explicit tracked
-                                    // state, falling back to bounds center if null.
-                                    val iconCenterLabel = activeEditIconCenter
-                                    val centerXpx = iconCenterLabel?.x ?: ((bounds.left + bounds.right) / 2f)
-                                    val centerYpx = iconCenterLabel?.y ?: ((bounds.top + bounds.bottom) / 2f)
+                                    // RIGHT = distance in pixels from the icon's visual
+                                    //         centre to the right edge of the page.
+                                    // TOP   = distance in pixels from the page-top to
+                                    //         the icon's visual centre Y.
+                                    // (Left + bottom labels removed alongside their arms.)
+                                    val centerXpx = (bounds.left + bounds.right) / 2f
+                                    val centerYpx = (bounds.top + bounds.bottom) / 2f
                                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                                         val pageWpx = with(LocalDensity.current) { maxWidth.toPx() }
-                                        val leftDp = with(LocalDensity.current) { (bounds.left - 8.dp.toPx()).toDp() }
-                                        val rightLabelDp = with(LocalDensity.current) { (bounds.right + 8.dp.toPx()).toDp() }
                                         val centerYdpLabel = with(LocalDensity.current) { (centerYpx - 8.dp.toPx()).toDp() }
-                                        Text(
-                                            text = "${centerXpx.toInt()}",
-                                            color = overlayColor,
-                                            fontSize = 11.sp,
-                                            modifier = Modifier
-                                                .align(Alignment.TopStart)
-                                                .offset(x = 4.dp, y = centerYdpLabel)
-                                        )
                                         Text(
                                             text = "${(pageWpx - centerXpx).toInt()}",
                                             color = overlayColor,
@@ -4361,6 +4567,185 @@ fun LauncherScreen(
                                                 .align(Alignment.TopStart)
                                                 .offset(x = centerXdpLabel, y = 4.dp)
                                         )
+                                    }
+
+                                    // Resize handles — uniform 36 dp invisible touch zones
+                                    // anchored on each of the 8 visible markers (square at
+                                    // corners, circle at edges). The marker IS the visual
+                                    // touch target. awaitEachGesture consumes the down
+                                    // event immediately so the parent's swipe-up-to-open-
+                                    // drawer gesture can't steal the touch and accidentally
+                                    // open an app from the drawer.
+                                    val pkgForResize = editingPackageName
+                                    val iconCenterForResize = activeEditIconCenter
+                                    if (pkgForResize != null && iconCenterForResize != null) {
+                                        val handleTouchSizeDp = 36.dp
+                                        val handleTouchSizePx = with(density) { handleTouchSizeDp.toPx() }
+                                        // Editing icon's unscaled icon px — used by the
+                                        // handle's drag math as the reference content size.
+                                        val editingCust = appCustomizations.customizations[pkgForResize]
+                                        val editingPerAppPct = editingCust?.iconSizePercent ?: iconSizePercent
+                                        val editingIconPxPage = with(density) {
+                                            (iconSizeDp * editingPerAppPct / iconSizePercent.toFloat()).dp.toPx()
+                                        }
+                                        // boundsPaddingPxOuter equivalent at page scope (12dp).
+                                        // Used to back out the content dimensions from the
+                                        // current bracket rect — needed by the drag math so
+                                        // drag distance maps 1:1 to bracket-edge movement.
+                                        val pagePadPx = with(density) { 12.dp.toPx() }
+                                        // No 1.265× bump in edit mode — kept = 1.0 for the
+                                        // handle's reference dimension math, matches editScaleOuter.
+                                        val editScalePage = 1f
+                                        // Per-handle outward direction PER AXIS. 0 = that axis
+                                        // doesn't change on this handle (edge handles only
+                                        // resize one dimension). Order: TL T TR R BR B BL L.
+                                        val handleDirX = listOf(-1f, 0f, 1f, 1f, 1f, 0f, -1f, -1f)
+                                        val handleDirY = listOf(-1f, -1f, -1f, 0f, 1f, 1f, 1f, 0f)
+                                        // Anchor handle — the OPPOSITE side / corner that
+                                        // stays pinned during resize.
+                                        val handleAnchorX = listOf(1f, 0f, -1f, -1f, -1f, 0f, 1f, 1f)
+                                        val handleAnchorY = listOf(1f, 1f, 1f, 0f, -1f, -1f, -1f, 0f)
+                                        val handleCenters = listOf(
+                                            androidx.compose.ui.geometry.Offset(bounds.left, bounds.top),                                  // 0 TL
+                                            androidx.compose.ui.geometry.Offset((bounds.left + bounds.right) / 2f, bounds.top),           // 1 T
+                                            androidx.compose.ui.geometry.Offset(bounds.right, bounds.top),                                 // 2 TR
+                                            androidx.compose.ui.geometry.Offset(bounds.right, (bounds.top + bounds.bottom) / 2f),          // 3 R
+                                            androidx.compose.ui.geometry.Offset(bounds.right, bounds.bottom),                              // 4 BR
+                                            androidx.compose.ui.geometry.Offset((bounds.left + bounds.right) / 2f, bounds.bottom),        // 5 B
+                                            androidx.compose.ui.geometry.Offset(bounds.left, bounds.bottom),                               // 6 BL
+                                            androidx.compose.ui.geometry.Offset(bounds.left, (bounds.top + bounds.bottom) / 2f)            // 7 L
+                                        )
+                                        handleCenters.forEachIndexed { idx, center ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .offset {
+                                                        IntOffset(
+                                                            (center.x - handleTouchSizePx / 2f).toInt(),
+                                                            (center.y - handleTouchSizePx / 2f).toInt()
+                                                        )
+                                                    }
+                                                    .size(handleTouchSizeDp)
+                                                    .pointerInput(pkgForResize, idx) {
+                                                        val dirX = handleDirX[idx]
+                                                        val dirY = handleDirY[idx]
+                                                        val anchorX = handleAnchorX[idx]
+                                                        val anchorY = handleAnchorY[idx]
+                                                        awaitEachGesture {
+                                                            // Consume the down IMMEDIATELY so the
+                                                            // home-screen swipe-up gesture (which
+                                                            // opens the app drawer) and any other
+                                                            // parent detector never sees this touch.
+                                                            val down = awaitFirstDown(requireUnconsumed = false)
+                                                            down.consume()
+                                                            val initialMultX = activeResizeMultiplierX
+                                                            val initialMultY = activeResizeMultiplierY
+                                                            // Snapshot the stored stretch at drag
+                                                            // start so the commit's final scale =
+                                                            // initialStored * latestMult, with NO
+                                                            // chance of double-applying any state
+                                                            // that might already include the in-
+                                                            // flight multiplier.
+                                                            val custAtStart = appCustomizations.customizations[pkgForResize]
+                                                            val initialStoredX = custAtStart?.detachedScaleX ?: 1f
+                                                            val initialStoredY = custAtStart?.detachedScaleY ?: 1f
+                                                            val initialDetachedX = custAtStart?.detachedX ?: 0f
+                                                            val initialDetachedY = custAtStart?.detachedY ?: 0f
+                                                            // Per-drag mult bounds so the in-flight
+                                                            // visual matches what the commit clamp
+                                                            // will store. Without this, dragging the
+                                                            // icon past 5.0 stored×mult shows the
+                                                            // larger visual mid-drag, then snaps
+                                                            // back to 5.0 on release (the "warp").
+                                                            val minScaleStored = 0.3f
+                                                            val maxScaleStored = 5f
+                                                            val multUpperX = (maxScaleStored / initialStoredX).coerceAtMost(3f)
+                                                            val multLowerX = (minScaleStored / initialStoredX).coerceAtLeast(0.4f)
+                                                            val multUpperY = (maxScaleStored / initialStoredY).coerceAtMost(3f)
+                                                            val multLowerY = (minScaleStored / initialStoredY).coerceAtLeast(0.4f)
+                                                            // FULL content dimensions at drag start
+                                                            // (= what the bracket wraps, minus the
+                                                            // 12 dp padding). Drag distance maps
+                                                            // directly to bracket-edge motion: drag
+                                                            // 50 px → bracket edge moves 50 px →
+                                                            // content dimension grows 50 px. The
+                                                            // resize ratio falls out from there.
+                                                            val initialContentX = (bounds.right - bounds.left) - pagePadPx
+                                                            val initialContentY = (bounds.bottom - bounds.top) - pagePadPx
+                                                            var accumulated = androidx.compose.ui.geometry.Offset.Zero
+                                                            // Latest in-flight values tracked locally
+                                                            // — commit uses these so we don't race a
+                                                            // recomposition or snapshot boundary on
+                                                            // the activeResize* state reads.
+                                                            var latestMultX = initialMultX
+                                                            var latestMultY = initialMultY
+                                                            var latestShift = androidx.compose.ui.geometry.Offset.Zero
+                                                            activeResizeHandle = idx
+                                                            try {
+                                                                while (true) {
+                                                                    val event = awaitPointerEvent()
+                                                                    val change = event.changes.firstOrNull { it.id == down.id } ?: continue
+                                                                    if (change.changedToUp()) {
+                                                                        change.consume()
+                                                                        val newScaleX = (initialStoredX * latestMultX).coerceIn(0.3f, 5f)
+                                                                        val newScaleY = (initialStoredY * latestMultY).coerceIn(0.3f, 5f)
+                                                                        val current = appCustomizations.customizations[pkgForResize]
+                                                                        val updated = (current ?: AppCustomization()).copy(
+                                                                            detachedScaleX = newScaleX,
+                                                                            detachedScaleY = newScaleY,
+                                                                            detachedX = initialDetachedX + latestShift.x,
+                                                                            detachedY = initialDetachedY + latestShift.y
+                                                                        )
+                                                                        appCustomizations = setCustomization(
+                                                                            context, appCustomizations, pkgForResize, updated
+                                                                        )
+                                                                        break
+                                                                    }
+                                                                    val delta = change.positionChange()
+                                                                    if (delta != androidx.compose.ui.geometry.Offset.Zero) {
+                                                                        change.consume()
+                                                                        accumulated += delta
+                                                                        if (initialContentX <= 0f || initialContentY <= 0f) continue
+                                                                        // ratio = 1 + drag / content
+                                                                        // (drag-edge moves 1:1 with finger).
+                                                                        val newMultX: Float = if (dirX != 0f) {
+                                                                            val growthX = accumulated.x * dirX
+                                                                            val ratioX = (initialContentX + growthX) / initialContentX
+                                                                            (initialMultX * ratioX).coerceIn(multLowerX, multUpperX)
+                                                                        } else initialMultX
+                                                                        val newMultY: Float = if (dirY != 0f) {
+                                                                            val growthY = accumulated.y * dirY
+                                                                            val ratioY = (initialContentY + growthY) / initialContentY
+                                                                            (initialMultY * ratioY).coerceIn(multLowerY, multUpperY)
+                                                                        } else initialMultY
+                                                                        latestMultX = newMultX
+                                                                        latestMultY = newMultY
+                                                                        activeResizeMultiplierX = newMultX
+                                                                        activeResizeMultiplierY = newMultY
+                                                                        // shift = -anchor * delta/2.
+                                                                        // Total content grew by delta;
+                                                                        // center moves by delta/2 to
+                                                                        // keep the opposite edge pinned.
+                                                                        val deltaContentX = initialContentX *
+                                                                            ((newMultX / initialMultX) - 1f)
+                                                                        val deltaContentY = initialContentY *
+                                                                            ((newMultY / initialMultY) - 1f)
+                                                                        latestShift = androidx.compose.ui.geometry.Offset(
+                                                                            -anchorX * deltaContentX / 2f,
+                                                                            -anchorY * deltaContentY / 2f
+                                                                        )
+                                                                        activeResizeShift = latestShift
+                                                                    }
+                                                                }
+                                                            } finally {
+                                                                activeResizeMultiplierX = 1f
+                                                                activeResizeMultiplierY = 1f
+                                                                activeResizeShift = androidx.compose.ui.geometry.Offset.Zero
+                                                                activeResizeHandle = null
+                                                            }
+                                                        }
+                                                    }
+                                            )
+                                        }
                                     }
                                 }
                             }

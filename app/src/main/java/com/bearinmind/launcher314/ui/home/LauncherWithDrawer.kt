@@ -833,6 +833,17 @@ fun LauncherWithDrawer(
                             return@awaitEachGesture
                         }
 
+                        // Bail when a detached icon is in edit mode — vertical drags
+                        // there are for moving / resizing the icon, not for sliding
+                        // the drawer up or firing the swipe-down action.
+                        if (com.bearinmind.launcher314.ui.widgets.DetachedEditState.isEditing) {
+                            do {
+                                val e = awaitPointerEvent()
+                                if (e.changes.all { !it.pressed }) break
+                            } while (true)
+                            return@awaitEachGesture
+                        }
+
                         // Bail if drawer already visible or a folder is open.
                         if (swipeUpY.value <= screenHeight * 0.9f || isFolderOpen) {
                             do {

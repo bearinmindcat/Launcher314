@@ -29,6 +29,18 @@ object WidgetTouchState {
 }
 
 /**
+ * Static flag set by [LauncherScreen] whenever a detached icon is in edit mode
+ * (issue #48 free-floating-icon flow). Read by [LauncherWithDrawer]'s swipe-down
+ * handler so vertical drags on the home screen don't slide the drawer up or
+ * fire the swipe-down action while the user is in the middle of moving or
+ * resizing a detached icon.
+ */
+object DetachedEditState {
+    @Volatile
+    var isEditing: Boolean = false
+}
+
+/**
  * Custom AppWidgetHostView that handles touch events for the launcher.
  * Based on Fossify Launcher's MyAppWidgetHostView implementation.
  *

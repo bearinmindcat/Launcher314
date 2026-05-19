@@ -30,7 +30,13 @@ data class AppCustomization(
     // (top-left of the page content area). Null x/y → initial placement.
     val detachedFromGrid: Boolean = false,
     val detachedX: Float? = null,
-    val detachedY: Float? = null
+    val detachedY: Float? = null,
+    // Independent X/Y stretch multipliers for detached icons. Applied on
+    // top of iconSizePercent (which sets the base size); these let the
+    // icon become rectangular when the user drags the edge handles in
+    // edit mode. 1.0 = no stretch on that axis.
+    val detachedScaleX: Float? = null,
+    val detachedScaleY: Float? = null
 )
 
 @Serializable
