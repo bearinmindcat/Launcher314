@@ -4793,16 +4793,50 @@ fun LauncherScreen(
                                                                         change.consume()
                                                                         val newScaleX = (initialStoredX * latestMultX).coerceIn(0.3f, 5f)
                                                                         val newScaleY = (initialStoredY * latestMultY).coerceIn(0.3f, 5f)
+                                                                        val newDetX = initialDetachedX + latestShift.x
+                                                                        val newDetY = initialDetachedY + latestShift.y
                                                                         val current = appCustomizations.customizations[pkgForResize]
                                                                         val updated = (current ?: AppCustomization()).copy(
                                                                             detachedScaleX = newScaleX,
                                                                             detachedScaleY = newScaleY,
-                                                                            detachedX = initialDetachedX + latestShift.x,
-                                                                            detachedY = initialDetachedY + latestShift.y
+                                                                            detachedX = newDetX,
+                                                                            detachedY = newDetY
                                                                         )
                                                                         appCustomizations = setCustomization(
                                                                             context, appCustomizations, pkgForResize, updated
                                                                         )
+                                                                        // INLINE bounds write using
+                                                                        // the FINAL COMMITTED values
+                                                                        // (post-clamp scale + new
+                                                                        // detached pos). The last
+                                                                        // onDrag's inline write used
+                                                                        // pre-clamp values; this one
+                                                                        // ensures bounds match what
+                                                                        // the icon will render with
+                                                                        // post-commit. Same snapshot
+                                                                        // as the cust write, so no
+                                                                        // frame gap, no ghost.
+                                                                        val homeAppForBoundsCommit = editingHomeAppForBounds
+                                                                        if (homeAppForBoundsCommit != null) {
+                                                                            val combinedX = editScalePage * newScaleX
+                                                                            val combinedY = editScalePage * newScaleY
+                                                                            val effIconW = editingIconPxPage * combinedX
+                                                                            val effIconH = editingIconPxPage * combinedY
+                                                                            val effLabelOff = editingLabelOffsetPx * combinedY
+                                                                            val effLabelW = editingCappedLabelWidth * combinedX
+                                                                            val cellCYpx = newDetY + cellSize.height / 2f
+                                                                            val cxPxC = newDetX + cellSize.width / 2f
+                                                                            val cyPxC = cellCYpx - effLabelOff / 2f
+                                                                            val widthPxC = kotlin.math.max(effIconW, effLabelW) + pagePadPx
+                                                                            val vPadC = pagePadPx / 2f
+                                                                            activeEditBounds = androidx.compose.ui.geometry.Rect(
+                                                                                left = cxPxC - widthPxC / 2f,
+                                                                                top = cyPxC - effIconH / 2f - vPadC,
+                                                                                right = cxPxC + widthPxC / 2f,
+                                                                                bottom = cyPxC + effIconH / 2f + effLabelOff + vPadC
+                                                                            )
+                                                                            activeEditIconCenter = androidx.compose.ui.geometry.Offset(cxPxC, cyPxC)
+                                                                        }
                                                                         break
                                                                     }
                                                                     val delta = change.positionChange()
