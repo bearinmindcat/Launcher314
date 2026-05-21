@@ -4457,11 +4457,11 @@ fun LauncherScreen(
 
                             // Total-Launcher-style editing overlay for the
                             // currently-dragging detached icon (issue #48):
-                            //   - Solid yellow corner brackets at the icon
-                            //   - Dashed yellow lines between the brackets
-                            //   - Dashed crosshair lines from the icon
+                            //   - Solid grey corner brackets at the icon
+                            //   - Dashed grey lines between the brackets
+                            //   - Dashed crosshair arms from the icon
                             //     center extending to the page edges
-                            //   - Pixel-coord labels at the crosshair tips
+                            //     (right + top arms only)
                             activeEditBounds?.let { bounds ->
                                 val overlayColor = androidx.compose.ui.graphics.Color(0xFFBDBDBD)
                                 val strokeDp = 2.dp
@@ -4613,35 +4613,8 @@ fun LauncherScreen(
 
                                     }
 
-                                    // Pixel-coord labels at the crosshair tips.
-                                    // RIGHT = distance in pixels from the icon's visual
-                                    //         centre to the right edge of the page.
-                                    // TOP   = distance in pixels from the page-top to
-                                    //         the icon's visual centre Y.
-                                    // (Left + bottom labels removed alongside their arms.)
-                                    val centerXpx = (bounds.left + bounds.right) / 2f
-                                    val centerYpx = (bounds.top + bounds.bottom) / 2f
-                                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                                        val pageWpx = with(LocalDensity.current) { maxWidth.toPx() }
-                                        val centerYdpLabel = with(LocalDensity.current) { (centerYpx - 8.dp.toPx()).toDp() }
-                                        Text(
-                                            text = "${(pageWpx - centerXpx).toInt()}",
-                                            color = overlayColor,
-                                            fontSize = 11.sp,
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .offset(x = (-4).dp, y = centerYdpLabel)
-                                        )
-                                        val centerXdpLabel = with(LocalDensity.current) { (centerXpx + 4.dp.toPx()).toDp() }
-                                        Text(
-                                            text = "${centerYpx.toInt()}",
-                                            color = overlayColor,
-                                            fontSize = 11.sp,
-                                            modifier = Modifier
-                                                .align(Alignment.TopStart)
-                                                .offset(x = centerXdpLabel, y = 4.dp)
-                                        )
-                                    }
+                                    // (Pixel-coord labels removed — were just informational
+                                    // distances of the icon's centre from the page edges.)
 
                                     // Resize handles — uniform 36 dp invisible touch zones
                                     // anchored on each of the 8 visible markers (square at
