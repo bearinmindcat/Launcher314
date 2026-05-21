@@ -4097,7 +4097,17 @@ fun LauncherScreen(
                                                         val newY = posY + dragOffsetY
                                                         dragOffsetX = 0f
                                                         dragOffsetY = 0f
-                                                        val newCust = cust.copy(
+                                                        // CRITICAL: re-read cust from appCustomizations
+                                                        // here. The captured `cust` val is the OLD
+                                                        // customization from this composition's
+                                                        // initial run — if a prior gesture (resize,
+                                                        // customize dialog) updated the cust in
+                                                        // between, `cust.copy(...)` would clobber
+                                                        // those changes (e.g. resize → move would
+                                                        // reset detachedScaleX/Y back to pre-resize).
+                                                        val freshCust = appCustomizations.customizations[homeApp.packageName]
+                                                            ?: AppCustomization()
+                                                        val newCust = freshCust.copy(
                                                             detachedX = newX,
                                                             detachedY = newY
                                                         )
@@ -4107,6 +4117,42 @@ fun LauncherScreen(
                                                             homeApp.packageName,
                                                             newCust
                                                         )
+                                                        // INLINE bounds write with the NEW position
+                                                        // and the FRESH cust. The post-commit
+                                                        // `updateEditBounds()` call would otherwise
+                                                        // read posX via rememberUpdatedState, which
+                                                        // hasn't been re-evaluated yet (no recomp
+                                                        // has run), so it would compute the bracket
+                                                        // at the OLD position. The LaunchedEffect
+                                                        // would correct it one frame later — that's
+                                                        // the crosshair ghost. Doing it inline
+                                                        // writes the right value in the same
+                                                        // snapshot as the cust change.
+                                                        // Not gated on inEditMode — entry-drag
+                                                        // commits also need the bounds (we're
+                                                        // about to enter edit mode), and the
+                                                        // captured `inEditMode` val is stale right
+                                                        // after editingPackageName changes.
+                                                        val storedSx = newCust.detachedScaleX ?: 1f
+                                                        val storedSy = newCust.detachedScaleY ?: 1f
+                                                        val combinedScaleX = editScaleOuter * storedSx
+                                                        val combinedScaleY = editScaleOuter * storedSy
+                                                        val effIconW = iconPxOuter * combinedScaleX
+                                                        val effIconH = iconPxOuter * combinedScaleY
+                                                        val effLabelOff = labelOffsetPxOuter * combinedScaleY
+                                                        val effLabelW = cappedLabelWidthOuter * combinedScaleX
+                                                        val cellCY = newY + cellSize.height / 2f
+                                                        val cxN = newX + cellSize.width / 2f
+                                                        val cyN = cellCY - effLabelOff / 2f
+                                                        val widthPxN = kotlin.math.max(effIconW, effLabelW) + boundsPaddingPxOuter
+                                                        val vPadN = boundsPaddingPxOuter / 2f
+                                                        activeEditBounds = androidx.compose.ui.geometry.Rect(
+                                                            left = cxN - widthPxN / 2f,
+                                                            top = cyN - effIconH / 2f - vPadN,
+                                                            right = cxN + widthPxN / 2f,
+                                                            bottom = cyN + effIconH / 2f + effLabelOff + vPadN
+                                                        )
+                                                        activeEditIconCenter = androidx.compose.ui.geometry.Offset(cxN, cyN)
                                                     }
                                                     awaitEachGesture {
                                                         val down = awaitFirstDown(requireUnconsumed = false)
@@ -4174,8 +4220,17 @@ fun LauncherScreen(
                                                                         isFingerDown = false
                                                                         if (dragStarted) {
                                                                             isDragging = false
+                                                                            // commitDragEnd writes
+                                                                            // activeEditBounds inline
+                                                                            // with the new position,
+                                                                            // so no separate
+                                                                            // updateEditBounds()
+                                                                            // call is needed (and
+                                                                            // would cause a ghost
+                                                                            // by reading the still-
+                                                                            // stale rememberUpdated
+                                                                            // state values).
                                                                             commitDragEnd()
-                                                                            updateEditBounds() // refresh post-commit
                                                                         }
                                                                         // Consume the release so a rogue
                                                                         // app underneath the finger
@@ -4234,13 +4289,19 @@ fun LauncherScreen(
                                                                     isFingerDown = false
                                                                     if (dragStarted) {
                                                                         isDragging = false
+                                                                        // commitDragEnd writes bounds
+                                                                        // inline with the new pos +
+                                                                        // fresh cust — no separate
+                                                                        // updateEditBounds() needed
+                                                                        // (which would re-read the
+                                                                        // still-stale rememberUpdated
+                                                                        // posX and ghost the bracket).
                                                                         commitDragEnd()
                                                                         // ENTER edit mode — overlay
                                                                         // persists, future touches
                                                                         // drag without long-press,
                                                                         // tap-outside exits.
                                                                         editingPackageName = homeApp.packageName
-                                                                        updateEditBounds()
                                                                         // Consume release to prevent any
                                                                         // app underneath from launching.
                                                                         change.consume()
