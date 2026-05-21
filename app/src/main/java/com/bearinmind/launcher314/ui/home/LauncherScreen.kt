@@ -3866,8 +3866,18 @@ fun LauncherScreen(
                                         // detach makes the icon stay in place visually.
                                         val defaultX = (homeApp.position % gridColumns) * cellSize.width.toFloat()
                                         val defaultY = (homeApp.position / gridColumns) * cellSize.height.toFloat()
-                                        var posX by remember { mutableStateOf(cust.detachedX ?: defaultX) }
-                                        var posY by remember { mutableStateOf(cust.detachedY ?: defaultY) }
+                                        // Derive position DIRECTLY from cust so the icon's layout
+                                        // position updates in the same recomp as the rest of the
+                                        // committed state. Wrapped in rememberUpdatedState so the
+                                        // gesture coroutine's `updateEditBounds()` calls (which
+                                        // run from the captured OLD closure when the coroutine
+                                        // doesn't restart) still see the latest cust values — if
+                                        // we left these as plain vals the OLD closure would
+                                        // compute bracket bounds at the PRE-commit position, then
+                                        // the per-icon LaunchedEffect would correct them one
+                                        // frame later, producing the crosshair ghost flash.
+                                        val posX by rememberUpdatedState(cust.detachedX ?: defaultX)
+                                        val posY by rememberUpdatedState(cust.detachedY ?: defaultY)
                                         // In-flight drag offset, applied visually via
                                         // graphicsLayer.translation so the outer Box's
                                         // layout position stays stable for the duration of
@@ -3957,8 +3967,12 @@ fun LauncherScreen(
                                         val editScaleOuter = 1f
 
                                         // Stored stretch multipliers from prior commits (null = 1.0).
-                                        val storedScaleX = appInfo.customization?.detachedScaleX ?: 1f
-                                        val storedScaleY = appInfo.customization?.detachedScaleY ?: 1f
+                                        // Wrapped in rememberUpdatedState for the same reason as
+                                        // posX/posY above — the gesture coroutine's bounds calc
+                                        // needs to see fresh stored scales after a commit, not
+                                        // the stale ones captured at coroutine creation time.
+                                        val storedScaleX by rememberUpdatedState(appInfo.customization?.detachedScaleX ?: 1f)
+                                        val storedScaleY by rememberUpdatedState(appInfo.customization?.detachedScaleY ?: 1f)
 
                                         fun computeEditBoundsAndCenter(): Pair<androidx.compose.ui.geometry.Rect, androidx.compose.ui.geometry.Offset> {
                                             val rx = if (inEditMode) activeResizeMultiplierX else 1f
@@ -4012,10 +4026,8 @@ fun LauncherScreen(
                                                 activeEditIconCenter = c
                                             }
                                         }
-                                        LaunchedEffect(cust.detachedX, cust.detachedY) {
-                                            cust.detachedX?.let { if (it != posX) posX = it }
-                                            cust.detachedY?.let { if (it != posY) posY = it }
-                                        }
+                                        // (posX/posY are now direct reads from cust above —
+                                        // no LaunchedEffect needed to sync them.)
                                         Box(
                                             modifier = Modifier
                                                 .offset { IntOffset(posX.toInt(), posY.toInt()) }
@@ -4078,10 +4090,11 @@ fun LauncherScreen(
                                                         activeEditIconCenter = c
                                                     }
                                                     fun commitDragEnd() {
+                                                        // posX/posY now derive from cust.detachedX/Y,
+                                                        // so committing IS the position update — no
+                                                        // separate local-state write needed.
                                                         val newX = posX + dragOffsetX
                                                         val newY = posY + dragOffsetY
-                                                        posX = newX
-                                                        posY = newY
                                                         dragOffsetX = 0f
                                                         dragOffsetY = 0f
                                                         val newCust = cust.copy(
@@ -4596,6 +4609,37 @@ fun LauncherScreen(
                                         // No 1.265× bump in edit mode — kept = 1.0 for the
                                         // handle's reference dimension math, matches editScaleOuter.
                                         val editScalePage = 1f
+                                        // Editing icon's label measurement at PAGE scope so the
+                                        // handle's drag loop can write activeEditBounds inline,
+                                        // in the SAME frame as mult/shift change. Without this,
+                                        // the LaunchedEffect path lags by one frame and the
+                                        // bracket trails the icon during continuous resize.
+                                        val editingTriple = detachedAppsForPage.find { it.first.packageName == pkgForResize }
+                                        val editingHomeAppForBounds = editingTriple?.first
+                                        val editingAppInfoForBounds = editingTriple?.second
+                                        val editingLabelText = editingCust?.customLabel?.takeIf { it.isNotEmpty() }
+                                            ?: editingAppInfoForBounds?.name ?: ""
+                                        val editingLabelFontSize = editingCust?.iconTextSizePercent?.let { 12.sp * it / 100f }
+                                            ?: gridAppNameFont
+                                        val editingLabelFontFamily = editingCust?.labelFontId?.let { id ->
+                                            FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                                                ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+                                        } ?: selectedFontFamily ?: androidx.compose.ui.text.font.FontFamily.Default
+                                        val editingTextMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
+                                        val editingBodySmallStyle = MaterialTheme.typography.bodySmall
+                                        val editingLabelMeasured = remember(editingLabelText, editingLabelFontSize, editingLabelFontFamily, editingBodySmallStyle) {
+                                            editingTextMeasurer.measure(
+                                                text = editingLabelText,
+                                                style = editingBodySmallStyle.copy(
+                                                    fontSize = editingLabelFontSize,
+                                                    fontFamily = editingLabelFontFamily
+                                                )
+                                            )
+                                        }
+                                        val editingLabelHeightPx = editingLabelMeasured.size.height.toFloat()
+                                        val editingLabelWidthPx = editingLabelMeasured.size.width.toFloat()
+                                        val editingLabelOffsetPx = with(density) { gridIconTextSpacer.toPx() } + editingLabelHeightPx
+                                        val editingCappedLabelWidth = kotlin.math.min(editingLabelWidthPx, cellSize.width.toFloat())
                                         // Per-handle outward direction PER AXIS. 0 = that axis
                                         // doesn't change on this handle (edge handles only
                                         // resize one dimension). Order: TL T TR R BR B BL L.
@@ -4734,6 +4778,40 @@ fun LauncherScreen(
                                                                             -anchorY * deltaContentY / 2f
                                                                         )
                                                                         activeResizeShift = latestShift
+                                                                        // INLINE bounds write — same
+                                                                        // frame as mult/shift, no
+                                                                        // LaunchedEffect lag, so the
+                                                                        // bracket + crosshair stay
+                                                                        // glued to the icon during
+                                                                        // continuous resize. Uses
+                                                                        // initialStored* (captured at
+                                                                        // drag start) so we don't
+                                                                        // race appCustomizations.
+                                                                        val homeAppForBounds = editingHomeAppForBounds
+                                                                        if (homeAppForBounds != null) {
+                                                                            val combinedX = editScalePage * initialStoredX * newMultX
+                                                                            val combinedY = editScalePage * initialStoredY * newMultY
+                                                                            val effIconW = editingIconPxPage * combinedX
+                                                                            val effIconH = editingIconPxPage * combinedY
+                                                                            val effLabelOff = editingLabelOffsetPx * combinedY
+                                                                            val effLabelW = editingCappedLabelWidth * combinedX
+                                                                            val defaultBpX = (homeAppForBounds.position % gridColumns) * cellSize.width.toFloat()
+                                                                            val defaultBpY = (homeAppForBounds.position / gridColumns) * cellSize.height.toFloat()
+                                                                            val basePosX = (custAtStart?.detachedX ?: defaultBpX)
+                                                                            val basePosY = (custAtStart?.detachedY ?: defaultBpY)
+                                                                            val cellCenterYpx = basePosY + latestShift.y + cellSize.height / 2f
+                                                                            val cxPx = basePosX + latestShift.x + cellSize.width / 2f
+                                                                            val cyPx = cellCenterYpx - effLabelOff / 2f
+                                                                            val widthPxN = kotlin.math.max(effIconW, effLabelW) + pagePadPx
+                                                                            val vPadN = pagePadPx / 2f
+                                                                            activeEditBounds = androidx.compose.ui.geometry.Rect(
+                                                                                left = cxPx - widthPxN / 2f,
+                                                                                top = cyPx - effIconH / 2f - vPadN,
+                                                                                right = cxPx + widthPxN / 2f,
+                                                                                bottom = cyPx + effIconH / 2f + effLabelOff + vPadN
+                                                                            )
+                                                                            activeEditIconCenter = androidx.compose.ui.geometry.Offset(cxPx, cyPx)
+                                                                        }
                                                                     }
                                                                 }
                                                             } finally {
