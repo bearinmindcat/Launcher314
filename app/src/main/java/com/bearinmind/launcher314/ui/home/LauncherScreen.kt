@@ -3579,6 +3579,22 @@ fun LauncherScreen(
                                                                 )
                                                             }
 
+                                                            // Customize option (placeholder — wiring
+                                                            // up in a follow-up; closes the menu
+                                                            // for now so the user can see it lands).
+                                                            DropdownMenuItem(
+                                                                text = { Text("Customize") },
+                                                                onClick = {
+                                                                    showWidgetMenu = false
+                                                                },
+                                                                leadingIcon = {
+                                                                    Icon(
+                                                                        imageVector = Icons.Outlined.Edit,
+                                                                        contentDescription = null
+                                                                    )
+                                                                }
+                                                            )
+
                                                             // Remove option
                                                             DropdownMenuItem(
                                                                 text = { Text(if (widget.stackId != null) "Remove from stack" else "Remove widget") },
