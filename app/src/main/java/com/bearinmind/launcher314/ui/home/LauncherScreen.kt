@@ -4007,27 +4007,19 @@ fun LauncherScreen(
                                             ) to androidx.compose.ui.geometry.Offset(cx, cy)
                                         }
 
-                                        // Re-derive bounds whenever the in-flight resize, the
-                                        // resize-shift, OR the icon's persisted position changes.
-                                        // posX/posY must be in the key set because on commit two
-                                        // LaunchedEffects fire in source order:
-                                        //   1. this one (mult/shift just reset to 1/Zero), and
-                                        //   2. the LaunchedEffect(cust.detachedX/Y) below which
-                                        //      pushes the new persisted X/Y into posX/posY.
-                                        // Without posX/posY here, (1) computes bounds using the
-                                        // OLD posX → bracket lands at the pre-commit center; then
-                                        // (2) moves the icon to its new position → icon + crosshair
-                                        // diverge until the user touches again. Re-keying on
-                                        // posX/posY makes (2)'s state write force (1) to re-run.
-                                        LaunchedEffect(activeResizeMultiplierX, activeResizeMultiplierY, activeResizeShift, posX, posY) {
-                                            if (inEditMode) {
-                                                val (b, c) = computeEditBoundsAndCenter()
-                                                activeEditBounds = b
-                                                activeEditIconCenter = c
-                                            }
-                                        }
-                                        // (posX/posY are now direct reads from cust above —
-                                        // no LaunchedEffect needed to sync them.)
+                                        // (Bounds-update LaunchedEffect removed — all writes to
+                                        // activeEditBounds / activeEditIconCenter now happen
+                                        // INLINE from the gesture handlers:
+                                        //   - icon move drag: updateEditBounds() during drag,
+                                        //     commitDragEnd inline write on release
+                                        //   - resize handle drag: inline write in onDrag, plus
+                                        //     a final inline write in changedToUp
+                                        // The LaunchedEffect was racing those inline writes — it
+                                        // ran after recomposition and wrote bounds that, while
+                                        // mathematically identical, came from a slightly
+                                        // different code path. Even with mutableStateOf's
+                                        // equality check, the extra write was producing a
+                                        // perceptible split-second ghost on resize commit.)
                                         Box(
                                             modifier = Modifier
                                                 .offset { IntOffset(posX.toInt(), posY.toInt()) }
