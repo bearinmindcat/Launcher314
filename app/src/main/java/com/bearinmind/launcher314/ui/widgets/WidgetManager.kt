@@ -31,7 +31,13 @@ data class PlacedWidget(
     val stackId: String? = null,  // Non-null when widget is part of a stack
     val stackOrder: Int = 0,      // Order within the stack (0 = first/primary)
     val paddingPercent: Int? = null,  // Per-widget padding override (null = use global)
-    val fontScalePercent: Int? = null // Per-widget text size override (null = use global)
+    val fontScalePercent: Int? = null, // Per-widget text size override (null = use global)
+    // Stack slideshow — when enabled, the stack's pager auto-advances to the
+    // next widget every `stackSlideshowIntervalSec` seconds. Stored on every
+    // widget in the stack (helper keeps them synchronized) so any one of them
+    // can be read for the current setting.
+    val stackSlideshowEnabled: Boolean = false,
+    val stackSlideshowIntervalSec: Int = 10
 ) {
     // Compatibility aliases
     val gridColumn: Int get() = startColumn
@@ -436,6 +442,31 @@ object WidgetManager {
      */
     fun getStackWidgets(widgets: List<PlacedWidget>, stackId: String): List<PlacedWidget> {
         return widgets.filter { it.stackId == stackId }.sortedBy { it.stackOrder }
+    }
+
+    /**
+     * Apply slideshow settings (enabled + interval) to every widget in a stack
+     * and persist. Returns the updated list so the caller can swap it into
+     * state. Stack-level setting stored on every member so reads of any one
+     * widget yield the same value.
+     */
+    fun setStackSlideshow(
+        context: Context,
+        widgets: List<PlacedWidget>,
+        stackId: String,
+        enabled: Boolean,
+        intervalSec: Int
+    ): List<PlacedWidget> {
+        val updated = widgets.map {
+            if (it.stackId == stackId) {
+                it.copy(
+                    stackSlideshowEnabled = enabled,
+                    stackSlideshowIntervalSec = intervalSec.coerceIn(5, 65)
+                )
+            } else it
+        }
+        savePlacedWidgets(context, updated)
+        return updated
     }
 
     /**

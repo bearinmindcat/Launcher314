@@ -423,17 +423,19 @@ fun ThumbDragHorizontalSlider(
             }
         }
 
-        // Label
-        Text(
-            text = config.label,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f) else disabledTextColor,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
-            textAlign = TextAlign.Center
-        )
+        // Label — skip entirely when blank so no phantom vertical space.
+        if (config.label.isNotEmpty()) {
+            Text(
+                text = config.label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f) else disabledTextColor,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
@@ -975,5 +977,16 @@ object SliderConfigs {
         showMinorTicks = true,
         label = "Widget Spacing (%)",
         labelSuffix = "%"
+    )
+
+    val widgetSlideshowInterval = HorizontalSliderConfig(
+        minValue = 5f,
+        maxValue = 65f,
+        tickValues = (5..65 step 5).toList(),
+        labeledTickValues = listOf(5, 20, 35, 50, 65),
+        snapTickValues = (5..65 step 5).toList(),
+        showMinorTicks = true,
+        label = "",
+        labelSuffix = "s"
     )
 }

@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -3317,6 +3318,35 @@ fun LauncherScreen(
                                                                 .edit().putString("widget_stack_pages", encoded).apply()
                                                         }
                                                     }
+                                                    // Slideshow auto-advance — when the stack's
+                                                    // slideshow flag is on, animate to the next
+                                                    // member every N seconds. Paused while the
+                                                    // user is actively swiping or the context
+                                                    // menu is open (so the auto-advance doesn't
+                                                    // fight a manual swipe).
+                                                    val slideshowEnabled = widget.stackSlideshowEnabled
+                                                    val slideshowIntervalMs = widget.stackSlideshowIntervalSec.coerceIn(5, 65) * 1000L
+                                                    LaunchedEffect(
+                                                        slideshowEnabled,
+                                                        slideshowIntervalMs,
+                                                        stackWidgets.size,
+                                                        showWidgetMenu,
+                                                        isWidgetBeingDragged
+                                                    ) {
+                                                        if (!slideshowEnabled) return@LaunchedEffect
+                                                        if (stackWidgets.size <= 1) return@LaunchedEffect
+                                                        while (true) {
+                                                            kotlinx.coroutines.delay(slideshowIntervalMs)
+                                                            // Don't fight the user: skip the tick
+                                                            // if the menu is open or any widget is
+                                                            // being dragged. The LaunchedEffect
+                                                            // restarts when those keys change so
+                                                            // the timer resumes once they clear.
+                                                            if (showWidgetMenu || isWidgetBeingDragged) continue
+                                                            val next = (stackPagerState.currentPage + 1) % stackWidgets.size
+                                                            stackPagerState.animateScrollToPage(next)
+                                                        }
+                                                    }
                                                     val stackDotBaseColor = getScrollbarColor(context)
                                                     val stackDotIntensity = getScrollbarIntensity(context)
                                                     val stackDotColor = remember(stackDotBaseColor, stackDotIntensity) {
@@ -3577,6 +3607,82 @@ fun LauncherScreen(
                                                                         WidgetManager.savePlacedWidgets(context, placedWidgets)
                                                                     }
                                                                 )
+                                                            }
+
+                                                            // Widget slideshow toggle + interval
+                                                            // slider — only meaningful for stacks
+                                                            // (auto-flips between members every
+                                                            // N seconds when on). Label sized to
+                                                            // match the slider labels above; the
+                                                            // slider bar is always visible (the
+                                                            // checkbox just gates the auto-advance).
+                                                            if (widget.stackId != null) {
+                                                                // Slider FIRST (label removed via the
+                                                                // config) — the row below with the
+                                                                // "Widget slideshow" text + checkbox
+                                                                // serves as its label and toggle.
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .padding(horizontal = 16.dp)
+                                                                        .padding(top = 4.dp)
+                                                                ) {
+                                                                    ThumbDragHorizontalSlider(
+                                                                        currentValue = widget.stackSlideshowIntervalSec.toFloat(),
+                                                                        config = SliderConfigs.widgetSlideshowInterval,
+                                                                        enabled = widget.stackSlideshowEnabled,
+                                                                        onValueChange = { newVal ->
+                                                                            placedWidgets = WidgetManager.setStackSlideshow(
+                                                                                context,
+                                                                                placedWidgets,
+                                                                                widget.stackId!!,
+                                                                                widget.stackSlideshowEnabled,
+                                                                                newVal.roundToInt()
+                                                                            )
+                                                                        },
+                                                                        onValueChangeFinished = { }
+                                                                    )
+                                                                }
+                                                                // Pull the row UP to sit right under
+                                                                // the slider's labeled-ticks, at the
+                                                                // same 4 dp gap the slider's own
+                                                                // built-in label uses (matches the
+                                                                // Widget Spacing / Widget Text Size
+                                                                // label distance). The top padding
+                                                                // on the slider Box above adds 4 dp
+                                                                // before its content, so the row's
+                                                                // own top padding stays 4 dp too.
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .padding(horizontal = 16.dp)
+                                                                        .padding(top = 4.dp, bottom = 4.dp)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "Widget slideshow",
+                                                                        fontSize = 11.sp,
+                                                                        fontWeight = FontWeight.Medium,
+                                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                                                        textAlign = TextAlign.Center,
+                                                                        modifier = Modifier.align(Alignment.Center)
+                                                                    )
+                                                                    Checkbox(
+                                                                        checked = widget.stackSlideshowEnabled,
+                                                                        onCheckedChange = { newEnabled ->
+                                                                            placedWidgets = WidgetManager.setStackSlideshow(
+                                                                                context,
+                                                                                placedWidgets,
+                                                                                widget.stackId!!,
+                                                                                newEnabled,
+                                                                                widget.stackSlideshowIntervalSec
+                                                                            )
+                                                                        },
+                                                                        modifier = Modifier
+                                                                            .align(Alignment.CenterEnd)
+                                                                            .offset(x = 14.dp)
+                                                                            .scale(0.7f)
+                                                                    )
+                                                                }
                                                             }
 
                                                             // Customize option (placeholder — wiring
