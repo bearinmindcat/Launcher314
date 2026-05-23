@@ -3319,13 +3319,13 @@ fun LauncherScreen(
                                                         }
                                                     }
                                                     // Slideshow auto-advance — when the stack's
-                                                    // slideshow flag is on, animate to the next
-                                                    // member every N seconds. Paused while the
-                                                    // user is actively swiping or the context
-                                                    // menu is open (so the auto-advance doesn't
-                                                    // fight a manual swipe).
+                                                    // slideshow flag is on, CROSSFADE to the next
+                                                    // member every N seconds (no horizontal swipe
+                                                    // animation). Paused while the user has the
+                                                    // context menu open or is dragging a widget.
                                                     val slideshowEnabled = widget.stackSlideshowEnabled
                                                     val slideshowIntervalMs = widget.stackSlideshowIntervalSec.coerceIn(5, 65) * 1000L
+                                                    val slideshowAlpha = remember { androidx.compose.animation.core.Animatable(1f) }
                                                     LaunchedEffect(
                                                         slideshowEnabled,
                                                         slideshowIntervalMs,
@@ -3333,18 +3333,31 @@ fun LauncherScreen(
                                                         showWidgetMenu,
                                                         isWidgetBeingDragged
                                                     ) {
-                                                        if (!slideshowEnabled) return@LaunchedEffect
+                                                        if (!slideshowEnabled) {
+                                                            // Make sure the pager isn't left at
+                                                            // alpha 0 if we got cancelled mid-fade.
+                                                            slideshowAlpha.snapTo(1f)
+                                                            return@LaunchedEffect
+                                                        }
                                                         if (stackWidgets.size <= 1) return@LaunchedEffect
                                                         while (true) {
                                                             kotlinx.coroutines.delay(slideshowIntervalMs)
                                                             // Don't fight the user: skip the tick
                                                             // if the menu is open or any widget is
-                                                            // being dragged. The LaunchedEffect
-                                                            // restarts when those keys change so
-                                                            // the timer resumes once they clear.
+                                                            // being dragged.
                                                             if (showWidgetMenu || isWidgetBeingDragged) continue
+                                                            // Fade out current → instant jump to
+                                                            // next → fade in. Total ~600 ms.
+                                                            slideshowAlpha.animateTo(
+                                                                targetValue = 0f,
+                                                                animationSpec = androidx.compose.animation.core.tween(300)
+                                                            )
                                                             val next = (stackPagerState.currentPage + 1) % stackWidgets.size
-                                                            stackPagerState.animateScrollToPage(next)
+                                                            stackPagerState.scrollToPage(next)
+                                                            slideshowAlpha.animateTo(
+                                                                targetValue = 1f,
+                                                                animationSpec = androidx.compose.animation.core.tween(300)
+                                                            )
                                                         }
                                                     }
                                                     val stackDotBaseColor = getScrollbarColor(context)
@@ -3420,7 +3433,13 @@ fun LauncherScreen(
                                                     ) {
                                                         HorizontalPager(
                                                             state = stackPagerState,
-                                                            modifier = Modifier.fillMaxSize(),
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                // Slideshow crossfade alpha — wraps
+                                                                // only the pager content (not the
+                                                                // chrome / dots) so just the widget
+                                                                // fades during auto-advance.
+                                                                .graphicsLayer { alpha = slideshowAlpha.value },
                                                             userScrollEnabled = !isThisWidgetDragging
                                                         ) { stackPage ->
                                                             WidgetHostView(
