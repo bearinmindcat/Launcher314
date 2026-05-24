@@ -50,11 +50,16 @@ data class HomeScreenDataV2(
 // ========== Legacy Data Model (for migration) ==========
 
 // Data class for home screen apps with grid position
+// `userSerial` identifies the user profile the app belongs to. Null = primary
+// (personal) profile — kept as default for backward-compatibility with home
+// screens saved before work-profile support landed. Non-null = work / managed
+// / cloned profile, resolved via UserManager.getUserForSerialNumber().
 @Serializable
 data class HomeScreenApp(
     val packageName: String,
     val position: Int, // Grid position (0-based index)
-    val page: Int = 0 // Which screen/page this app is on
+    val page: Int = 0, // Which screen/page this app is on
+    val userSerial: Long? = null
 )
 
 // Data class for dock apps (bottom bar)
@@ -62,10 +67,13 @@ data class HomeScreenApp(
 data class DockApp(
     val packageName: String,
     val position: Int, // Dock position within a page (0-4 typically)
-    val page: Int = 0  // Which dock page this app is on (default 0 for backward compat)
+    val page: Int = 0,  // Which dock page this app is on (default 0 for backward compat)
+    val userSerial: Long? = null
 )
 
 // Data class for dock folders (bottom bar)
+// Folder entries are (packageName, userSerial?) pairs stored as
+// "pkg" (personal, legacy) or "pkg|serial" (work-profile member).
 @Serializable
 data class DockFolder(
     val id: String = java.util.UUID.randomUUID().toString(),
@@ -93,12 +101,16 @@ data class HomeScreenData(
     val dockFolders: List<DockFolder> = emptyList()
 )
 
-// App info for display
+// App info for display. `userSerial` null = personal profile.
 data class HomeAppInfo(
     val name: String,
     val packageName: String,
     val iconPath: String,
-    val customization: AppCustomization? = null
+    val customization: AppCustomization? = null,
+    val userSerial: Long? = null,
+    // In-memory only — re-derived from the live profile each enumeration.
+    val profileType: com.bearinmind.launcher314.helpers.ProfileType =
+        com.bearinmind.launcher314.helpers.ProfileType.PERSONAL
 )
 
 // ========== Grid Cell Model (for rendering) ==========

@@ -13,6 +13,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.content.IntentFilter
 import android.os.Build
 import com.bearinmind.launcher314.helpers.uninstallApp
@@ -281,7 +282,9 @@ fun AppDrawerScreen(
         }
     }
 
-    // Listen for package install/uninstall broadcasts to refresh the app list
+    // Listen for package install/uninstall broadcasts to refresh the app list.
+    // Personal-profile only — for work / managed / cloned profiles use the
+    // LauncherApps.Callback below, which fires per-user.
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
@@ -308,6 +311,58 @@ fun AppDrawerScreen(
         onDispose {
             context.unregisterReceiver(receiver)
         }
+    }
+
+    // LauncherApps.Callback — per-user package change events. Required to
+    // pick up installs/removals/changes inside work / managed / cloned
+    // profiles since the standard ACTION_PACKAGE_* broadcasts are scoped
+    // to the receiver's own user.
+    DisposableEffect(Unit) {
+        val launcherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps
+        val um = context.getSystemService(Context.USER_SERVICE) as android.os.UserManager
+        val callback = object : android.content.pm.LauncherApps.Callback() {
+            private fun invalidate(pkg: String, user: android.os.UserHandle) {
+                val serial = if (user == android.os.Process.myUserHandle()) null
+                    else um.getSerialNumberForUser(user)
+                com.bearinmind.launcher314.helpers.LauncherAppsHelper
+                    .invalidateIconCache(context, pkg, serial)
+                appRefreshTrigger++
+            }
+            override fun onPackageAdded(packageName: String, user: android.os.UserHandle) = invalidate(packageName, user)
+            override fun onPackageRemoved(packageName: String, user: android.os.UserHandle) = invalidate(packageName, user)
+            override fun onPackageChanged(packageName: String, user: android.os.UserHandle) = invalidate(packageName, user)
+            override fun onPackagesAvailable(packageNames: Array<out String>, user: android.os.UserHandle, replacing: Boolean) {
+                packageNames.forEach { invalidate(it, user) }
+            }
+            override fun onPackagesUnavailable(packageNames: Array<out String>, user: android.os.UserHandle, replacing: Boolean) {
+                packageNames.forEach { invalidate(it, user) }
+            }
+        }
+        launcherApps.registerCallback(callback)
+        onDispose { launcherApps.unregisterCallback(callback) }
+    }
+
+    // Managed-profile lifecycle broadcasts — fire when the user adds, removes,
+    // pauses ("Pause work apps"), or unpauses a work profile. Any of those
+    // changes the set of apps we should enumerate, so trigger a refresh.
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                appRefreshTrigger++
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_MANAGED_PROFILE_ADDED)
+            addAction(Intent.ACTION_MANAGED_PROFILE_REMOVED)
+            addAction(Intent.ACTION_MANAGED_PROFILE_AVAILABLE)
+            addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
+        onDispose { context.unregisterReceiver(receiver) }
     }
 
     // Dialog states
@@ -411,6 +466,33 @@ fun AppDrawerScreen(
     // When searching, include apps from folders so they appear in results
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(context) }
     val isSearching by remember { derivedStateOf { searchQuery.isNotBlank() } }
+    // Per-profile-type chip strip — Personal / Work / Cloned / Private,
+    // Kvaesitso-style. Only types with at least one app get a chip; users
+    // without a work profile see no chips at all. While searching, the
+    // filter is bypassed so results span every profile.
+    var selectedProfile by rememberSaveable { mutableStateOf(com.bearinmind.launcher314.helpers.ProfileType.PERSONAL) }
+    val availableProfiles by remember {
+        derivedStateOf {
+            // Stable order: Personal, Work, Cloned, Private, Other.
+            val order = listOf(
+                com.bearinmind.launcher314.helpers.ProfileType.PERSONAL,
+                com.bearinmind.launcher314.helpers.ProfileType.WORK,
+                com.bearinmind.launcher314.helpers.ProfileType.CLONE,
+                com.bearinmind.launcher314.helpers.ProfileType.PRIVATE,
+                com.bearinmind.launcher314.helpers.ProfileType.OTHER
+            )
+            val present = allApps.map { it.profileType }.toSet()
+            order.filter { it in present }
+        }
+    }
+    val hasWorkApps by remember { derivedStateOf { availableProfiles.size > 1 } }
+    // Reset to Personal if the currently selected profile disappears
+    // (e.g., work profile removed while we were viewing it).
+    LaunchedEffect(availableProfiles) {
+        if (selectedProfile !in availableProfiles) {
+            selectedProfile = com.bearinmind.launcher314.helpers.ProfileType.PERSONAL
+        }
+    }
     val filteredApps by remember {
         derivedStateOf {
             val availableApps = if (searchQuery.isBlank()) {
@@ -419,10 +501,14 @@ fun AppDrawerScreen(
                 // When searching, include all apps (even those in folders) so they appear in results
                 allApps.filter { it.packageName !in hiddenApps }
             }
+            // Apply profile filter unless we're searching (search spans all).
+            val profileFiltered = if (searchQuery.isBlank() && hasWorkApps) {
+                availableApps.filter { it.profileType == selectedProfile }
+            } else availableApps
             val searched = if (searchQuery.isBlank()) {
-                availableApps
+                profileFiltered
             } else {
-                availableApps.filter { app ->
+                profileFiltered.filter { app ->
                     app.name.contains(searchQuery, ignoreCase = true)
                 }
             }
@@ -450,7 +536,7 @@ fun AppDrawerScreen(
         if (filteredApps.size != 1) return@LaunchedEffect
         kotlinx.coroutines.delay(500)
         val target = filteredApps.singleOrNull() ?: return@LaunchedEffect
-        launchApp(context, target.packageName)
+        launchApp(context, target.packageName, target.userSerial)
     }
 
     // Animation values
@@ -555,9 +641,16 @@ fun AppDrawerScreen(
                 }
             },
             isLoading = isLoading,
-            folders = if (isSearching) emptyList() else displayFolders.map { folder ->
-                folder.copy(appPackageNames = folder.appPackageNames.filter { it !in hiddenApps })
-            },
+            // Folders are personal-only (they're created from drawer's personal
+            // apps and don't carry a userSerial). Hide them on any non-personal
+            // tab so each profile view only shows its own apps. Also hidden
+            // during search (search uses a flat app list).
+            folders = if (isSearching ||
+                    selectedProfile != com.bearinmind.launcher314.helpers.ProfileType.PERSONAL)
+                emptyList()
+                else displayFolders.map { folder ->
+                    folder.copy(appPackageNames = folder.appPackageNames.filter { it !in hiddenApps })
+                },
             filteredApps = filteredApps,
             allApps = allApps,
             gridSize = gridSize,
@@ -583,10 +676,10 @@ fun AppDrawerScreen(
                 clickedFolderPosition = folderPositions[latestFolder.id] ?: Offset(screenWidthPx / 2, screenHeightPx / 2)
                 openFolder = latestFolder
             },
-            onAppClick = { launchApp(context, it) },
+            onAppClick = { launchApp(context, it.packageName, it.userSerial) },
             onImeSearch = {
                 if (autoLaunchSearchEnabled) {
-                    filteredApps.firstOrNull()?.let { launchApp(context, it.packageName) }
+                    filteredApps.firstOrNull()?.let { launchApp(context, it.packageName, it.userSerial) }
                 }
             },
             onUninstallApp = { app -> uninstallApp(context, app.packageName) },
@@ -650,7 +743,10 @@ fun AppDrawerScreen(
                         }
                     }
                 },
-                onCustomizeApp = { app -> customizingDrawerApp = app }
+                onCustomizeApp = { app -> customizingDrawerApp = app },
+                availableProfiles = availableProfiles,
+                selectedProfile = selectedProfile,
+                onSelectedProfileChange = { selectedProfile = it }
             ),
             escapeHoverState = EscapeHoverState(
                 folderId = if (escapeHoveredFolderId != null && folderEscapedApp != null) escapeHoveredFolderId else null,

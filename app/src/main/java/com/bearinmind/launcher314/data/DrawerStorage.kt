@@ -33,50 +33,52 @@ fun saveDrawerData(context: Context, data: DrawerData) {
 }
 
 fun getInstalledApps(context: Context): List<AppInfo> {
+    // LauncherApps-based enumeration: includes work-profile / managed /
+    // cloned-profile apps. Each entry carries `userSerial` so launches go
+    // to the right profile and badged icons are cached per (pkg, user).
     val packageManager = context.packageManager
-    val intent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_LAUNCHER)
-    }
+    val activities = com.bearinmind.launcher314.helpers.LauncherAppsHelper.enumerateAllApps(context)
 
-    val iconsDir = File(context.cacheDir, "app_icons")
-    if (!iconsDir.exists()) {
-        iconsDir.mkdirs()
-    }
-
-    val resolveInfoList: List<ResolveInfo> = packageManager.queryIntentActivities(intent, 0)
-
-    return resolveInfoList
-        .mapNotNull { resolveInfo ->
+    return activities
+        .mapNotNull { activity ->
             try {
-                val packageName = resolveInfo.activityInfo.packageName
-                val iconFile = File(iconsDir, "$packageName.png")
+                val packageName = activity.applicationInfo.packageName
+                val userSerial = com.bearinmind.launcher314.helpers.LauncherAppsHelper.serialFor(context, activity.user)
+                val profileType = com.bearinmind.launcher314.helpers.LauncherAppsHelper
+                    .profileTypeFor(context, activity.user)
+                val iconPath = com.bearinmind.launcher314.helpers.LauncherAppsHelper
+                    .loadOrCacheBadgedIcon(context, activity, userSerial)
 
-                if (!iconFile.exists()) {
-                    val drawable = packageManager.getApplicationIcon(packageName)
-                    val bitmap = drawableToBitmap(drawable)
-                    saveBitmapToFile(bitmap, iconFile)
-                    bitmap.recycle()
-                }
-
-                // Get package info for install/update times
-                val packageInfo = packageManager.getPackageInfo(packageName, 0)
-
-                // Get app size from APK file
-                val appInfo = packageManager.getApplicationInfo(packageName, 0)
-                val apkSize = File(appInfo.sourceDir).length()
+                // Install/update time + APK size — these are user-agnostic so
+                // looking them up via PackageManager is still fine. Wrapped in
+                // try/catch in case the package was uninstalled between the
+                // LauncherApps query and this call.
+                var installTime = 0L
+                var updateTime = 0L
+                var apkSize = 0L
+                try {
+                    val packageInfo = packageManager.getPackageInfo(packageName, 0)
+                    installTime = packageInfo.firstInstallTime
+                    updateTime = packageInfo.lastUpdateTime
+                    apkSize = File(activity.applicationInfo.sourceDir).length()
+                } catch (_: Throwable) { /* ignore — fields stay 0 */ }
 
                 AppInfo(
-                    name = resolveInfo.loadLabel(packageManager).toString(),
+                    name = activity.label.toString(),
                     packageName = packageName,
-                    iconPath = IconPackManager.resolveIconPath(context, packageName, iconFile.absolutePath),
-                    installTime = packageInfo.firstInstallTime,
-                    lastUpdateTime = packageInfo.lastUpdateTime,
-                    sizeBytes = apkSize
+                    iconPath = IconPackManager.resolveIconPath(context, packageName, iconPath),
+                    installTime = installTime,
+                    lastUpdateTime = updateTime,
+                    sizeBytes = apkSize,
+                    userSerial = userSerial,
+                    profileType = profileType
                 )
             } catch (e: Exception) {
                 null
             }
         }
-        .distinctBy { it.packageName }
+        // De-dupe on (pkg, user) so the same app from the same profile only
+        // appears once — but a work copy stays distinct from personal.
+        .distinctBy { it.packageName to it.userSerial }
         .sortedBy { it.name.lowercase() }
 }

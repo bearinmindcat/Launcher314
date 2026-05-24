@@ -16,13 +16,24 @@ enum class SortOption(val displayName: String) {
 }
 
 // Data classes
+// `userSerial` identifies the user profile the app belongs to. Null = primary
+// (personal) profile. Non-null = work / managed / cloned profile, resolved via
+// UserManager.getUserForSerialNumber(). Drawer enumeration via LauncherApps
+// returns apps from every profile; the serial lets us route launches and
+// badge icons correctly.
 data class AppInfo(
     val name: String,
     val packageName: String,
     val iconPath: String,
     val installTime: Long = 0L,
     val lastUpdateTime: Long = 0L,
-    val sizeBytes: Long = 0L
+    val sizeBytes: Long = 0L,
+    val userSerial: Long? = null,
+    // In-memory only — re-derived from the live profile each enumeration via
+    // LauncherAppsHelper.profileTypeFor(). Not persisted; storage just keeps
+    // the user serial and we look the type up again on next load.
+    val profileType: com.bearinmind.launcher314.helpers.ProfileType =
+        com.bearinmind.launcher314.helpers.ProfileType.PERSONAL
 )
 
 @Serializable

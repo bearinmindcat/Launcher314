@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SortByAlpha
+import androidx.compose.material.icons.outlined.Work
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Update
@@ -106,7 +107,15 @@ internal data class DrawerExtraCallbacks(
     val onAddFolderToHome: (AppFolder) -> Unit = {},
     val onBulkAddToFolder: (List<AppInfo>, AppFolder) -> Unit = { _, _ -> },
     val onDropTargetPositioned: (Offset, IntSize) -> Unit = { _, _ -> },
-    val onCustomizeApp: (AppInfo) -> Unit = {}
+    val onCustomizeApp: (AppInfo) -> Unit = {},
+    // Per-profile chip strip — Personal / Work / Cloned / Private. Bundled
+    // here because MainDrawerContent is already at the DEX register limit
+    // (adding bare params triggers a VerifyError on classload).
+    val availableProfiles: List<com.bearinmind.launcher314.helpers.ProfileType> =
+        listOf(com.bearinmind.launcher314.helpers.ProfileType.PERSONAL),
+    val selectedProfile: com.bearinmind.launcher314.helpers.ProfileType =
+        com.bearinmind.launcher314.helpers.ProfileType.PERSONAL,
+    val onSelectedProfileChange: (com.bearinmind.launcher314.helpers.ProfileType) -> Unit = {}
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -133,7 +142,7 @@ internal fun MainDrawerContent(
     isSortAscending: Boolean,
     onSortDirectionChanged: (Boolean) -> Unit,
     onFolderClick: (AppFolder) -> Unit,
-    onAppClick: (String) -> Unit,
+    onAppClick: (AppInfo) -> Unit,
     onImeSearch: () -> Unit = {},
     onUninstallApp: (AppInfo) -> Unit,
     onAppInfo: (AppInfo) -> Unit,
@@ -147,6 +156,12 @@ internal fun MainDrawerContent(
     escapeHoverState: EscapeHoverState? = null,
     extraCallbacks: DrawerExtraCallbacks = DrawerExtraCallbacks()
 ) {
+    // Per-profile chips — unpacked from extraCallbacks (bundled to avoid
+    // pushing the function past the DEX register limit, which triggers a
+    // runtime VerifyError on the whole compose method).
+    val availableProfiles = extraCallbacks.availableProfiles
+    val selectedProfile = extraCallbacks.selectedProfile
+    val onSelectedProfileChange = extraCallbacks.onSelectedProfileChange
     // Unpack bundled params for backward compatibility
     val iconClipShape = iconConfig.iconClipShape
     val iconBgColor = iconConfig.iconBgColor
@@ -710,6 +725,54 @@ internal fun MainDrawerContent(
 
         if (!reverseSearchBar) searchBarBlock()
 
+        // Per-profile chip strip — Personal / Work / Cloned / Private /
+        // Other. Only types with apps get a chip; hidden when only Personal
+        // exists. Hidden while searching since search spans all profiles.
+        if (availableProfiles.size > 1 && searchQuery.isBlank()) {
+            // Neutral monochrome chips — selected = subtle fill in the same
+            // hue as the outline.
+            val chipOutline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f)
+            val chipFillSelected = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+            val chipColors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                labelColor = MaterialTheme.colorScheme.onSurface,
+                iconColor = MaterialTheme.colorScheme.onSurface,
+                selectedContainerColor = chipFillSelected,
+                selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                selectedLeadingIconColor = MaterialTheme.colorScheme.onSurface,
+                selectedTrailingIconColor = MaterialTheme.colorScheme.onSurface
+            )
+            val chipBorder = androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+                borderColor = chipOutline,
+                selectedBorderColor = chipOutline,
+                borderWidth = 1.dp,
+                selectedBorderWidth = 1.dp
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+            ) {
+                availableProfiles.forEach { type ->
+                    val label = when (type) {
+                        com.bearinmind.launcher314.helpers.ProfileType.PERSONAL -> "Personal"
+                        com.bearinmind.launcher314.helpers.ProfileType.WORK -> "Work"
+                        com.bearinmind.launcher314.helpers.ProfileType.CLONE -> "Cloned"
+                        com.bearinmind.launcher314.helpers.ProfileType.PRIVATE -> "Private"
+                        com.bearinmind.launcher314.helpers.ProfileType.OTHER -> "Other"
+                    }
+                    androidx.compose.material3.FilterChip(
+                        selected = selectedProfile == type,
+                        onClick = { onSelectedProfileChange(type) },
+                        label = { Text(label) },
+                        colors = chipColors,
+                        border = chipBorder
+                    )
+                }
+            }
+        }
+
         var drawerGridRootPos by remember { mutableStateOf(Offset.Zero) }
 
         // Shared wrapper Box for drag overlay to float above both modes
@@ -848,7 +911,9 @@ internal fun MainDrawerContent(
                                 key = { idx ->
                                     val cellItem = if (idx < pageItems.size) pageItems[idx] else null
                                     when (cellItem) {
-                                        is AppInfo -> "app_${cellItem.packageName}"
+                                        // Composite key (pkg, userSerial) so personal + work
+                                        // copies of the same app don't collide.
+                                        is AppInfo -> "app_${cellItem.packageName}_u${cellItem.userSerial ?: 0}"
                                         is AppFolder -> "folder_${cellItem.id}"
                                         else -> "empty_${pageIndex}_$idx"
                                     }
@@ -856,7 +921,7 @@ internal fun MainDrawerContent(
                             ) { idx ->
                                 val cellItem = if (idx < pageItems.size) pageItems[idx] else null
                                 val cellKey = when (cellItem) {
-                                    is AppInfo -> "app_${cellItem.packageName}"
+                                    is AppInfo -> "app_${cellItem.packageName}_u${cellItem.userSerial ?: 0}"
                                     is AppFolder -> "folder_${cellItem.id}"
                                     else -> null
                                 }
@@ -942,7 +1007,7 @@ internal fun MainDrawerContent(
                                                                 selectionModeActive = false
                                                             }
                                                         } else {
-                                                            onAppClick(cellItem.packageName)
+                                                            onAppClick(cellItem)
                                                         }
                                                     },
                                                     onUninstall = { onUninstallApp(cellItem) },
@@ -1125,10 +1190,14 @@ internal fun MainDrawerContent(
                     // Then show apps
                     items(
                         items = filteredApps,
-                        key = { it.packageName },
+                        // Composite key (pkg, userSerial) — same package can
+                        // appear in BOTH personal and work profile; using
+                        // packageName alone would collide and crash the
+                        // LazyGrid with "Key X was already used".
+                        key = { "${it.packageName}#${it.userSerial ?: 0}" },
                         contentType = { "app" }
                     ) { app ->
-                        val cellKey = "app_${app.packageName}"
+                        val cellKey = "app_${app.packageName}_u${app.userSerial ?: 0}"
                         val isDragTarget = drawerDraggedItem == app
                         val cellDragStart: () -> Unit = {
                             if (drawerDraggedItem == null) {
@@ -1177,7 +1246,7 @@ internal fun MainDrawerContent(
                                             selectionModeActive = false
                                         }
                                     } else {
-                                        onAppClick(app.packageName)
+                                        onAppClick(app)
                                     }
                                 },
                                 onUninstall = { onUninstallApp(app) },

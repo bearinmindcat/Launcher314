@@ -626,7 +626,7 @@ internal fun FolderContentScreen(
                                                             val currentCellApp = folderCellMap[cellIdx]?.let { p -> allApps.find { it.packageName == p } }
                                                             if (currentCellApp != null && draggedPkg == null) {
                                                                 flashOverlay = true
-                                                                launchApp(context, currentCellApp.packageName)
+                                                                launchApp(context, currentCellApp.packageName, currentCellApp.userSerial)
                                                             }
                                                         }
                                                     }

@@ -2802,7 +2802,7 @@ fun LauncherScreen(
                                                     // cell is almost always a misfire from the user
                                                     // trying to grab a stretched detached icon whose
                                                     // visual extent overflows its outer-Box hit area.
-                                                    launchApp(context, cell.appInfo.packageName)
+                                                    launchApp(context, cell.appInfo.packageName, cell.appInfo.userSerial)
                                                 } else if (cell is HomeGridCell.Folder && !isEditMode && editingPackageName == null) {
                                                     openHomeFolder = cell.folder
                                                 }
@@ -4389,7 +4389,7 @@ fun LauncherScreen(
                                                         val longPress = awaitLongPressOrCancellation(down.id)
                                                         if (longPress == null) {
                                                             isFingerDown = false
-                                                            launchApp(context, homeApp.packageName)
+                                                            launchApp(context, homeApp.packageName, homeApp.userSerial)
                                                             return@awaitEachGesture
                                                         }
                                                         showContextMenu = true
@@ -5303,7 +5303,7 @@ fun LauncherScreen(
                                         appPackageNames = dockFolder.appPackageNames
                                     )
                                 } else if (appInfo != null) {
-                                    launchApp(context, appInfo.packageName)
+                                    launchApp(context, appInfo.packageName, appInfo.userSerial)
                                 }
                             },
                             onLongPress = { },
@@ -6771,7 +6771,7 @@ fun LauncherScreen(
                                         onTap = {
                                             if (cellApp != null && draggedPkg == null) {
                                                 openHomeFolder = null
-                                                launchApp(context, cellApp.packageName)
+                                                launchApp(context, cellApp.packageName, cellApp.userSerial)
                                             }
                                         },
                                         onLongPress = { /* no-op for folder empty cells */ },

@@ -37,41 +37,35 @@ fun saveHomeScreenData(context: Context, data: HomeScreenData) {
 }
 
 fun loadAvailableApps(context: Context): List<HomeAppInfo> {
-    val packageManager = context.packageManager
-    val intent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_LAUNCHER)
-    }
+    // LauncherApps-based enumeration so work-profile / managed-profile /
+    // cloned-profile apps are included. The legacy PackageManager path only
+    // returned apps from the personal user. Each entry carries its
+    // `userSerial` so the launch path can route to the right profile.
+    val activities = com.bearinmind.launcher314.helpers.LauncherAppsHelper.enumerateAllApps(context)
 
-    val iconsDir = File(context.cacheDir, "app_icons")
-    if (!iconsDir.exists()) {
-        iconsDir.mkdirs()
-    }
-
-    val resolveInfoList = packageManager.queryIntentActivities(intent, 0)
-
-    return resolveInfoList
-        .mapNotNull { resolveInfo ->
+    return activities
+        .mapNotNull { activity ->
             try {
-                val packageName = resolveInfo.activityInfo.packageName
-                val iconFile = File(iconsDir, "$packageName.png")
-
-                if (!iconFile.exists()) {
-                    val drawable = packageManager.getApplicationIcon(packageName)
-                    val bitmap = drawableToBitmap(drawable)
-                    saveBitmapToFile(bitmap, iconFile)
-                    bitmap.recycle()
-                }
-
+                val packageName = activity.applicationInfo.packageName
+                val userSerial = com.bearinmind.launcher314.helpers.LauncherAppsHelper.serialFor(context, activity.user)
+                val profileType = com.bearinmind.launcher314.helpers.LauncherAppsHelper
+                    .profileTypeFor(context, activity.user)
+                val iconPath = com.bearinmind.launcher314.helpers.LauncherAppsHelper
+                    .loadOrCacheBadgedIcon(context, activity, userSerial)
                 HomeAppInfo(
-                    name = resolveInfo.loadLabel(packageManager).toString(),
+                    name = activity.label.toString(),
                     packageName = packageName,
-                    iconPath = IconPackManager.resolveIconPath(context, packageName, iconFile.absolutePath)
+                    iconPath = IconPackManager.resolveIconPath(context, packageName, iconPath),
+                    userSerial = userSerial,
+                    profileType = profileType
                 )
             } catch (e: Exception) {
                 null
             }
         }
-        .distinctBy { it.packageName }
+        // De-dupe on (pkg, user) so the same app from the same profile only
+        // appears once — but a work copy of the same app stays distinct.
+        .distinctBy { it.packageName to it.userSerial }
         .sortedBy { it.name.lowercase() } + loadShortcutApps(context)
 }
 
@@ -96,6 +90,26 @@ fun saveBitmapToFile(bitmap: Bitmap, file: File) {
     FileOutputStream(file).use { out ->
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
     }
+}
+
+/**
+ * Launch by package name with optional `userSerial` to target a specific user
+ * profile. `userSerial == null` → personal profile (legacy behavior). Routes
+ * non-personal launches through [com.bearinmind.launcher314.helpers.LauncherAppsHelper.startApp]
+ * which uses `LauncherApps.startMainActivity` — required for work-profile
+ * apps. `getLaunchIntentForPackage` silently fails for them.
+ */
+fun launchApp(context: Context, packageName: String, userSerial: Long?) {
+    // Shortcuts are personal-only and have a custom launch path below.
+    if (!packageName.startsWith("shortcut_") && userSerial != null) {
+        if (com.bearinmind.launcher314.helpers.LauncherAppsHelper
+                .startApp(context, packageName, userSerial)) {
+            return
+        }
+        // Fall through to the legacy path if startApp returned false (app
+        // gone, profile gone). The legacy path will also fail gracefully.
+    }
+    launchApp(context, packageName)
 }
 
 fun launchApp(context: Context, packageName: String) {
