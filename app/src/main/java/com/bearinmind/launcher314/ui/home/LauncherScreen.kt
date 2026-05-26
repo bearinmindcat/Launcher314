@@ -4880,8 +4880,25 @@ fun LauncherScreen(
                                                             // 50 px → bracket edge moves 50 px →
                                                             // content dimension grows 50 px. The
                                                             // resize ratio falls out from there.
-                                                            val initialContentX = (bounds.right - bounds.left) - pagePadPx
-                                                            val initialContentY = (bounds.bottom - bounds.top) - pagePadPx
+                                                            //
+                                                            // CRITICAL: read activeEditBounds fresh
+                                                            // here instead of the outer-scope `bounds`
+                                                            // val. pointerInput keys on (pkg, idx) so
+                                                            // the suspend block is NOT restarted when
+                                                            // activeEditBounds changes mid-edit — the
+                                                            // outer `bounds` capture is stale on the
+                                                            // 2nd+ resize. Reading the state directly
+                                                            // here gets the current bracket size, so
+                                                            // ratio math reflects the post-1st-resize
+                                                            // bracket and the opposite edge truly
+                                                            // holds still on subsequent drags.
+                                                            val freshBounds = activeEditBounds
+                                                            val initialContentX = if (freshBounds != null)
+                                                                (freshBounds.right - freshBounds.left) - pagePadPx
+                                                            else 0f
+                                                            val initialContentY = if (freshBounds != null)
+                                                                (freshBounds.bottom - freshBounds.top) - pagePadPx
+                                                            else 0f
                                                             var accumulated = androidx.compose.ui.geometry.Offset.Zero
                                                             // Latest in-flight values tracked locally
                                                             // — commit uses these so we don't race a
