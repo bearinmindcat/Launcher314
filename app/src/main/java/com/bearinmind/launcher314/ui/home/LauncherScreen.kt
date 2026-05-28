@@ -302,10 +302,15 @@ private fun OverlayAppContent(
     showLabel: Boolean,
     globalIconBgColor: Int? = null
 ) {
-    val hasCustomIcon = appInfo.customization?.customIconPath?.let { File(it).exists() } == true
-    val hasShapeExp = appInfo.customization?.iconShapeExp != null
-    val hasPerAppShape = appInfo.customization?.iconShape != null
-    val iconPath = if (hasCustomIcon) {
+    // Experimental "Use original" mode — bypass every image-side override
+    // (custom icon path, shape, tint, icon-pack) and render the app's own
+    // launcher icon as-is.
+    val useOrig = appInfo.customization?.useOriginalIcon == true
+    val hasCustomIcon = !useOrig && appInfo.customization?.customIconPath?.let { File(it).exists() } == true
+    val hasShapeExp = !useOrig && appInfo.customization?.iconShapeExp != null
+    val hasPerAppShape = !useOrig && appInfo.customization?.iconShape != null
+    val iconPath = if (useOrig) appInfo.iconPath
+    else if (hasCustomIcon) {
         appInfo.customization!!.customIconPath!!
     } else if (hasShapeExp) {
         File(getShapedExpDir(context), "${appInfo.packageName}.png").let {
@@ -317,7 +322,7 @@ private fun OverlayAppContent(
             else try { getOrGenerateGlobalShapedIcon(context, appInfo.packageName, globalIconShape) } catch (_: Exception) { appInfo.iconPath }
         }
     } else appInfo.iconPath
-    val hasBgTint = appInfo.customization?.iconTintBackgroundOnly == true && appInfo.customization?.iconTintColor != null
+    val hasBgTint = !useOrig && appInfo.customization?.iconTintBackgroundOnly == true && appInfo.customization?.iconTintColor != null
     val hasAnyShape = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
     val effectiveShape = appInfo.customization?.iconShapeExp ?: appInfo.customization?.iconShape ?: globalIconShape
     val finalIconPath = if (hasBgTint && !hasCustomIcon) {
@@ -326,10 +331,11 @@ private fun OverlayAppContent(
         resolveBgTintIconPath(context, appInfo.packageName, hasAnyShape, iconPath, effectiveShape, tintColor, tintAlpha)
     } else iconPath
     val hasAnyExp = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
-    val clipShape = if (hasCustomIcon) {
+    val clipShape = if (useOrig) null
+    else if (hasCustomIcon) {
         getIconShape(appInfo.customization?.iconShapeExp ?: appInfo.customization?.iconShape ?: globalIconShape)
     } else if (!hasAnyExp) getIconShape(appInfo.customization?.iconShape) else null
-    val tintFilter = if (hasBgTint) null else appInfo.customization?.iconTintColor?.let { tintColor ->
+    val tintFilter = if (useOrig || hasBgTint) null else appInfo.customization?.iconTintColor?.let { tintColor ->
         val intensity = (appInfo.customization?.iconTintIntensity ?: 100) / 100f
         ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(appInfo.customization?.iconTintBlendMode))
     }
@@ -344,7 +350,7 @@ private fun OverlayAppContent(
     val labelHidden = appInfo.customization?.hideLabel == true
     val displayLabel = appInfo.customization?.customLabel?.takeIf { it.isNotEmpty() } ?: appInfo.name
     // When bg color is set, generate icon with user color as bg layer
-    val useBgColorIcon = globalIconBgColor != null && !hasCustomIcon
+    val useBgColorIcon = !useOrig && globalIconBgColor != null && !hasCustomIcon
     val bgColorEffectiveShape = if (useBgColorIcon) {
         appInfo.customization?.iconShapeExp
             ?: appInfo.customization?.iconShape
@@ -356,25 +362,69 @@ private fun OverlayAppContent(
     } else finalIconPath
     val isBgColorIcon = displayIconPath != finalIconPath
 
+    val iconTextOverride = appInfo.customization?.iconText?.takeIf { it.isNotBlank() }
     Column(
         modifier = Modifier
             .wrapContentHeight(unbounded = true)
             .graphicsLayer { clip = false },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            AsyncImage(
-                model = File(displayIconPath),
-                contentDescription = appInfo.name,
-                contentScale = if (isBgColorIcon) ContentScale.Fit else if (clipShape != null) ContentScale.Crop else ContentScale.Fit,
-                colorFilter = tintFilter,
-                modifier = Modifier
-                    .size(perAppIconSizeDp)
-                    .then(if (!isBgColorIcon && clipShape != null) Modifier.clip(clipShape) else Modifier)
-            )
+        if (iconTextOverride != null) {
+            // Text-as-icon (Total-Launcher style). Use wrapContentSize so
+            // long text (e.g. "Morphe") isn't ellipsized inside the
+            // icon-square — let the glyph breathe at its natural width.
+            // The cell's per-app size slider still scales the whole Box
+            // via the parent graphicsLayer, so the text grows / shrinks
+            // with it. Vertical footprint is kept >= the icon size so
+            // rows of mixed text/icon items stay aligned.
+            val iconTextColorLong = appInfo.customization?.iconTextColor
+            val iconTextIntensity = (appInfo.customization?.iconTextColorIntensity ?: 100) / 100f
+            val iconTextResolvedColor = if (iconTextColorLong != null)
+                Color(iconTextColorLong.toInt()).copy(alpha = iconTextIntensity.coerceIn(0f, 1f))
+            else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
+            val iconTextFontFamily = appInfo.customization?.iconTextFontId?.let { id ->
+                FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                    ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+            } ?: perAppFontFamily
+            Box(
+                modifier = Modifier.heightIn(min = perAppIconSizeDp),
+                contentAlignment = Alignment.Center
+            ) {
+                // Fall back to a fixed default (28sp) when the user hasn't
+                // picked a custom size — same default the dialog's "Size"
+                // chip shows so the on-screen value always matches.
+                val iconAsTextSp = appInfo.customization?.iconAsTextSizeSp ?: 28
+                Text(
+                    text = iconTextOverride,
+                    color = iconTextResolvedColor,
+                    fontSize = iconAsTextSp.sp,
+                    fontFamily = iconTextFontFamily,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Visible
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier.size(perAppIconSizeDp),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = File(displayIconPath),
+                    contentDescription = appInfo.name,
+                    contentScale = if (isBgColorIcon) ContentScale.Fit else if (clipShape != null) ContentScale.Crop else ContentScale.Fit,
+                    colorFilter = tintFilter,
+                    modifier = Modifier
+                        .size(perAppIconSizeDp)
+                        .then(if (!isBgColorIcon && clipShape != null) Modifier.clip(clipShape) else Modifier)
+                )
+            }
         }
-        // Always render label (alpha 0 when hidden) to match cell layout
-        if (showLabel && !com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) {
+        // Label below — suppressed when in text-as-icon mode so the user
+        // doesn't see the icon-text AND the app label stacked (the duplicate
+        // "Morphe / Morphe" the user reported).
+        if (showLabel && !com.bearinmind.launcher314.ui.theme.LocalHideIconText.current && iconTextOverride == null) {
             Spacer(modifier = Modifier.height(gridIconTextSpacer))
             Text(
                 text = displayLabel,
@@ -4095,11 +4145,53 @@ fun LauncherScreen(
                                         // the LaunchedEffect below + the pointerInput can both
                                         // use them). ─────────────────────────────────────────────
                                         val perAppPctOuter = appInfo.customization?.iconSizePercent ?: iconSizePercent
-                                        val iconPxOuter = with(density) {
+                                        val iconSquarePxOuter = with(density) {
                                             (iconSizeDp * perAppPctOuter / iconSizePercent.toFloat()).dp.toPx()
                                         }
-                                        val labelOffsetPxOuter = with(density) { gridIconTextSpacer.toPx() } + measuredLabelHeightPx
-                                        val cappedLabelWidthOuter = kotlin.math.min(measuredLabelWidthPx, cellSize.width.toFloat())
+                                        // Text-as-icon footprint: measure the actual glyph using
+                                        // the SAME font + SP the renderer applies, so the bracket
+                                        // wraps the visible text (e.g. "morphe" overflows the
+                                        // icon-square otherwise). Image mode keeps the square.
+                                        val iconTextString = appInfo.customization?.iconText?.takeIf { it.isNotBlank() }
+                                        val iconTextSpForBox = appInfo.customization?.iconAsTextSizeSp ?: 28
+                                        // Mirror OverlayAppContent's font fallback EXACTLY:
+                                        //   iconTextFontId → (labelFontId-as-perAppFontFamily) → global.
+                                        // Skipping the label-font step here made the TextMeasurer
+                                        // produce a narrower width than the actual rendered glyph
+                                        // when the user has a per-app label font set, so the
+                                        // bracket fell short of the visible text.
+                                        val perAppLabelFontFamilyForBox = appInfo.customization?.labelFontId?.let { id ->
+                                            FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                                                ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+                                        } ?: selectedFontFamily ?: androidx.compose.ui.text.font.FontFamily.Default
+                                        val iconTextFontFamilyForBox = appInfo.customization?.iconTextFontId?.let { id ->
+                                            FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                                                ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+                                        } ?: perAppLabelFontFamilyForBox
+                                        val iconTextMeasured = remember(iconTextString, iconTextSpForBox, iconTextFontFamilyForBox) {
+                                            iconTextString?.let { txt ->
+                                                textMeasurer.measure(
+                                                    text = txt,
+                                                    style = androidx.compose.ui.text.TextStyle(
+                                                        fontSize = iconTextSpForBox.sp,
+                                                        fontFamily = iconTextFontFamilyForBox
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        val iconWidthPxOuter = iconTextMeasured?.size?.width?.toFloat() ?: iconSquarePxOuter
+                                        val iconHeightPxOuter = iconTextMeasured?.size?.height?.toFloat() ?: iconSquarePxOuter
+                                        // Image-mode also keeps a single iconPx for backwards-compat
+                                        // with the resize-handle code which uses one scalar.
+                                        val iconPxOuter = iconSquarePxOuter
+                                        // In text mode the label is suppressed (see OverlayAppContent)
+                                        // so the bracket has no label area below the glyph — zero out
+                                        // the label dims so computeEditBoundsAndCenter doesn't carve
+                                        // out empty space for it.
+                                        val labelOffsetPxOuter = if (iconTextString != null) 0f
+                                            else with(density) { gridIconTextSpacer.toPx() } + measuredLabelHeightPx
+                                        val cappedLabelWidthOuter = if (iconTextString != null) 0f
+                                            else kotlin.math.min(measuredLabelWidthPx, cellSize.width.toFloat())
                                         val boundsPaddingPxOuter = with(density) { 12.dp.toPx() }
                                         // Edit mode no longer scales the icon up (the crosshair
                                         // is the visual cue), so the bracket / icon-visual scale
@@ -4120,8 +4212,11 @@ fun LauncherScreen(
                                             val ry = if (inEditMode) activeResizeMultiplierY else 1f
                                             val combinedScaleX = editScaleOuter * storedScaleX * rx
                                             val combinedScaleY = editScaleOuter * storedScaleY * ry
-                                            val effIconWidth = iconPxOuter * combinedScaleX
-                                            val effIconHeight = iconPxOuter * combinedScaleY
+                                            // Use the text-measured dims in text mode so the bracket
+                                            // wraps a wide glyph like "morphe"; image mode keeps the
+                                            // icon-square footprint.
+                                            val effIconWidth = iconWidthPxOuter * combinedScaleX
+                                            val effIconHeight = iconHeightPxOuter * combinedScaleY
                                             // Label sits below the icon at scaled spacing — uses Y
                                             // scale only since the label is vertically below icon.
                                             val effLabelOffset = labelOffsetPxOuter * combinedScaleY
@@ -4161,12 +4256,32 @@ fun LauncherScreen(
                                         // different code path. Even with mutableStateOf's
                                         // equality check, the extra write was producing a
                                         // perceptible split-second ghost on resize commit.)
+                                        // In text mode the visible glyph ("morphe") can be
+                                        // wider/taller than the icon-square (cellSize), so the
+                                        // pointer-detection Box has to grow to cover the visible
+                                        // text — otherwise a tap on the overflow part of the
+                                        // glyph never registers. Position is shifted by half the
+                                        // size delta so the icon's center stays in the same
+                                        // visual spot (the bracket calc still uses cellSize.w/2
+                                        // to find the icon center, which matches because the
+                                        // inner Box is fillMaxSize and the OverlayAppContent
+                                        // Column is centered in it).
+                                        val isTextModeForLayout = appInfo.customization?.iconText?.isNotBlank() == true
+                                        val tapPadPx = with(density) { 12.dp.toPx() }
+                                        val outerWPx = if (isTextModeForLayout) {
+                                            kotlin.math.max(cellSize.width.toFloat(), iconWidthPxOuter * storedScaleX + tapPadPx * 2)
+                                        } else cellSize.width.toFloat()
+                                        val outerHPx = if (isTextModeForLayout) {
+                                            kotlin.math.max(cellSize.height.toFloat(), iconHeightPxOuter * storedScaleY + tapPadPx * 2)
+                                        } else cellSize.height.toFloat()
+                                        val outerOffXPx = posX - (outerWPx - cellSize.width) / 2f
+                                        val outerOffYPx = posY - (outerHPx - cellSize.height) / 2f
                                         Box(
                                             modifier = Modifier
-                                                .offset { IntOffset(posX.toInt(), posY.toInt()) }
+                                                .offset { IntOffset(outerOffXPx.toInt(), outerOffYPx.toInt()) }
                                                 .size(
-                                                    width = with(LocalDensity.current) { cellSize.width.toDp() },
-                                                    height = with(LocalDensity.current) { cellSize.height.toDp() }
+                                                    width = with(LocalDensity.current) { outerWPx.toDp() },
+                                                    height = with(LocalDensity.current) { outerHPx.toDp() }
                                                 )
                                                 // NOTE: graphicsLayer scale is applied to the
                                                 // INNER visual Box below, not here. Putting it on
@@ -4270,8 +4385,14 @@ fun LauncherScreen(
                                                         val storedSy = newCust.detachedScaleY ?: 1f
                                                         val combinedScaleX = editScaleOuter * storedSx
                                                         val combinedScaleY = editScaleOuter * storedSy
-                                                        val effIconW = iconPxOuter * combinedScaleX
-                                                        val effIconH = iconPxOuter * combinedScaleY
+                                                        // Text-aware: a text-mode icon ("morphe")
+                                                        // is wider/taller than the icon-square, so
+                                                        // use the measured glyph dims here too —
+                                                        // otherwise commit reverts the bracket to
+                                                        // the square footprint after a move/long-
+                                                        // press-into-edit gesture.
+                                                        val effIconW = iconWidthPxOuter * combinedScaleX
+                                                        val effIconH = iconHeightPxOuter * combinedScaleY
                                                         val effLabelOff = labelOffsetPxOuter * combinedScaleY
                                                         val effLabelW = cappedLabelWidthOuter * combinedScaleX
                                                         val cellCY = newY + cellSize.height / 2f
@@ -4389,7 +4510,18 @@ fun LauncherScreen(
                                                         val longPress = awaitLongPressOrCancellation(down.id)
                                                         if (longPress == null) {
                                                             isFingerDown = false
-                                                            launchApp(context, homeApp.packageName, homeApp.userSerial)
+                                                            // awaitLongPressOrCancellation returns null
+                                                            // for BOTH "released early" (= tap) AND
+                                                            // "moved beyond touchSlop" (= swipe/graze).
+                                                            // Only launch when the pointer actually
+                                                            // released — matching the regular grid's
+                                                            // tap check at AppGridMovement.kt:455. A
+                                                            // light graze across the icon was firing
+                                                            // launchApp because of the missing check.
+                                                            val upEvent = currentEvent.changes.firstOrNull { it.id == down.id }
+                                                            if (upEvent != null && !upEvent.pressed) {
+                                                                launchApp(context, homeApp.packageName, homeApp.userSerial)
+                                                            }
                                                             return@awaitEachGesture
                                                         }
                                                         showContextMenu = true
@@ -4506,6 +4638,7 @@ fun LauncherScreen(
                                                 val perAppPercent = appInfo.customization?.iconSizePercent ?: iconSizePercent
                                                 val perAppIconDp = (iconSizeDp * perAppPercent / iconSizePercent.toFloat()).dp
                                                 val labelOffsetDp = gridIconTextSpacer + 16.dp
+                                                val isTextModeForOverlay = appInfo.customization?.iconText?.isNotBlank() == true
                                                 Box(
                                                     modifier = Modifier
                                                         .size(perAppIconDp)
@@ -4515,6 +4648,33 @@ fun LauncherScreen(
                                                             iconBoundsInRoot = coords.boundsInRoot()
                                                         }
                                                 )
+                                                // Press / flash overlay — same dim feedback as the
+                                                // regular grid icons. Sits over the icon area; in
+                                                // text-as-icon mode it covers the FULL visible
+                                                // glyph (wider/taller than the icon-square) and
+                                                // centers on the text. Rounded enough to look
+                                                // like a soft press indication on either icon or
+                                                // glyph.
+                                                if (overlayAlpha > 0f) {
+                                                    val overlayWDp = if (isTextModeForOverlay)
+                                                        with(LocalDensity.current) { iconWidthPxOuter.toDp() }
+                                                    else perAppIconDp
+                                                    val overlayHDp = if (isTextModeForOverlay)
+                                                        with(LocalDensity.current) { iconHeightPxOuter.toDp() }
+                                                    else perAppIconDp
+                                                    val overlayCornerDp = kotlin.math.min(overlayWDp.value, overlayHDp.value).dp * 0.28f
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(width = overlayWDp, height = overlayHDp)
+                                                            .align(Alignment.Center)
+                                                            .let { m ->
+                                                                if (isTextModeForOverlay) m
+                                                                else m.offset(y = -(labelOffsetDp / 2))
+                                                            }
+                                                            .clip(RoundedCornerShape(overlayCornerDp))
+                                                            .background(Color.Black.copy(alpha = overlayAlpha))
+                                                    )
+                                                }
                                             }
                                         }
 
@@ -4805,8 +4965,41 @@ fun LauncherScreen(
                                         }
                                         val editingLabelHeightPx = editingLabelMeasured.size.height.toFloat()
                                         val editingLabelWidthPx = editingLabelMeasured.size.width.toFloat()
-                                        val editingLabelOffsetPx = with(density) { gridIconTextSpacer.toPx() } + editingLabelHeightPx
-                                        val editingCappedLabelWidth = kotlin.math.min(editingLabelWidthPx, cellSize.width.toFloat())
+                                        // Text-as-icon footprint at page scope — mirror the per-icon
+                                        // measurement so the resize-handle inline bounds writes
+                                        // wrap a wide glyph like "morphe" instead of the square.
+                                        val editingIconTextString = editingCust?.iconText?.takeIf { it.isNotBlank() }
+                                        val editingIconTextSp = editingCust?.iconAsTextSizeSp ?: 28
+                                        // Same fallback chain as OverlayAppContent — icon-text font
+                                        // falls back to per-app label font, then global font.
+                                        val editingPerAppLabelFontFamily = editingCust?.labelFontId?.let { id ->
+                                            FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                                                ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+                                        } ?: selectedFontFamily ?: androidx.compose.ui.text.font.FontFamily.Default
+                                        val editingIconTextFontFamily = editingCust?.iconTextFontId?.let { id ->
+                                            FontManager.bundledFonts.find { it.id == id }?.fontFamily
+                                                ?: FontManager.getImportedFonts(context).find { it.id == id }?.fontFamily
+                                        } ?: editingPerAppLabelFontFamily
+                                        val editingIconTextMeasured = remember(editingIconTextString, editingIconTextSp, editingIconTextFontFamily) {
+                                            editingIconTextString?.let { txt ->
+                                                editingTextMeasurer.measure(
+                                                    text = txt,
+                                                    style = androidx.compose.ui.text.TextStyle(
+                                                        fontSize = editingIconTextSp.sp,
+                                                        fontFamily = editingIconTextFontFamily
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        val editingIconWidthPx = editingIconTextMeasured?.size?.width?.toFloat() ?: editingIconPxPage
+                                        val editingIconHeightPx = editingIconTextMeasured?.size?.height?.toFloat() ?: editingIconPxPage
+                                        // Text mode hides the label, so zero out the label area —
+                                        // otherwise the bracket reserves space below the glyph for
+                                        // a label that isn't rendered.
+                                        val editingLabelOffsetPx = if (editingIconTextString != null) 0f
+                                            else with(density) { gridIconTextSpacer.toPx() } + editingLabelHeightPx
+                                        val editingCappedLabelWidth = if (editingIconTextString != null) 0f
+                                            else kotlin.math.min(editingLabelWidthPx, cellSize.width.toFloat())
                                         // Per-handle outward direction PER AXIS. 0 = that axis
                                         // doesn't change on this handle (edge handles only
                                         // resize one dimension). Order: TL T TR R BR B BL L.
@@ -4943,8 +5136,8 @@ fun LauncherScreen(
                                                                         if (homeAppForBoundsCommit != null) {
                                                                             val combinedX = editScalePage * newScaleX
                                                                             val combinedY = editScalePage * newScaleY
-                                                                            val effIconW = editingIconPxPage * combinedX
-                                                                            val effIconH = editingIconPxPage * combinedY
+                                                                            val effIconW = editingIconWidthPx * combinedX
+                                                                            val effIconH = editingIconHeightPx * combinedY
                                                                             val effLabelOff = editingLabelOffsetPx * combinedY
                                                                             val effLabelW = editingCappedLabelWidth * combinedX
                                                                             val cellCYpx = newDetY + cellSize.height / 2f
@@ -5009,8 +5202,8 @@ fun LauncherScreen(
                                                                         if (homeAppForBounds != null) {
                                                                             val combinedX = editScalePage * initialStoredX * newMultX
                                                                             val combinedY = editScalePage * initialStoredY * newMultY
-                                                                            val effIconW = editingIconPxPage * combinedX
-                                                                            val effIconH = editingIconPxPage * combinedY
+                                                                            val effIconW = editingIconWidthPx * combinedX
+                                                                            val effIconH = editingIconHeightPx * combinedY
                                                                             val effLabelOff = editingLabelOffsetPx * combinedY
                                                                             val effLabelW = editingCappedLabelWidth * combinedX
                                                                             val defaultBpX = (homeAppForBounds.position % gridColumns) * cellSize.width.toFloat()

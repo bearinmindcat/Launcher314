@@ -36,7 +36,25 @@ data class AppCustomization(
     // icon become rectangular when the user drags the edge handles in
     // edit mode. 1.0 = no stretch on that axis.
     val detachedScaleX: Float? = null,
-    val detachedScaleY: Float? = null
+    val detachedScaleY: Float? = null,
+    // Text-as-icon (Total-Launcher style): when non-null + non-blank, the
+    // image icon is replaced by this text rendered in the icon slot. The
+    // text is still clickable / draggable like a normal icon, the rest of
+    // the customization (size, color, label, detach) keeps working on top.
+    val iconText: String? = null,
+    // Style for the icon-text (independent of the label below). Null fields
+    // fall back to defaults (label color / 100% intensity / selected font).
+    val iconTextColor: Long? = null,
+    val iconTextColorIntensity: Int? = null,
+    val iconTextFontId: String? = null,
+    // Direct SP value for the text-as-icon glyph. When null the renderer
+    // auto-computes ~0.55× the per-app icon size. Independent of
+    // iconTextSizePercent (which sizes the label below the icon).
+    val iconAsTextSizeSp: Int? = null,
+    // When true the rendered icon ignores every image-side customization
+    // (custom path, shape, tint, icon-pack) and falls back to the app's
+    // own launcher icon. Mutually exclusive with iconText (text mode).
+    val useOriginalIcon: Boolean = false
 )
 
 @Serializable

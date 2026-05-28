@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,11 +29,13 @@ import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
@@ -82,6 +85,60 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Small chip used by the Icon sub-section's three-mode selector
+ *  (Use customized / Use original / Pick image). Selected chips get a
+ *  brighter background; "Pick image" passes selected=false because it's
+ *  an action, not a persistent mode. */
+@Composable
+private fun IconModeChip(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .background(
+                Color.White.copy(alpha = if (selected) 0.22f else 0.1f),
+                RoundedCornerShape(8.dp)
+            )
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = if (selected) 1f else 0.7f),
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** Upward-pointing tail drawn in the SAME color as the panel surface, so it
+ *  reads as the panel growing a pointer toward the selected card — same
+ *  pattern AnimatedPopup.kt uses for the long-press menu's arrow. */
+@Composable
+private fun PanelTail(color: Color) {
+    Canvas(modifier = Modifier.size(width = 16.dp, height = 8.dp)) {
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(0f, size.height)
+            lineTo(size.width / 2f, 0f)
+            lineTo(size.width, size.height)
+            close()
+        }
+        drawPath(path, color = color)
+    }
+}
+
+/** Default size (sp) for the text-as-icon glyph when the user hasn't set
+ *  one explicitly. Picked so a typical word ("Morphe", "App") reads as a
+ *  prominent icon without overrunning the cell at default icon sizes. */
+private const val DEFAULT_ICON_TEXT_SIZE_SP = 28
+
 private val PRESET_COLORS = listOf(
     null to "None",
     0xFFFFFFFF to "White",
@@ -121,6 +178,30 @@ fun AppCustomizeDialog(
     var tintBackgroundOnly by remember { mutableStateOf(currentCustomization?.iconTintBackgroundOnly ?: false) }
     // Issue #48 — Experimental: detach the icon from the grid.
     var detachedFromGrid by remember { mutableStateOf(currentCustomization?.detachedFromGrid ?: false) }
+    // Text-as-icon (replaces the image when non-blank).
+    var iconText by remember { mutableStateOf(currentCustomization?.iconText ?: "") }
+    var iconTextColor by remember { mutableStateOf(currentCustomization?.iconTextColor) }
+    var iconTextColorIntensity by remember { mutableStateOf(
+        (currentCustomization?.iconTextColorIntensity ?: 100).toFloat()
+    ) }
+    var iconTextFontId by remember { mutableStateOf(currentCustomization?.iconTextFontId) }
+    // Null = auto (renderer picks ~0.55× icon size). Non-null = direct SP
+    // override the user typed into the popup.
+    var iconAsTextSizeSp by remember { mutableStateOf(currentCustomization?.iconAsTextSizeSp) }
+    var showIconTextSizePicker by remember { mutableStateOf(false) }
+    // Icon "mode" in the Experimental section. Mutually exclusive with text
+    // mode (iconText non-blank). When true the rendered icon falls back to
+    // the app's own launcher icon, bypassing every image-side override.
+    var useOriginalIcon by remember { mutableStateOf(currentCustomization?.useOriginalIcon ?: false) }
+    // 0 = no sub-section open (only Detach toggle + cards visible), 1 = icon
+    // section selected (just highlights the Icon card — picker fires on tap),
+    // 2 = text section selected (shows text field + color + intensity + font).
+    var expSubSection by remember { mutableStateOf(
+        if (!currentCustomization?.iconText.isNullOrBlank()) 2 else 0
+    ) }
+    // Separate FocusRequester for the icon-text font screen (so the Label
+    // section's font picker doesn't get accidentally re-purposed).
+    var showIconTextFontScreen by remember { mutableStateOf(false) }
     var selectedShapeExp by remember { mutableStateOf(currentCustomization?.iconShapeExp) }
     var customIconPath by remember { mutableStateOf(currentCustomization?.customIconPath) }
     var selectedTextSizePercent by remember { mutableStateOf(
@@ -177,6 +258,10 @@ fun AppCustomizeDialog(
                     customIconPath = outFile.absolutePath
                     selectedIconPackName = null
                     customIconVersion++
+                    // Picking an image switches the icon to "customized"
+                    // and clears text-mode so the two never both apply.
+                    useOriginalIcon = false
+                    iconText = ""
                     if (cropped !== rotated) cropped.recycle()
                     if (rotated !== original) rotated.recycle()
                     scaled.recycle()
@@ -211,14 +296,27 @@ fun AppCustomizeDialog(
                 )
                 @Suppress("UNUSED_VARIABLE")
                 val previewShape: Shape? = null
-                val previewSizeScale = selectedSizePercent / globalIconSizePercent.toFloat()
+                // Preview at the chosen per-app size, unless "Detach from
+                // grid" is on — then it sits at 1.0 so the icon stays
+                // anchored at the default size while the user picks shape /
+                // tint / size sliders for the detached layout.
+                val rawPreviewSizeScale = selectedSizePercent / globalIconSizePercent.toFloat()
+                val previewSizeScale = if (detachedFromGrid) 1f else rawPreviewSizeScale
 
                 // Effective shape: per-app overrides global
                 val effectiveShapeName = selectedShapeExp ?: globalIconShape
 
-                // Resolve current icon path — picks up icon_pack_cache changes
-                val currentIconPath = remember(customIconVersion, selectedIconPackName, customIconPath) {
-                    if (customIconPath != null) customIconPath!!
+                // Resolve current icon path — picks up icon_pack_cache changes.
+                // While "Detach from grid" is ON, force the ORIGINAL app
+                // icon into the preview across EVERY tab (shape / tint /
+                // size / label / exp). Detached icons live on the page
+                // freely and the user wants the unmodified original as the
+                // reference while they're positioning / sizing one — the
+                // shape / tint / custom icon overrides muddy that.
+                val showOriginalForDetach = detachedFromGrid || useOriginalIcon
+                val currentIconPath = remember(customIconVersion, selectedIconPackName, customIconPath, showOriginalForDetach) {
+                    if (showOriginalForDetach) appInfo.iconPath
+                    else if (customIconPath != null) customIconPath!!
                     else {
                         val packCache = File(context.cacheDir, "icon_pack_cache/${appInfo.packageName}.png")
                         if (packCache.exists()) packCache.absolutePath
@@ -287,7 +385,20 @@ fun AppCustomizeDialog(
                     ) {
                         val customIconFile = customIconPath?.let { File(it) }
                         val customIconClipShape = selectedShapeExp?.let { getIconShape(it) }
-                        if (customIconFile != null && customIconFile.exists()) {
+                        if (showOriginalForDetach) {
+                            // Force the original (unmodified) icon in Exp tab.
+                            AsyncImage(
+                                model = File(appInfo.iconPath),
+                                contentDescription = appInfo.name,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .graphicsLayer {
+                                        scaleX = previewSizeScale
+                                        scaleY = previewSizeScale
+                                    }
+                            )
+                        } else if (customIconFile != null && customIconFile.exists()) {
                             // Use version key to force reload when same file path is overwritten
                             val iconBitmap = remember(customIconPath, customIconVersion) {
                                 BitmapFactory.decodeFile(customIconFile.absolutePath)?.asImageBitmap()
@@ -926,19 +1037,19 @@ fun AppCustomizeDialog(
                             }
                         }
                         5 -> {
-                            // Experimental section — UI shell for the upcoming
-                            // Total-Launcher-style "free-floating icons" feature
-                            // (icons unlocked from the grid and movable
-                            // independently). Issue #48. The toggle is local
-                            // state only for now; wiring to AppCustomization
-                            // persistence + actual free-position rendering
-                            // comes in a follow-up commit.
+                            // Experimental section — Total-Launcher-style options
+                            // for this app. Detach toggle (Issue #48), an icon
+                            // picker that reuses the same PickVisualMedia flow
+                            // as the top-right preview button, and a "text as
+                            // icon" field so the app can render a glyph / word
+                            // instead of an image — still clickable, draggable,
+                            // resizable like a normal icon.
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                                     .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -957,13 +1068,305 @@ fun AppCustomizeDialog(
                                         onCheckedChange = { detachedFromGrid = it }
                                     )
                                 }
+                                // "Change icon" — Icon card launches the picker
+                                // (same path the top-right preview button uses),
+                                // Text card focuses the text-as-icon field below.
+                                // Cards mirror the small chip styling used by the
+                                // popup-menu "Icon" button at the top of the dialog.
                                 Text(
-                                    text = if (detachedFromGrid) "Long-press the icon to drag it freely on the page."
-                                    else "Lets you place this icon anywhere on the home page, off the grid.",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(horizontal = 32.dp)
+                                    text = "Change icon",
+                                    color = Color.White.copy(alpha = 0.87f),
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
+                                val iconTextFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+                                val iconSelected = expSubSection == 1
+                                val textSelected = expSubSection == 2
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    // Icon card
+                                    Column(
+                                        modifier = Modifier
+                                            .width(64.dp)
+                                            .background(
+                                                Color.White.copy(alpha = if (iconSelected) 0.22f else 0.1f),
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                // Just switch to the Icon sub-section;
+                                                // the picker is now launched explicitly
+                                                // via the "Pick image" chip in the panel
+                                                // below, alongside "Use customized" /
+                                                // "Use original".
+                                                expSubSection = 1
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_add_photo),
+                                            contentDescription = "Change icon",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = Color.White.copy(alpha = if (iconSelected) 1f else 0.7f)
+                                        )
+                                        Text(
+                                            text = "Icon",
+                                            color = Color.White.copy(alpha = if (iconSelected) 1f else 0.7f),
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                    // Text card
+                                    Column(
+                                        modifier = Modifier
+                                            .width(64.dp)
+                                            .background(
+                                                Color.White.copy(alpha = if (textSelected) 0.22f else 0.1f),
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                // Just switch sections — the LaunchedEffect
+                                                // below auto-focuses the field once it's
+                                                // actually in composition. Calling
+                                                // requestFocus() here directly crashes with
+                                                // "FocusRequester is not initialized"
+                                                // because the field doesn't exist yet on
+                                                // this frame.
+                                                expSubSection = 2
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.TextFields,
+                                            contentDescription = "Use text",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = Color.White.copy(alpha = if (textSelected) 1f else 0.7f)
+                                        )
+                                        Text(
+                                            text = "Text",
+                                            color = Color.White.copy(alpha = if (textSelected) 1f else 0.7f),
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                                // (No auto-focus on the field — auto-focusing
+                                // would show the 2dp "focused" border which
+                                // reads as a thicker outline than the Label
+                                // section's field next to it. The user can
+                                // tap the field to focus.)
+
+                                // Icon sub-section panel — visible when Icon
+                                // card is selected. Three chips: customized /
+                                // original / pick. The first two are radio-
+                                // style (one stays selected); "Pick image"
+                                // is an action that fires the picker.
+                                if (expSubSection == 1) {
+                                    val panelBg = Color.White.copy(alpha = 0.05f)
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier.width(64.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                PanelTail(color = panelBg)
+                                            }
+                                            Spacer(modifier = Modifier.width(64.dp))
+                                        }
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(panelBg, RoundedCornerShape(8.dp))
+                                                .padding(10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            // 3 chips stacked top-to-bottom:
+                                            //   Use customized / Use original / Pick image.
+                                            Column(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                IconModeChip(
+                                                    label = "Use customized",
+                                                    selected = !useOriginalIcon,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    useOriginalIcon = false
+                                                    iconText = ""
+                                                }
+                                                IconModeChip(
+                                                    label = "Use original",
+                                                    selected = useOriginalIcon,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    useOriginalIcon = true
+                                                    iconText = ""
+                                                }
+                                                IconModeChip(
+                                                    label = "Pick image",
+                                                    selected = false,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    imagePickerLauncher.launch(
+                                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                // Text sub-section panel — only visible when the
+                                // Text card is selected. Pick text + color + tint
+                                // intensity + font, mirroring the Label section's
+                                // controls but writing to the iconText* fields.
+                                //
+                                // The container holds a small triangle "tail" row
+                                // (drawn in the SAME color as the panel) sitting
+                                // right above the panel — like the long-press
+                                // popup's arrow in AnimatedPopup.kt. No vertical
+                                // spacing between tail and panel so they read as
+                                // one continuous surface.
+                                if (expSubSection == 2) {
+                                    val panelBg = Color.White.copy(alpha = 0.05f)
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        // Tail row — mirrors the cards-row layout
+                                        // (64dp slots + 10dp gap, centered) so the
+                                        // triangle lands directly under the Text
+                                        // card.
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
+                                        ) {
+                                            Spacer(modifier = Modifier.width(64.dp))
+                                            Box(
+                                                modifier = Modifier.width(64.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                PanelTail(color = panelBg)
+                                            }
+                                        }
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(panelBg, RoundedCornerShape(8.dp))
+                                                .padding(10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            OutlinedTextField(
+                                                value = iconText,
+                                                onValueChange = { iconText = it },
+                                                placeholder = { Text("Enter text", color = Color.White.copy(alpha = 0.3f)) },
+                                                singleLine = true,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .focusRequester(iconTextFocus),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedTextColor = Color.White,
+                                                    unfocusedTextColor = Color.White,
+                                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                                    cursorColor = Color.White
+                                                ),
+                                                shape = RoundedCornerShape(12.dp),
+                                                leadingIcon = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        val leadingFontFamily = if (iconTextFontId != null) {
+                                                            FontManager.bundledFonts.find { it.id == iconTextFontId }?.fontFamily
+                                                                ?: FontManager.getImportedFonts(context).find { it.id == iconTextFontId }?.fontFamily
+                                                                ?: FontManager.getSelectedFontFamily(context) ?: FontFamily.Default
+                                                        } else FontManager.getSelectedFontFamily(context) ?: FontFamily.Default
+                                                        IconButton(onClick = { showIconTextFontScreen = true }) {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Text("Aa", fontSize = 14.sp, fontFamily = leadingFontFamily,
+                                                                    color = if (iconTextFontId != null) Color.White else Color.White.copy(alpha = 0.4f),
+                                                                    maxLines = 1, softWrap = false, overflow = TextOverflow.Visible,
+                                                                    modifier = Modifier.requiredHeight(18.dp).wrapContentHeight(Alignment.CenterVertically, unbounded = true))
+                                                                Text("Font", fontSize = 8.sp, color = if (iconTextFontId != null) Color.White else Color.White.copy(alpha = 0.4f), fontFamily = leadingFontFamily)
+                                                            }
+                                                        }
+                                                        Box(modifier = Modifier.width(1.dp).height(56.dp).background(Color.White.copy(alpha = 0.2f)))
+                                                    }
+                                                },
+                                                trailingIcon = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Box(modifier = Modifier.width(1.dp).height(56.dp).background(Color.White.copy(alpha = 0.2f)))
+                                                        IconButton(onClick = { showIconTextSizePicker = true }) {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Text(
+                                                                    text = (iconAsTextSizeSp ?: DEFAULT_ICON_TEXT_SIZE_SP).toString(),
+                                                                    fontSize = 12.sp,
+                                                                    color = if (iconAsTextSizeSp != null) Color.White else Color.White.copy(alpha = 0.7f),
+                                                                    maxLines = 1,
+                                                                    softWrap = false,
+                                                                    overflow = TextOverflow.Visible,
+                                                                    modifier = Modifier
+                                                                        .requiredHeight(18.dp)
+                                                                        .wrapContentHeight(Alignment.CenterVertically, unbounded = true)
+                                                                )
+                                                                Text(
+                                                                    "Size",
+                                                                    fontSize = 8.sp,
+                                                                    color = if (iconAsTextSizeSp != null) Color.White else Color.White.copy(alpha = 0.7f)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                            // Color picker — same preset list as the label.
+                                            PRESET_COLORS.chunked(5).forEach { rowColors ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
+                                                ) {
+                                                    rowColors.forEach { (colorLong, _) ->
+                                                        val isSelected = iconTextColor == colorLong
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(28.dp)
+                                                                .clip(RoundedCornerShape(6.dp))
+                                                                .background(
+                                                                    if (colorLong != null) Color(colorLong)
+                                                                    else Color.White.copy(alpha = 0.1f)
+                                                                )
+                                                                .then(
+                                                                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                                                                    else Modifier
+                                                                )
+                                                                .clickable { iconTextColor = colorLong },
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            if (colorLong == null) {
+                                                                Icon(
+                                                                    imageVector = Icons.Outlined.Clear,
+                                                                    contentDescription = "Default color",
+                                                                    tint = Color.White.copy(alpha = 0.5f),
+                                                                    modifier = Modifier.size(14.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            ThumbDragHorizontalSlider(
+                                                currentValue = iconTextColorIntensity,
+                                                config = SliderConfigs.tintIntensity,
+                                                onValueChange = { iconTextColorIntensity = it },
+                                                onValueChangeFinished = {}
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                         else -> {
@@ -1048,7 +1451,14 @@ fun AppCustomizeDialog(
                                 // forget the saved coords. For now keep them so toggling back
                                 // on returns the icon to its previous free position.
                                 detachedX = currentCustomization?.detachedX,
-                                detachedY = currentCustomization?.detachedY
+                                detachedY = currentCustomization?.detachedY,
+                                iconText = iconText.takeIf { it.isNotBlank() },
+                                iconTextColor = iconTextColor,
+                                iconTextColorIntensity = if (iconTextColor != null)
+                                    iconTextColorIntensity.roundToInt().takeIf { it != 100 } else null,
+                                iconTextFontId = iconTextFontId,
+                                iconAsTextSizeSp = iconAsTextSizeSp,
+                                useOriginalIcon = useOriginalIcon
                             )
                             onSave(newCustomization)
                         },
@@ -1076,6 +1486,132 @@ fun AppCustomizeDialog(
                     showFontScreen = false
                 },
                 initialFontId = selectedFontId
+            )
+        }
+    }
+
+    // Text-as-icon SIZE picker — styled like the DeviceAudioEQ
+    // "Save Custom Preset" dialog: charcoal #252525 surface, 1dp stroke
+    // #333333, 16dp corners, light-grey title, single bordered text field,
+    // thin divider, two outlined buttons (Cancel salmon, OK light grey).
+    if (showIconTextSizePicker) {
+        var pendingSize by remember(showIconTextSizePicker) {
+            mutableStateOf((iconAsTextSizeSp ?: DEFAULT_ICON_TEXT_SIZE_SP).toString())
+        }
+        Dialog(onDismissRequest = { showIconTextSizePicker = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF252525),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 24.dp, vertical = 20.dp)
+                        .fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Text size",
+                        color = Color(0xFFE2E2E2),
+                        fontSize = 20.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    OutlinedTextField(
+                        value = pendingSize,
+                        onValueChange = { new ->
+                            // Allow only digits, up to 3 chars (max 999 sp).
+                            if (new.all { it.isDigit() } && new.length <= 3) pendingSize = new
+                        },
+                        placeholder = {
+                            Text(
+                                "e.g. 30",
+                                color = Color(0xFF888888),
+                                fontSize = 14.sp
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF555555),
+                            unfocusedBorderColor = Color(0xFF555555),
+                            cursorColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, color = Color.White),
+                        trailingIcon = {
+                            Text(
+                                "sp",
+                                color = Color(0xFF888888),
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(end = 12.dp)
+                            )
+                        }
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color(0xFF444444))
+                            .padding(bottom = 0.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showIconTextSizePicker = false },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = Color.Transparent,
+                                contentColor = Color(0xFFEF9A9A)
+                            )
+                        ) {
+                            Text("Cancel", fontSize = 13.sp)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                iconAsTextSizeSp = pendingSize.toIntOrNull()?.takeIf { it in 1..999 }
+                                showIconTextSizePicker = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = Color.Transparent,
+                                contentColor = Color(0xFFDDDDDD)
+                            )
+                        ) {
+                            Text("OK", fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Icon-text font picker — separate from the label font so the user can
+    // style text-as-icon independently of the label below.
+    if (showIconTextFontScreen) {
+        Dialog(
+            onDismissRequest = { showIconTextFontScreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            FontsScreen(
+                onBack = { showIconTextFontScreen = false },
+                onFontSelected = { fontId ->
+                    iconTextFontId = fontId
+                    showIconTextFontScreen = false
+                },
+                initialFontId = iconTextFontId
             )
         }
     }
