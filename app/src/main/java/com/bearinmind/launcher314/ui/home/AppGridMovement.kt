@@ -521,10 +521,14 @@ fun DraggableGridCell(
                                     if (it.exists()) it.absolutePath else cell.appInfo.iconPath
                                 }
                             } else if (!hasPerAppShape && globalIconShape != null) {
-                                // Global shape fallback (EXP method)
+                                // Global shape fallback (EXP method). Cache-only —
+                                // never generate from this grid-cell path; that work
+                                // happens on Dispatchers.IO from OverlayAppContent's
+                                // LaunchedEffect. If we miss here on cold cache we just
+                                // render the raw icon for one frame; the cache gets
+                                // populated and the next recomp picks it up.
                                 File(getGlobalShapedDir(gridContext), "${cell.appInfo.packageName}.png").let {
-                                    if (it.exists()) it.absolutePath
-                                    else try { getOrGenerateGlobalShapedIcon(gridContext, cell.appInfo.packageName, globalIconShape!!) } catch (_: Exception) { cell.appInfo.iconPath }
+                                    if (it.exists()) it.absolutePath else cell.appInfo.iconPath
                                 }
                             } else cell.appInfo.iconPath
                             // Check for background-only tinted icon
@@ -559,9 +563,15 @@ fun DraggableGridCell(
                                     ?: cell.appInfo.customization?.iconShape
                                     ?: globalIconShape
                             } else null
-                            val displayIconPath = if (useBgColorIcon && bgColorEffectiveShape != null) {
-                                try { getOrGenerateBgColorShapedIcon(gridContext, cell.appInfo.packageName, bgColorEffectiveShape, globalIconBgColor!!, globalIconBgIntensity) }
-                                catch (_: Exception) { finalIconModelPath }
+                            val displayIconPath = if (useBgColorIcon && bgColorEffectiveShape != null && globalIconBgColor != null) {
+                                // Cache-only lookup — same reason as the global-shape
+                                // branch above. Cache filename mirrors getOrGenerateBgColorShapedIcon.
+                                val colorHex = Integer.toHexString(globalIconBgColor)
+                                val cacheFile = File(
+                                    com.bearinmind.launcher314.helpers.getBgColorShapedDir(gridContext),
+                                    "${cell.appInfo.packageName}_${bgColorEffectiveShape}_${colorHex}_${globalIconBgIntensity}.png"
+                                )
+                                if (cacheFile.exists()) cacheFile.absolutePath else finalIconModelPath
                             } else finalIconModelPath
                             val isBgColorIcon = displayIconPath != finalIconModelPath
                             Box(
@@ -675,10 +685,13 @@ fun DraggableGridCell(
                                 FontManager.bundledFonts.find { it.id == id }?.fontFamily
                                     ?: FontManager.getImportedFonts(gridContext).find { it.id == id }?.fontFamily
                             } ?: appNameFontFamily ?: FontFamily.Default
+                            // Intensity applies to ALPHA only — matches the folder-overlay
+                            // path at LauncherScreen.kt:540-541. The old RGB-multiply
+                            // formula turned "White at 50%" into opaque dark grey #808080
+                            // instead of translucent white.
                             val perAppLabelColor = if (customization?.labelColor != null) {
                                 val i = (customization.labelColorIntensity ?: 100) / 100f
-                                val b = Color(customization.labelColor)
-                                Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+                                Color(customization.labelColor).copy(alpha = i.coerceIn(0f, 1f))
                             } else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
                             Text(
                                 text = displayLabel,
@@ -1425,10 +1438,10 @@ fun DraggableGridCell(
                                 FontManager.bundledFonts.find { it.id == id }?.fontFamily
                                     ?: FontManager.getImportedFonts(cellContext).find { it.id == id }?.fontFamily
                             } ?: appNameFontFamily ?: FontFamily.Default
+                            // Same alpha-only formula as the per-app icon path above.
                             val folderLabelColor = if (folderCustomization?.labelColor != null) {
                                 val i = (folderCustomization.labelColorIntensity ?: 100) / 100f
-                                val b = Color(folderCustomization.labelColor)
-                                Color(b.red * i, b.green * i, b.blue * i, b.alpha)
+                                Color(folderCustomization.labelColor).copy(alpha = i.coerceIn(0f, 1f))
                             } else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
                             Text(
                                 text = folderDisplayName,
@@ -1803,9 +1816,9 @@ fun DockSlot(
                         if (it.exists()) it.absolutePath else appInfo.iconPath
                     }
                 } else if (!dockHasPerAppShape && globalIconShape != null && appInfo != null) {
+                    // Cache-only — same reason as the home-grid path.
                     File(getGlobalShapedDir(dockContext), "${appInfo.packageName}.png").let {
-                        if (it.exists()) it.absolutePath
-                        else try { getOrGenerateGlobalShapedIcon(dockContext, appInfo.packageName, globalIconShape!!) } catch (_: Exception) { appInfo.iconPath }
+                        if (it.exists()) it.absolutePath else appInfo.iconPath
                     }
                 } else appInfo?.iconPath ?: ""
                 // Check for background-only tinted icon
@@ -1840,9 +1853,15 @@ fun DockSlot(
                         ?: appInfo?.customization?.iconShape
                         ?: globalIconShape
                 } else null
-                val dockDisplayIconPath = if (dockUseBgColorIcon && dockBgColorEffectiveShape != null && appInfo != null) {
-                    try { getOrGenerateBgColorShapedIcon(dockContext, appInfo.packageName, dockBgColorEffectiveShape, globalIconBgColor!!, globalIconBgIntensity) }
-                    catch (_: Exception) { dockFinalIconModelPath }
+                val dockDisplayIconPath = if (dockUseBgColorIcon && dockBgColorEffectiveShape != null && appInfo != null && globalIconBgColor != null) {
+                    // Cache-only lookup (mirrors getOrGenerateBgColorShapedIcon's
+                    // cache filename). Skip generation on cold cache.
+                    val colorHex = Integer.toHexString(globalIconBgColor)
+                    val cacheFile = File(
+                        com.bearinmind.launcher314.helpers.getBgColorShapedDir(dockContext),
+                        "${appInfo.packageName}_${dockBgColorEffectiveShape}_${colorHex}_${globalIconBgIntensity}.png"
+                    )
+                    if (cacheFile.exists()) cacheFile.absolutePath else dockFinalIconModelPath
                 } else dockFinalIconModelPath
                 val dockIsBgColorIcon = dockDisplayIconPath != dockFinalIconModelPath
                 Box(contentAlignment = Alignment.Center) {

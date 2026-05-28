@@ -309,6 +309,35 @@ private fun OverlayAppContent(
     val hasCustomIcon = !useOrig && appInfo.customization?.customIconPath?.let { File(it).exists() } == true
     val hasShapeExp = !useOrig && appInfo.customization?.iconShapeExp != null
     val hasPerAppShape = !useOrig && appInfo.customization?.iconShape != null
+
+    // ── Async global-shaped icon ─────────────────────────────────────────
+    // On cold cache, getOrGenerateGlobalShapedIcon decodes the drawable,
+    // draws to a 192x192 bitmap, and writes a PNG synchronously — that
+    // used to block the UI thread per grid cell on first launch / after
+    // a shape change. Now: if the cache file exists return its path
+    // immediately, otherwise show the raw icon and run the generator on
+    // Dispatchers.IO; Coil swaps to the shaped path on the next recomp.
+    val needGlobalShape = !useOrig && !hasCustomIcon && !hasShapeExp && !hasPerAppShape && globalIconShape != null
+    var globalShapeAsyncPath by remember(appInfo.packageName, globalIconShape, needGlobalShape) {
+        val initial: String = if (needGlobalShape && globalIconShape != null) {
+            val f = File(getGlobalShapedDir(context), "${appInfo.packageName}.png")
+            if (f.exists()) f.absolutePath else appInfo.iconPath
+        } else appInfo.iconPath
+        mutableStateOf(initial)
+    }
+    LaunchedEffect(needGlobalShape, appInfo.packageName, globalIconShape) {
+        if (needGlobalShape && globalIconShape != null) {
+            val f = File(getGlobalShapedDir(context), "${appInfo.packageName}.png")
+            if (!f.exists()) {
+                val gen = withContext(Dispatchers.IO) {
+                    try { getOrGenerateGlobalShapedIcon(context, appInfo.packageName, globalIconShape) }
+                    catch (_: Exception) { null }
+                }
+                if (gen != null) globalShapeAsyncPath = gen
+            }
+        }
+    }
+
     val iconPath = if (useOrig) appInfo.iconPath
     else if (hasCustomIcon) {
         appInfo.customization!!.customIconPath!!
@@ -317,10 +346,7 @@ private fun OverlayAppContent(
             if (it.exists()) it.absolutePath else appInfo.iconPath
         }
     } else if (!hasPerAppShape && globalIconShape != null) {
-        File(getGlobalShapedDir(context), "${appInfo.packageName}.png").let {
-            if (it.exists()) it.absolutePath
-            else try { getOrGenerateGlobalShapedIcon(context, appInfo.packageName, globalIconShape) } catch (_: Exception) { appInfo.iconPath }
-        }
+        globalShapeAsyncPath
     } else appInfo.iconPath
     val hasBgTint = !useOrig && appInfo.customization?.iconTintBackgroundOnly == true && appInfo.customization?.iconTintColor != null
     val hasAnyShape = hasShapeExp || (!hasPerAppShape && globalIconShape != null)
@@ -356,10 +382,33 @@ private fun OverlayAppContent(
             ?: appInfo.customization?.iconShape
             ?: globalIconShape
     } else null
-    val displayIconPath = if (useBgColorIcon && bgColorEffectiveShape != null) {
-        try { getOrGenerateBgColorShapedIcon(context, appInfo.packageName, bgColorEffectiveShape, globalIconBgColor!!) }
-        catch (_: Exception) { finalIconPath }
-    } else finalIconPath
+    // ── Async bg-color shaped icon ───────────────────────────────────────
+    // Same pattern as the global-shape generator above — show the
+    // un-bg-colored icon immediately, then swap in the generated one once
+    // IO is done. Stops the per-cell freeze when a global bg color is set
+    // and the cache is cold.
+    val needBgColorIcon = useBgColorIcon && bgColorEffectiveShape != null && globalIconBgColor != null
+    var bgColorAsyncPath by remember(appInfo.packageName, bgColorEffectiveShape, globalIconBgColor, needBgColorIcon) {
+        val initial: String = if (needBgColorIcon) {
+            // Try the cache directly; getOrGenerateBgColorShapedIcon writes
+            // into a cache dir keyed by (pkg, shape, color) — if the helper
+            // has a known cache path we'd use it, but at this scope we only
+            // know to attempt the call. For init, fall back to finalIconPath
+            // and let the LaunchedEffect upgrade once.
+            finalIconPath
+        } else finalIconPath
+        mutableStateOf(initial)
+    }
+    LaunchedEffect(needBgColorIcon, appInfo.packageName, bgColorEffectiveShape, globalIconBgColor) {
+        if (needBgColorIcon) {
+            val gen = withContext(Dispatchers.IO) {
+                try { getOrGenerateBgColorShapedIcon(context, appInfo.packageName, bgColorEffectiveShape!!, globalIconBgColor!!) }
+                catch (_: Exception) { null }
+            }
+            if (gen != null) bgColorAsyncPath = gen
+        }
+    }
+    val displayIconPath = if (needBgColorIcon) bgColorAsyncPath else finalIconPath
     val isBgColorIcon = displayIconPath != finalIconPath
 
     val iconTextOverride = appInfo.customization?.iconText?.takeIf { it.isNotBlank() }
@@ -6657,58 +6706,84 @@ fun LauncherScreen(
                         }
                 )
 
-                // Folder name - tap to edit
-                if (isFolderNameEditing) {
-                    BasicTextField(
-                        value = editedFolderName,
-                        onValueChange = { editedFolderName = it },
-                        textStyle = TextStyle(
+                // Folder name + decoupling hint. The drawer and home/dock copies
+                // of a folder don't share an identity — renaming on this screen
+                // only writes to home_screen_data.json. Show a subdued caption
+                // when a same-named folder exists in the drawer so users aren't
+                // surprised that the drawer copy keeps its old name.
+                val drawerFolderNames = remember {
+                    com.bearinmind.launcher314.data.loadDrawerData(context).folders.map { it.name }.toSet()
+                }
+                val sameNameInDrawer = remember(folder.name, drawerFolderNames) {
+                    folder.name in drawerFolderNames
+                }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isFolderNameEditing) {
+                        BasicTextField(
+                            value = editedFolderName,
+                            onValueChange = { editedFolderName = it },
+                            textStyle = TextStyle(
+                                fontSize = 42.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                                textAlign = TextAlign.Center
+                            ),
+                            singleLine = true,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    if (editedFolderName.text.isNotBlank()) {
+                                        if (isDockFolder) {
+                                            saveDockFolders(dockFolders.map {
+                                                if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
+                                            })
+                                        } else {
+                                            saveHomeFolders(homeFolders.map {
+                                                if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
+                                            })
+                                        }
+                                        openHomeFolder = folder.copy(name = editedFolderName.text)
+                                    }
+                                    isFolderNameEditing = false
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                }
+                            ),
+                            modifier = Modifier
+                                .focusRequester(folderNameFocusRequester)
+                                .widthIn(min = 100.dp, max = 280.dp),
+                            decorationBox = { innerTextField -> innerTextField() }
+                        )
+                    } else {
+                        Text(
+                            text = folder.name,
                             fontSize = 42.sp,
                             fontWeight = FontWeight.Bold,
                             color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
-                            textAlign = TextAlign.Center
-                        ),
-                        singleLine = true,
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                if (editedFolderName.text.isNotBlank()) {
-                                    if (isDockFolder) {
-                                        saveDockFolders(dockFolders.map {
-                                            if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
-                                        })
-                                    } else {
-                                        saveHomeFolders(homeFolders.map {
-                                            if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
-                                        })
-                                    }
-                                    openHomeFolder = folder.copy(name = editedFolderName.text)
-                                }
-                                isFolderNameEditing = false
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                editedFolderName = TextFieldValue(folder.name, TextRange(folder.name.length))
+                                isFolderNameEditing = true
                             }
-                        ),
-                        modifier = Modifier
-                            .focusRequester(folderNameFocusRequester)
-                            .widthIn(min = 100.dp, max = 280.dp),
-                        decorationBox = { innerTextField -> innerTextField() }
-                    )
-                } else {
-                    Text(
-                        text = folder.name,
-                        fontSize = 42.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            editedFolderName = TextFieldValue(folder.name, TextRange(folder.name.length))
-                            isFolderNameEditing = true
-                        }
-                    )
+                        )
+                    }
+                    if (sameNameInDrawer) {
+                        Text(
+                            text = "Renaming here doesn't update the copy in the drawer.",
+                            fontSize = 11.sp,
+                            color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current.copy(alpha = 0.55f),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .padding(horizontal = 24.dp)
+                                .widthIn(max = 320.dp)
+                        )
+                    }
                 }
 
                 // Delete folder button - bottom right of header
