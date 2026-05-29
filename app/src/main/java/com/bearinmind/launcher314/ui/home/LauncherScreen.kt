@@ -6496,7 +6496,8 @@ fun LauncherScreen(
         val escScreenH = with(escDensity) { escConfig.screenHeightDp.dp.toPx() }
         val escMaxW = with(escDensity) { 320.dp.toPx() }
         val escPopupW = (escScreenW * 0.72f).coerceAtMost(escMaxW)
-        val escPopupH = escScreenH * 0.38f
+        val escTitleBarPx = with(escDensity) { 52.dp.toPx() }
+        val escPopupH = escScreenH * 0.38f + escTitleBarPx
         val escSafe = with(escDensity) { 16.dp.toPx() }
         val escIconSidePx = with(escDensity) { iconSizeDp.dp.toPx() }
         val escCellCx = escapeCloseCellOrigin.x + escapeCloseCellSize.width / 2f
@@ -6708,10 +6709,12 @@ fun LauncherScreen(
         // Narrower / shorter popup, closer to Lawnchair's compact card. The
         // wide 85%-screen version felt like a generic dialog floating over
         // the wallpaper; this size makes the popup feel like the folder
-        // cell itself stretched outward.
+        // cell itself stretched outward. Height = grid area + title bar so
+        // adding the title doesn't squish the apps.
         val maxCardWpx = with(folderDensity) { 320.dp.toPx() }
         val popupWpx = (screenWpx * 0.72f).coerceAtMost(maxCardWpx)
-        val popupHpx = screenHpx * 0.38f
+        val titleBarPx = with(folderDensity) { 52.dp.toPx() }
+        val popupHpx = screenHpx * 0.38f + titleBarPx
         // Popup sits ADJACENT to the folder icon (above when there's room,
         // below otherwise) — the popup's near edge touches the icon's edge,
         // so the icon stays visible below/above the popup. Pivot is set at
@@ -6839,24 +6842,108 @@ fun LauncherScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .onGloballyPositioned { folderOverlayRootPos = it.positionInRoot() }
         ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                // No title bar — Lawnchair-style. Long-press the folder icon
-                // for Remove/Customize/Rename in the existing context menu.
-                // folderHeaderBottomY (used by drag-out-to-remove) snaps to
-                // the popup's top edge so dragging an app above the popup
-                // still pulls it out of the folder.
-                .onGloballyPositioned { coords ->
-                    folderHeaderBottomY = coords.positionInRoot().y
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Compact title bar — folder name (tap-to-edit) on the left,
+            // overflow menu (3-dot) on the right with "Remove". Same bg as
+            // the popup card so it reads as one continuous surface.
+            // folderHeaderBottomY captures the bar's bottom so dragging an
+            // app upward past it pulls the app out of the folder.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .onGloballyPositioned { coords ->
+                        folderHeaderBottomY = coords.positionInRoot().y + coords.size.height
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isFolderNameEditing) {
+                    BasicTextField(
+                        value = editedFolderName,
+                        onValueChange = { editedFolderName = it },
+                        textStyle = TextStyle(
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                            textAlign = TextAlign.Center
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                if (editedFolderName.text.isNotBlank()) {
+                                    if (isDockFolder) {
+                                        saveDockFolders(dockFolders.map {
+                                            if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
+                                        })
+                                    } else {
+                                        saveHomeFolders(homeFolders.map {
+                                            if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
+                                        })
+                                    }
+                                    openHomeFolder = folder.copy(name = editedFolderName.text)
+                                }
+                                isFolderNameEditing = false
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                            }
+                        ),
+                        modifier = Modifier
+                            .focusRequester(folderNameFocusRequester)
+                            .widthIn(min = 100.dp, max = 240.dp),
+                        decorationBox = { innerTextField -> innerTextField() }
+                    )
+                } else {
+                    Text(
+                        text = folder.name,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .padding(horizontal = 56.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                editedFolderName = TextFieldValue(folder.name, TextRange(folder.name.length))
+                                isFolderNameEditing = true
+                            }
+                    )
                 }
-        ) {
-            // Apps area — fills the popup, holds the icon grid. NO own
-            // background — the outer popup Box already draws it. Two
-            // identical backgrounds stacked here used to look like two
-            // separate layers animating (the apps-area Box would render its
-            // own redundant rect on top of the outer's). Padding keeps the
-            // icons off the rounded corners.
+                var headerMenuOpen by remember { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 4.dp)
+                ) {
+                    IconButton(onClick = { headerMenuOpen = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = "Folder options",
+                            tint = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = headerMenuOpen,
+                        onDismissRequest = { headerMenuOpen = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Remove") },
+                            leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                            onClick = {
+                                headerMenuOpen = false
+                                showFolderDeleteConfirm = true
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Apps area — fills the rest of the popup below the title bar.
+            // No own background; the outer popup Box draws it.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

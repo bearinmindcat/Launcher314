@@ -210,20 +210,96 @@ internal fun FolderContentScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            // No title bar — Lawnchair-style. headerBottomY (used by drag-
-            // out-to-remove) snaps to the popup's top edge so dragging an
-            // app up past the popup still pulls it out of the folder.
-            .onGloballyPositioned { coords ->
-                headerBottomY = coords.positionInRoot().y
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Compact title bar — folder name centered (tap-to-edit), overflow
+        // menu on the right with "Remove". No own background; the outer
+        // popup Box in AppDrawerScreen draws it. Dragging an app upward
+        // past the bar's bottom still pulls it out of the folder.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .onGloballyPositioned { coords ->
+                    val pos = coords.positionInRoot()
+                    headerBottomY = pos.y + coords.size.height
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            if (isEditing) {
+                BasicTextField(
+                    value = editedName,
+                    onValueChange = { editedName = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    ),
+                    singleLine = true,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (editedName.text.isNotBlank()) onRenameFolder(editedName.text)
+                            isEditing = false
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        }
+                    ),
+                    modifier = Modifier
+                        .focusRequester(focusRequester)
+                        .widthIn(min = 100.dp, max = 240.dp),
+                    decorationBox = { innerTextField -> innerTextField() }
+                )
+            } else {
+                Text(
+                    text = folder.name,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(horizontal = 56.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            editedName = TextFieldValue(folder.name, TextRange(folder.name.length))
+                            isEditing = true
+                        }
+                )
             }
-    ) {
-        // Apps area — fills the whole popup. No title bar. NO own
-        // background — the outer popup Box in AppDrawerScreen already
-        // draws it. Stacking two identical backgrounds made the layer
-        // look like it was animating separately from the apps inside.
+            var headerMenuOpen by remember { mutableStateOf(false) }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 4.dp)
+            ) {
+                IconButton(onClick = { headerMenuOpen = true }) {
+                    Icon(
+                        imageVector = Icons.Outlined.MoreVert,
+                        contentDescription = "Folder options",
+                        tint = Color.White
+                    )
+                }
+                DropdownMenu(
+                    expanded = headerMenuOpen,
+                    onDismissRequest = { headerMenuOpen = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Remove") },
+                        leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                        onClick = {
+                            headerMenuOpen = false
+                            showDeleteConfirm = true
+                        }
+                    )
+                }
+            }
+        }
+
+        // Apps area — fills the rest of the popup below the title bar.
         Box(
             modifier = Modifier
                 .fillMaxWidth()

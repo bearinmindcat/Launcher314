@@ -778,7 +778,8 @@ fun AppDrawerScreen(
                 val fScreenHpx = with(drawerFolderDensity) { drawerFolderConfig.screenHeightDp.dp.toPx() }
                 val fMaxWpx = with(drawerFolderDensity) { 320.dp.toPx() }
                 val fPopupWpx = (fScreenWpx * 0.72f).coerceAtMost(fMaxWpx)
-                val fPopupHpx = fScreenHpx * 0.38f
+                val fTitleBarPx = with(drawerFolderDensity) { 52.dp.toPx() }
+                val fPopupHpx = fScreenHpx * 0.38f + fTitleBarPx
                 val fSafePx = with(drawerFolderDensity) { 16.dp.toPx() }
                 val fIconSidePx = with(drawerFolderDensity) { iconSize.dp.toPx() }
                 val fIconTopPx = clickedFolderPosition.y - fIconSidePx / 2f
