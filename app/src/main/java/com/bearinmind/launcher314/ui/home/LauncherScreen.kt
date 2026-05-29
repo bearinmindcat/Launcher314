@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.OpenWith
@@ -782,6 +783,11 @@ fun LauncherScreen(
     // Grid cell positions for drop detection
     var cellPositions by remember { mutableStateOf<Map<Int, Offset>>(emptyMap()) }
     var cellSize by remember { mutableStateOf(IntSize.Zero) }
+    // Actual visible bounds of each folder icon (root coords), reported by
+    // DraggableGridCell.onFolderIconPositioned. Used by the folder-open
+    // popup to align its edge exactly with the icon's real bounds instead
+    // of an iconSizeDp-based approximation that misses by a few dp.
+    val folderIconBoundsMap = remember { mutableStateMapOf<Int, androidx.compose.ui.geometry.Rect>() }
 
     // Dock positions for drop detection
     var dockPositions by remember { mutableStateOf<Map<Int, Offset>>(emptyMap()) }
@@ -2783,6 +2789,9 @@ fun LauncherScreen(
                                             onPositioned = { position, size ->
                                                 cellPositions = cellPositions + (index to position)
                                                 cellSize = size
+                                            },
+                                            onFolderIconPositioned = { bounds ->
+                                                folderIconBoundsMap[index] = bounds
                                             },
                                             onDragStart = {
                                                 // Only start drag if not already dragging something else
@@ -6403,6 +6412,7 @@ fun LauncherScreen(
     // Store folder cell origin in pixels (top-left x, top-left y, width, height)
     var folderCellOrigin by remember { mutableStateOf(Offset.Zero) }
     var folderCellOriginSize by remember { mutableStateOf(IntSize.Zero) }
+    var openedFolderIconBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     if (openHomeFolder != null) {
         lastOpenedFolder = openHomeFolder
         val folderPos = if (openHomeFolder!!.position >= 0) {
@@ -6416,10 +6426,25 @@ fun LauncherScreen(
             folderCellOrigin = folderPos
             folderCellOriginSize = if (openHomeFolder!!.position >= 0) cellSize else dockSlotSize
         }
+        // Snapshot the actual icon bounds for the opened folder (home cells
+        // only — dock folder bounds aren't tracked yet so they keep the
+        // approximation). Falls back to null if the cell hasn't reported.
+        openedFolderIconBounds = if (openHomeFolder!!.position >= 0)
+            folderIconBoundsMap[openHomeFolder!!.position]
+        else null
     }
     val folderAnimProgress by animateFloatAsState(
+        // Match Lawnchair exactly:
+        //   res/values/config.xml — config_materialFolderExpandDuration = 200
+        //   res/values/config.xml — config_folderDelay = 30
+        //   res/interpolator — standard_interpolator = cubic-bezier(0.4, 0, 0.2, 1)
+        //   (= FastOutSlowInEasing in Compose).
         targetValue = if (openHomeFolder != null) 1f else 0f,
-        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        animationSpec = tween(
+            durationMillis = 200,
+            delayMillis = if (openHomeFolder != null) 30 else 0,
+            easing = FastOutSlowInEasing
+        ),
         label = "folderOpenClose",
         finishedListener = { if (it == 0f && !escapedToHomeGrid) lastOpenedFolder = null }
     )
@@ -6446,7 +6471,7 @@ fun LauncherScreen(
                         .take(4)
                         .mapNotNull { pkg -> allAvailableApps.find { it.packageName == pkg }?.iconPath }
                     escapeCloseAnim.snapTo(1f)
-                    escapeCloseAnim.animateTo(0f, tween(500, easing = FastOutSlowInEasing))
+                    escapeCloseAnim.animateTo(0f, tween(200, easing = FastOutSlowInEasing))
                     // FIX: Without this, lastOpenedFolder was never nulled after escape drag
                     // because finishedListener ran while escapedToHomeGrid was still true.
                     // The folder overlay stayed in the tree with stale remember() cache.
@@ -6457,42 +6482,61 @@ fun LauncherScreen(
             }
     }
     if (escapeCloseAnim.value > 0f) {
+        // Use the same bounded-popup geometry as the open animation so the
+        // close visual matches the new card style.
+        val escDensity = LocalDensity.current
+        val escConfig = LocalConfiguration.current
+        val escScreenW = with(escDensity) { escConfig.screenWidthDp.dp.toPx() }
+        val escScreenH = with(escDensity) { escConfig.screenHeightDp.dp.toPx() }
+        val escMaxW = with(escDensity) { 320.dp.toPx() }
+        val escPopupW = (escScreenW * 0.72f).coerceAtMost(escMaxW)
+        val escPopupH = escScreenH * 0.38f
+        val escSafe = with(escDensity) { 16.dp.toPx() }
+        val escIconSidePx = with(escDensity) { iconSizeDp.dp.toPx() }
+        val escCellCx = escapeCloseCellOrigin.x + escapeCloseCellSize.width / 2f
+        val escCellCy = escapeCloseCellOrigin.y + escapeCloseCellSize.height / 2f
+        val escIconCenterY = escCellCy - with(escDensity) { 8.dp.toPx() }
+        val escIconTopPx = escIconCenterY - escIconSidePx / 2f
+        val escIconBottomPx = escIconCenterY + escIconSidePx / 2f
+        val escGoesAbove = escIconTopPx - escPopupH - escSafe >= escSafe ||
+            (escIconBottomPx + escPopupH + escSafe > escScreenH - escSafe)
+        val escPopupY = if (escGoesAbove) {
+            (escIconBottomPx - escPopupH).coerceAtLeast(escSafe)
+        } else {
+            escIconTopPx.coerceAtMost(escScreenH - escPopupH - escSafe)
+        }
+        val escCenteredLeft = escCellCx - escPopupW / 2f
+        val escPopupX = escCenteredLeft.coerceIn(escSafe, (escScreenW - escPopupW - escSafe).coerceAtLeast(escSafe))
+        val escPivotY = if (escGoesAbove) 1f else 0f
+        val escPivotXpx = (escCellCx - escPopupX).coerceIn(0f, escPopupW)
+        val escPivotX = if (escPopupW > 0f) escPivotXpx / escPopupW else 0.5f
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .offset { IntOffset(escPopupX.roundToInt(), escPopupY.roundToInt()) }
+                .size(
+                    width = with(escDensity) { escPopupW.toDp() },
+                    height = with(escDensity) { escPopupH.toDp() }
+                )
+                .clip(RoundedCornerShape(20.dp))
                 .graphicsLayer {
                     val p = escapeCloseAnim.value
+                    transformOrigin = TransformOrigin(escPivotX, escPivotY)
+                    val initialScale = 0.05f
+                    val s = initialScale + (1f - initialScale) * p
+                    scaleX = s
+                    scaleY = s
                     alpha = p
-                    val startScaleX = if (size.width > 0) escapeCloseCellSize.width / size.width else 0.5f
-                    val startScaleY = if (size.height > 0) escapeCloseCellSize.height / size.height else 0.5f
-                    scaleX = startScaleX + (1f - startScaleX) * p
-                    scaleY = startScaleY + (1f - startScaleY) * p
-                    transformOrigin = TransformOrigin(0f, 0f)
-                    translationX = escapeCloseCellOrigin.x * (1f - p)
-                    translationY = escapeCloseCellOrigin.y * (1f - p)
                 }
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header (1/3) — matches folder overlay header
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.33f)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = escapeCloseFolderName,
-                        fontSize = 42.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current
-                    )
-                }
-                // Content (2/3) — app grid
+                // No header — matches the title-bar-less popup. Just the
+                // app grid silhouette so the close animation visual lines
+                // up with the open animation.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(8.dp),
                     contentAlignment = Alignment.TopCenter
                 ) {
                     // Render captured app icons in a grid matching the folder layout
@@ -6637,178 +6681,153 @@ fun LauncherScreen(
 
         var folderOverlayRootPos by remember { mutableStateOf(Offset.Zero) }
         var folderHeaderBottomY by remember { mutableStateOf(0f) }
+
+        // ── Bounded-popup placement (Lawnchair / Neo Launcher style) ──────
+        // Card opens just above or below the tapped folder, ~85% of screen
+        // width with a 400dp cap. Wallpaper + home grid stays visible behind
+        // a 50% black dim. Tap-outside closes. transformOrigin points toward
+        // the anchor so the scale-up reads as "growing out of the folder".
+        val folderDensity = LocalDensity.current
+        val folderConfig = LocalConfiguration.current
+        val screenWpx = with(folderDensity) { folderConfig.screenWidthDp.dp.toPx() }
+        val screenHpx = with(folderDensity) { folderConfig.screenHeightDp.dp.toPx() }
+        // Narrower / shorter popup, closer to Lawnchair's compact card. The
+        // wide 85%-screen version felt like a generic dialog floating over
+        // the wallpaper; this size makes the popup feel like the folder
+        // cell itself stretched outward.
+        val maxCardWpx = with(folderDensity) { 320.dp.toPx() }
+        val popupWpx = (screenWpx * 0.72f).coerceAtMost(maxCardWpx)
+        val popupHpx = screenHpx * 0.38f
+        // Popup sits ADJACENT to the folder icon (above when there's room,
+        // below otherwise) — the popup's near edge touches the icon's edge,
+        // so the icon stays visible below/above the popup. Pivot is set at
+        // that touching edge (and aligned X-wise with the icon center) so
+        // the scale animation grows the popup OUT OF the folder icon.
+        val safePx = with(folderDensity) { 16.dp.toPx() }
+        val iconSidePx = with(folderDensity) { iconSizeDp.dp.toPx() }
+        val cellCenterX = folderCellOrigin.x + folderCellOriginSize.width / 2f
+        val cellCenterY = folderCellOrigin.y + folderCellOriginSize.height / 2f
+        // Prefer the EXACT folder-icon bounds reported via
+        // onFolderIconPositioned. Falls back to a cell + iconSizeDp
+        // approximation if the bounds haven't been measured yet (first
+        // open before any layout).
+        val iconBounds = openedFolderIconBounds
+        val iconCenterX = iconBounds?.center?.x ?: cellCenterX
+        val iconCenterY = iconBounds?.center?.y ?: (cellCenterY - with(folderDensity) { 8.dp.toPx() })
+        val iconTopPx = iconBounds?.top ?: (iconCenterY - iconSidePx / 2f)
+        val iconBottomPx = iconBounds?.bottom ?: (iconCenterY + iconSidePx / 2f)
+        // Pick side: prefer ABOVE when there's room.
+        val popupGoesAbove = iconTopPx - popupHpx - safePx >= safePx ||
+            (iconBottomPx + popupHpx + safePx > screenHpx - safePx)
+        // Popup FULLY covers the folder icon — the icon's far edge sits
+        // flush with the popup's far edge. Above: popup BOTTOM = icon
+        // BOTTOM (icon is hidden under the popup's bottom). Below: popup
+        // TOP = icon TOP (icon hidden under the popup's top).
+        val popupY = if (popupGoesAbove) {
+            (iconBottomPx - popupHpx).coerceAtLeast(safePx)
+        } else {
+            iconTopPx.coerceAtMost(screenHpx - popupHpx - safePx)
+        }
+        // X centers on the ACTUAL icon center, clamped to safe area.
+        val centeredLeft = iconCenterX - popupWpx / 2f
+        val popupX = centeredLeft.coerceIn(safePx, (screenWpx - popupWpx - safePx).coerceAtLeast(safePx))
+        // Pivot Y: bottom of popup (1f) when above the icon, top of popup
+        // (0f) when below. The popup's near edge stays anchored at the icon
+        // and the scale collapses the popup TO that edge at progress=0.
+        val popupPivotY = if (popupGoesAbove) 1f else 0f
+        // Pivot X: aligned with the icon center in popup-local coords.
+        val pivotPxX = (iconCenterX - popupX).coerceIn(0f, popupWpx)
+        val popupPivotX = if (popupWpx > 0f) pivotPxX / popupWpx else 0.5f
+
+        // Dim backdrop — tap-outside closes the folder (or commits the
+        // pending name edit first, mirroring the header's tap-to-close).
+        // Dim alpha tracks progress directly so dim + popup animate in
+        // perfect sync. No lag formula, no two-step.
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer { alpha = folderAnimProgress }
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    if (isFolderNameEditing) {
+                        if (editedFolderName.text.isNotBlank()) {
+                            if (isDockFolder) {
+                                saveDockFolders(dockFolders.map {
+                                    if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
+                                })
+                            } else {
+                                saveHomeFolders(homeFolders.map {
+                                    if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
+                                })
+                            }
+                            openHomeFolder = folder.copy(name = editedFolderName.text)
+                        }
+                        isFolderNameEditing = false
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    } else {
+                        openHomeFolder = null
+                    }
+                }
+        )
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(popupX.roundToInt(), popupY.roundToInt()) }
+                .size(
+                    width = with(folderDensity) { popupWpx.toDp() },
+                    height = with(folderDensity) { popupHpx.toDp() }
+                )
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.background)
                 .onGloballyPositioned { folderOverlayRootPos = it.positionInRoot() }
                 .graphicsLayer {
                     if (escapedToHomeGrid) {
-                        // During escape drag: keep overlay at full scale but invisible.
-                        // The home grid overlay renders the dragged icon instead.
-                        // CRITICAL: scale must stay 1.0 so pointer coordinates aren't
-                        // distorted by the inverse-transform — otherwise deltas get
-                        // amplified as the close animation scales down, causing the icon to fly.
-                        // A separate visual-only Box handles the close animation.
+                        // During escape drag: keep popup at full scale but
+                        // invisible. The home grid overlay renders the dragged
+                        // icon instead. CRITICAL: scale stays 1.0 so pointer
+                        // coordinates aren't distorted by the inverse-transform
+                        // — otherwise deltas get amplified as the close
+                        // animation scales down, causing the icon to fly.
                         alpha = 0f
                     } else {
                         val p = folderAnimProgress
+                        // Pure scale around the icon-anchored pivot — the
+                        // popup collapses to a point AT the icon when p=0
+                        // and expands to its full layout position at p=1.
+                        // alpha = p (linear with progress) so scale and
+                        // alpha animate in sync, never two-step.
+                        transformOrigin = TransformOrigin(popupPivotX, popupPivotY)
+                        val initialScale = 0.05f
+                        val s = initialScale + (1f - initialScale) * p
+                        scaleX = s
+                        scaleY = s
                         alpha = p
-                        val startScaleX = if (size.width > 0) folderCellOriginSize.width / size.width else 0.5f
-                        val startScaleY = if (size.height > 0) folderCellOriginSize.height / size.height else 0.5f
-                        scaleX = startScaleX + (1f - startScaleX) * p
-                        scaleY = startScaleY + (1f - startScaleY) * p
-                        transformOrigin = TransformOrigin(0f, 0f)
-                        translationX = folderCellOrigin.x * (1f - p)
-                        translationY = folderCellOrigin.y * (1f - p)
                     }
                 }
         ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Header area - 1/3 of screen, lighter background
-            // Dragging an app into this area closes the folder
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.33f)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .onGloballyPositioned { coords ->
-                        folderHeaderBottomY = coords.positionInRoot().y + coords.size.height
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                // Background tap to close (or save edit)
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            if (!isFolderNameEditing) {
-                                openHomeFolder = null
-                            } else {
-                                if (editedFolderName.text.isNotBlank()) {
-                                    if (isDockFolder) {
-                                        saveDockFolders(dockFolders.map {
-                                            if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
-                                        })
-                                    } else {
-                                        saveHomeFolders(homeFolders.map {
-                                            if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
-                                        })
-                                    }
-                                    openHomeFolder = folder.copy(name = editedFolderName.text)
-                                }
-                                isFolderNameEditing = false
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                            }
-                        }
-                )
-
-                // Folder name + decoupling hint. The drawer and home/dock copies
-                // of a folder don't share an identity — renaming on this screen
-                // only writes to home_screen_data.json. Show a subdued caption
-                // when a same-named folder exists in the drawer so users aren't
-                // surprised that the drawer copy keeps its old name.
-                val drawerFolderNames = remember {
-                    com.bearinmind.launcher314.data.loadDrawerData(context).folders.map { it.name }.toSet()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                // No title bar — Lawnchair-style. Long-press the folder icon
+                // for Remove/Customize/Rename in the existing context menu.
+                // folderHeaderBottomY (used by drag-out-to-remove) snaps to
+                // the popup's top edge so dragging an app above the popup
+                // still pulls it out of the folder.
+                .onGloballyPositioned { coords ->
+                    folderHeaderBottomY = coords.positionInRoot().y
                 }
-                val sameNameInDrawer = remember(folder.name, drawerFolderNames) {
-                    folder.name in drawerFolderNames
-                }
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    if (isFolderNameEditing) {
-                        BasicTextField(
-                            value = editedFolderName,
-                            onValueChange = { editedFolderName = it },
-                            textStyle = TextStyle(
-                                fontSize = 42.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
-                                textAlign = TextAlign.Center
-                            ),
-                            singleLine = true,
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    if (editedFolderName.text.isNotBlank()) {
-                                        if (isDockFolder) {
-                                            saveDockFolders(dockFolders.map {
-                                                if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
-                                            })
-                                        } else {
-                                            saveHomeFolders(homeFolders.map {
-                                                if (it.id == folder.id) it.copy(name = editedFolderName.text) else it
-                                            })
-                                        }
-                                        openHomeFolder = folder.copy(name = editedFolderName.text)
-                                    }
-                                    isFolderNameEditing = false
-                                    keyboardController?.hide()
-                                    focusManager.clearFocus()
-                                }
-                            ),
-                            modifier = Modifier
-                                .focusRequester(folderNameFocusRequester)
-                                .widthIn(min = 100.dp, max = 280.dp),
-                            decorationBox = { innerTextField -> innerTextField() }
-                        )
-                    } else {
-                        Text(
-                            text = folder.name,
-                            fontSize = 42.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
-                            modifier = Modifier.clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                editedFolderName = TextFieldValue(folder.name, TextRange(folder.name.length))
-                                isFolderNameEditing = true
-                            }
-                        )
-                    }
-                    if (sameNameInDrawer) {
-                        Text(
-                            text = "Renaming here doesn't update the copy in the drawer.",
-                            fontSize = 11.sp,
-                            color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current.copy(alpha = 0.55f),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .padding(horizontal = 24.dp)
-                                .widthIn(max = 320.dp)
-                        )
-                    }
-                }
-
-                // Delete folder button - bottom right of header
-                IconButton(
-                    onClick = { showFolderDeleteConfirm = true },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(12.dp)
-                        .size(52.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Delete,
-                        contentDescription = "Delete folder",
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-            }
-
-            // Apps area - 2/3 of screen (dark background, sharp corners)
+        ) {
+            // Apps area — fills the popup, holds the icon grid. Inner padding
+            // keeps the icons off the rounded corners.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight()
                     .background(MaterialTheme.colorScheme.background)
+                    .padding(8.dp)
             ) {
                 // Resolve cell map to HomeAppInfo for rendering
                 val folderCellAppMap = remember(folderCellMap, allAvailableApps) {

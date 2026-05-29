@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
@@ -209,108 +210,17 @@ internal fun FolderContentScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Header area - 1/3 of screen, tap to close (lighter background)
-        // Dragging an app here removes it from the folder and closes back to drawer
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.33f)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .onGloballyPositioned { coords ->
-                    val pos = coords.positionInRoot()
-                    headerBottomY = pos.y + coords.size.height
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            // Background layer - tap anywhere to close (but not on the text)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        if (!isEditing) {
-                            onBack()
-                        } else {
-                            // Tap outside text while editing - save and close edit mode
-                            if (editedName.text.isNotBlank()) {
-                                onRenameFolder(editedName.text)
-                            }
-                            isEditing = false
-                            keyboardController?.hide()
-                            focusManager.clearFocus()
-                        }
-                    }
-            )
-
-            // Folder name centered in the middle of the header
-            if (isEditing) {
-                BasicTextField(
-                    value = editedName,
-                    onValueChange = { editedName = it },
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = 42.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center
-                    ),
-                    singleLine = true,
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (editedName.text.isNotBlank()) {
-                                onRenameFolder(editedName.text)
-                            }
-                            isEditing = false
-                            keyboardController?.hide()
-                            focusManager.clearFocus()
-                        }
-                    ),
-                    modifier = Modifier
-                        .focusRequester(focusRequester)
-                        .widthIn(min = 100.dp, max = 280.dp),
-                    decorationBox = { innerTextField ->
-                        // No decoration - just the raw text, no indicator line
-                        innerTextField()
-                    }
-                )
-            } else {
-                Text(
-                    text = folder.name,
-                    fontSize = 42.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        editedName = TextFieldValue(folder.name, TextRange(folder.name.length))
-                        isEditing = true
-                    }
-                )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            // No title bar — Lawnchair-style. headerBottomY (used by drag-
+            // out-to-remove) snaps to the popup's top edge so dragging an
+            // app up past the popup still pulls it out of the folder.
+            .onGloballyPositioned { coords ->
+                headerBottomY = coords.positionInRoot().y
             }
-
-            // Delete folder icon - bottom right of the header card
-            IconButton(
-                onClick = { showDeleteConfirm = true },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(12.dp)
-                    .size(52.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Delete,
-                    contentDescription = "Delete folder",
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-        }
-
-        // Apps area - 2/3 of screen (dark background)
+    ) {
+        // Apps area — fills the whole popup. No title bar.
         Box(
             modifier = Modifier
                 .fillMaxWidth()

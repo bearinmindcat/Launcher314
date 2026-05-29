@@ -542,7 +542,14 @@ fun AppDrawerScreen(
     // Animation values
     val animationProgress by animateFloatAsState(
         targetValue = if (isFolderVisible) 1f else 0f,
-        animationSpec = tween(durationMillis = 300),
+        // Match Lawnchair: 200ms tween with FastOutSlowInEasing
+        // (cubic-bezier 0.4, 0, 0.2, 1 — their standard_interpolator),
+        // plus a 30ms start-delay on open (config_folderDelay).
+        animationSpec = tween(
+            durationMillis = 200,
+            delayMillis = if (isFolderVisible) 30 else 0,
+            easing = FastOutSlowInEasing
+        ),
         label = "folder_animation"
     )
 
@@ -757,23 +764,74 @@ fun AppDrawerScreen(
             )
         )
 
-        // Folder content overlay with animation from folder position
+        // Folder content overlay — Lawnchair / Neo Launcher style: a bounded
+        // rounded card opens near the tapped folder icon, wallpaper + drawer
+        // stay visible behind a 50% dim. Card is 85% of screen width capped
+        // at 400dp; height fixed at 65% so the inner header (33%) + grid
+        // (67%) layout keeps its proportions.
         if (openFolder != null || animationProgress > 0f) {
             openFolder?.let { currentFolder ->
+                val drawerFolderDensity = LocalDensity.current
+                val drawerFolderConfig = LocalConfiguration.current
+                val fScreenWpx = with(drawerFolderDensity) { drawerFolderConfig.screenWidthDp.dp.toPx() }
+                val fScreenHpx = with(drawerFolderDensity) { drawerFolderConfig.screenHeightDp.dp.toPx() }
+                val fMaxWpx = with(drawerFolderDensity) { 320.dp.toPx() }
+                val fPopupWpx = (fScreenWpx * 0.72f).coerceAtMost(fMaxWpx)
+                val fPopupHpx = fScreenHpx * 0.38f
+                val fSafePx = with(drawerFolderDensity) { 16.dp.toPx() }
+                val fIconSidePx = with(drawerFolderDensity) { iconSize.dp.toPx() }
+                val fIconTopPx = clickedFolderPosition.y - fIconSidePx / 2f
+                val fIconBottomPx = clickedFolderPosition.y + fIconSidePx / 2f
+                val fGoesAbove = fIconTopPx - fPopupHpx - fSafePx >= fSafePx ||
+                    (fIconBottomPx + fPopupHpx + fSafePx > fScreenHpx - fSafePx)
+                val fPopupY = if (fGoesAbove) {
+                    (fIconBottomPx - fPopupHpx).coerceAtLeast(fSafePx)
+                } else {
+                    fIconTopPx.coerceAtMost(fScreenHpx - fPopupHpx - fSafePx)
+                }
+                val fCenteredLeft = clickedFolderPosition.x - fPopupWpx / 2f
+                val fPopupX = fCenteredLeft.coerceIn(fSafePx, (fScreenWpx - fPopupWpx - fSafePx).coerceAtLeast(fSafePx))
+                val fPivotY = if (fGoesAbove) 1f else 0f
+                val fPivotXpx = (clickedFolderPosition.x - fPopupX).coerceIn(0f, fPopupWpx)
+                val fPivotX = if (fPopupWpx > 0f) fPivotXpx / fPopupWpx else 0.5f
+
+                // Dim backdrop — tap-outside closes the folder. Dim alpha
+                // tracks progress directly so dim + popup animate in sync,
+                // no two-step.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .graphicsLayer { alpha = animationProgress }
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { isFolderVisible = false }
+                )
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(fPopupX.roundToInt(), fPopupY.roundToInt()) }
+                        .size(
+                            width = with(drawerFolderDensity) { fPopupWpx.toDp() },
+                            height = with(drawerFolderDensity) { fPopupHpx.toDp() }
+                        )
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.background)
                         .graphicsLayer {
-                            // During escape drag: freeze scale at 1 to avoid pointer
-                            // coordinate distortion, hide with alpha=0 instead
-                            scaleX = if (folderEscapedApp != null) 1f else animationProgress
-                            scaleY = if (folderEscapedApp != null) 1f else animationProgress
-                            // Set transform origin to folder position
-                            transformOrigin = TransformOrigin(
-                                transformOriginX.coerceIn(0f, 1f),
-                                transformOriginY.coerceIn(0f, 1f)
-                            )
-                            alpha = if (folderEscapedApp != null) 0f else animationProgress
+                            // During escape drag: freeze scale at 1 to avoid
+                            // pointer coordinate distortion, hide with alpha=0.
+                            if (folderEscapedApp != null) {
+                                scaleX = 1f
+                                scaleY = 1f
+                                alpha = 0f
+                            } else {
+                                transformOrigin = TransformOrigin(fPivotX, fPivotY)
+                                val initialScale = 0.05f
+                                val s = initialScale + (1f - initialScale) * animationProgress
+                                scaleX = s
+                                scaleY = s
+                                alpha = animationProgress
+                            }
                         }
                 ) {
                     FolderContentScreen(

@@ -163,6 +163,11 @@ fun DraggableGridCell(
     iconTextSpacer: Dp = 4.dp,
     hoverCornerRadius: Dp = 12.dp,
     onPositioned: (Offset, IntSize) -> Unit,
+    // Reports the folder icon's actual visible bounds in root coords —
+    // used by the folder-open popup to align its edge exactly with the
+    // folder icon (instead of approximating from cell + iconSizeDp).
+    // Only fires for folder cells.
+    onFolderIconPositioned: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     onDragStart: () -> Unit,
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
@@ -1214,6 +1219,10 @@ fun DraggableGridCell(
                                             pos.x + offsetX, pos.y + offsetY,
                                             pos.x + offsetX + w, pos.y + offsetY + h
                                         )
+                                        // Also report to the parent (LauncherScreen) so the
+                                        // folder-open popup can align its edge exactly with
+                                        // the icon's real visible bounds.
+                                        onFolderIconPositioned?.invoke(folderIconBoundsInRoot)
                                     }
                                     .graphicsLayer {
                                         scaleX = combinedScale
