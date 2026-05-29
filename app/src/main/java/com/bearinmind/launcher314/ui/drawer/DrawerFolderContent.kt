@@ -220,13 +220,14 @@ internal fun FolderContentScreen(
                 headerBottomY = coords.positionInRoot().y
             }
     ) {
-        // Apps area — fills the whole popup. No title bar.
+        // Apps area — fills the whole popup. No title bar. NO own
+        // background — the outer popup Box in AppDrawerScreen already
+        // draws it. Stacking two identical backgrounds made the layer
+        // look like it was animating separately from the apps inside.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(MaterialTheme.colorScheme.background)
                 .onGloballyPositioned { folderRootPos = it.positionInRoot() }
         ) {
             if (folderCellMap.isEmpty()) {

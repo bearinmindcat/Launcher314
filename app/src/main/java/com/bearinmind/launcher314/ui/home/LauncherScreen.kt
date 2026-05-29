@@ -6434,16 +6434,18 @@ fun LauncherScreen(
         else null
     }
     val folderAnimProgress by animateFloatAsState(
-        // Match Lawnchair exactly:
-        //   res/values/config.xml — config_materialFolderExpandDuration = 200
-        //   res/values/config.xml — config_folderDelay = 30
-        //   res/interpolator — standard_interpolator = cubic-bezier(0.4, 0, 0.2, 1)
-        //   (= FastOutSlowInEasing in Compose).
+        // Match Lawnchair's SMOOTH (spring-based) folder animation. From
+        // src/com/android/launcher3/folder/FolderSpringAnimatorSet.kt:
+        //   STIFFNESS_SHAPE_POSITION = 380f   — for translation + scale
+        //   DAMPING_SHAPE_POSITION   = 0.8f   — slight, natural bounce
+        // The whole motion (popup + dim + everything driven by this
+        // progress) settles via spring physics instead of a fixed tween,
+        // so the open and close read as a single fluid arc.
         targetValue = if (openHomeFolder != null) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = 200,
-            delayMillis = if (openHomeFolder != null) 30 else 0,
-            easing = FastOutSlowInEasing
+        animationSpec = spring(
+            dampingRatio = 0.8f,
+            stiffness = 380f,
+            visibilityThreshold = 0.001f
         ),
         label = "folderOpenClose",
         finishedListener = { if (it == 0f && !escapedToHomeGrid) lastOpenedFolder = null }
@@ -6471,7 +6473,11 @@ fun LauncherScreen(
                         .take(4)
                         .mapNotNull { pkg -> allAvailableApps.find { it.packageName == pkg }?.iconPath }
                     escapeCloseAnim.snapTo(1f)
-                    escapeCloseAnim.animateTo(0f, tween(200, easing = FastOutSlowInEasing))
+                    escapeCloseAnim.animateTo(
+                        0f,
+                        // Match Lawnchair's spring-based close motion.
+                        spring(dampingRatio = 0.8f, stiffness = 380f, visibilityThreshold = 0.001f)
+                    )
                     // FIX: Without this, lastOpenedFolder was never nulled after escape drag
                     // because finishedListener ran while escapedToHomeGrid was still true.
                     // The folder overlay stayed in the tree with stale remember() cache.
@@ -6498,6 +6504,8 @@ fun LauncherScreen(
         val escIconCenterY = escCellCy - with(escDensity) { 8.dp.toPx() }
         val escIconTopPx = escIconCenterY - escIconSidePx / 2f
         val escIconBottomPx = escIconCenterY + escIconSidePx / 2f
+        val escIconWidthPx = escIconSidePx
+        val escIconHeightPx = escIconSidePx
         val escGoesAbove = escIconTopPx - escPopupH - escSafe >= escSafe ||
             (escIconBottomPx + escPopupH + escSafe > escScreenH - escSafe)
         val escPopupY = if (escGoesAbove) {
@@ -6507,9 +6515,16 @@ fun LauncherScreen(
         }
         val escCenteredLeft = escCellCx - escPopupW / 2f
         val escPopupX = escCenteredLeft.coerceIn(escSafe, (escScreenW - escPopupW - escSafe).coerceAtLeast(escSafe))
-        val escPivotY = if (escGoesAbove) 1f else 0f
-        val escPivotXpx = (escCellCx - escPopupX).coerceIn(0f, escPopupW)
-        val escPivotX = if (escPopupW > 0f) escPivotXpx / escPopupW else 0.5f
+        // Pivot at icon center in popup-local fraction; initial scale =
+        // ratio of icon size to popup size (rect-reveal from icon).
+        val escPivotPxX = (escCellCx - escPopupX).coerceIn(0f, escPopupW)
+        val escPivotPxY = (escIconCenterY - escPopupY).coerceIn(0f, escPopupH)
+        val escPivotX = if (escPopupW > 0f) escPivotPxX / escPopupW else 0.5f
+        val escPivotY = if (escPopupH > 0f) escPivotPxY / escPopupH else 0.5f
+        val escInitialScaleX = if (escPopupW > 0f)
+            (escIconWidthPx / escPopupW).coerceIn(0.01f, 1f) else 0.1f
+        val escInitialScaleY = if (escPopupH > 0f)
+            (escIconHeightPx / escPopupH).coerceIn(0.01f, 1f) else 0.1f
         Box(
             modifier = Modifier
                 .offset { IntOffset(escPopupX.roundToInt(), escPopupY.roundToInt()) }
@@ -6517,16 +6532,15 @@ fun LauncherScreen(
                     width = with(escDensity) { escPopupW.toDp() },
                     height = with(escDensity) { escPopupH.toDp() }
                 )
-                .clip(RoundedCornerShape(20.dp))
+                // graphicsLayer before .clip so alpha applies to everything.
                 .graphicsLayer {
                     val p = escapeCloseAnim.value
                     transformOrigin = TransformOrigin(escPivotX, escPivotY)
-                    val initialScale = 0.05f
-                    val s = initialScale + (1f - initialScale) * p
-                    scaleX = s
-                    scaleY = s
+                    scaleX = escInitialScaleX + (1f - escInitialScaleX) * p
+                    scaleY = escInitialScaleY + (1f - escInitialScaleY) * p
                     alpha = p
                 }
+                .clip(RoundedCornerShape(20.dp))
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // No header — matches the title-bar-less popup. Just the
@@ -6716,6 +6730,12 @@ fun LauncherScreen(
         val iconCenterY = iconBounds?.center?.y ?: (cellCenterY - with(folderDensity) { 8.dp.toPx() })
         val iconTopPx = iconBounds?.top ?: (iconCenterY - iconSidePx / 2f)
         val iconBottomPx = iconBounds?.bottom ?: (iconCenterY + iconSidePx / 2f)
+        // Icon WIDTH and HEIGHT in px — used to seed the popup's initial
+        // scale so it starts the SAME size as the folder icon, then all
+        // four edges expand outward (Lawnchair's ClipRevealData pattern,
+        // but achieved with scaleX/scaleY + pivot at the icon center).
+        val iconWidthPx = iconBounds?.width ?: iconSidePx
+        val iconHeightPx = iconBounds?.height ?: iconSidePx
         // Pick side: prefer ABOVE when there's room.
         val popupGoesAbove = iconTopPx - popupHpx - safePx >= safePx ||
             (iconBottomPx + popupHpx + safePx > screenHpx - safePx)
@@ -6731,13 +6751,20 @@ fun LauncherScreen(
         // X centers on the ACTUAL icon center, clamped to safe area.
         val centeredLeft = iconCenterX - popupWpx / 2f
         val popupX = centeredLeft.coerceIn(safePx, (screenWpx - popupWpx - safePx).coerceAtLeast(safePx))
-        // Pivot Y: bottom of popup (1f) when above the icon, top of popup
-        // (0f) when below. The popup's near edge stays anchored at the icon
-        // and the scale collapses the popup TO that edge at progress=0.
-        val popupPivotY = if (popupGoesAbove) 1f else 0f
-        // Pivot X: aligned with the icon center in popup-local coords.
+        // Pivot at the icon's CENTER in popup-local fraction. The popup
+        // scales out of (and back into) this point in all 4 directions.
         val pivotPxX = (iconCenterX - popupX).coerceIn(0f, popupWpx)
+        val pivotPxY = (iconCenterY - popupY).coerceIn(0f, popupHpx)
         val popupPivotX = if (popupWpx > 0f) pivotPxX / popupWpx else 0.5f
+        val popupPivotY = if (popupHpx > 0f) pivotPxY / popupHpx else 0.5f
+        // Initial scale = ratio of icon-side to popup-side, so progress=0
+        // gives a popup the EXACT size of the folder icon at the icon's
+        // position. As progress→1, all four edges sweep outward to the
+        // final layout (a rect-reveal that morphs from the icon).
+        val popupInitialScaleX = if (popupWpx > 0f)
+            (iconWidthPx / popupWpx).coerceIn(0.01f, 1f) else 0.1f
+        val popupInitialScaleY = if (popupHpx > 0f)
+            (iconHeightPx / popupHpx).coerceIn(0.01f, 1f) else 0.1f
 
         // Dim backdrop — tap-outside closes the folder (or commits the
         // pending name edit first, mirroring the header's tap-to-close).
@@ -6780,9 +6807,10 @@ fun LauncherScreen(
                     width = with(folderDensity) { popupWpx.toDp() },
                     height = with(folderDensity) { popupHpx.toDp() }
                 )
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.background)
-                .onGloballyPositioned { folderOverlayRootPos = it.positionInRoot() }
+                // graphicsLayer MUST come before .clip and .background, or
+                // those modifiers draw OUTSIDE the layer — the popup's bg
+                // would snap to full opacity instantly while only the
+                // content inside the layer animated. Order matters here.
                 .graphicsLayer {
                     if (escapedToHomeGrid) {
                         // During escape drag: keep popup at full scale but
@@ -6794,19 +6822,22 @@ fun LauncherScreen(
                         alpha = 0f
                     } else {
                         val p = folderAnimProgress
-                        // Pure scale around the icon-anchored pivot — the
-                        // popup collapses to a point AT the icon when p=0
-                        // and expands to its full layout position at p=1.
-                        // alpha = p (linear with progress) so scale and
-                        // alpha animate in sync, never two-step.
+                        // Pivot at the icon CENTER (in popup-local coords).
+                        // Initial scaleX/Y match the icon's width/height so
+                        // at p=0 the popup IS the folder icon (same rect,
+                        // same position). As p→1, all four edges expand
+                        // outward to the full popup. On close (p:1→0) the
+                        // four edges sweep back into the icon — fully
+                        // symmetric, never collapses to a point.
                         transformOrigin = TransformOrigin(popupPivotX, popupPivotY)
-                        val initialScale = 0.05f
-                        val s = initialScale + (1f - initialScale) * p
-                        scaleX = s
-                        scaleY = s
+                        scaleX = popupInitialScaleX + (1f - popupInitialScaleX) * p
+                        scaleY = popupInitialScaleY + (1f - popupInitialScaleY) * p
                         alpha = p
                     }
                 }
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.background)
+                .onGloballyPositioned { folderOverlayRootPos = it.positionInRoot() }
         ) {
         Column(
             modifier = Modifier
@@ -6820,13 +6851,16 @@ fun LauncherScreen(
                     folderHeaderBottomY = coords.positionInRoot().y
                 }
         ) {
-            // Apps area — fills the popup, holds the icon grid. Inner padding
-            // keeps the icons off the rounded corners.
+            // Apps area — fills the popup, holds the icon grid. NO own
+            // background — the outer popup Box already draws it. Two
+            // identical backgrounds stacked here used to look like two
+            // separate layers animating (the apps-area Box would render its
+            // own redundant rect on top of the outer's). Padding keeps the
+            // icons off the rounded corners.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.background)
                     .padding(8.dp)
             ) {
                 // Resolve cell map to HomeAppInfo for rendering

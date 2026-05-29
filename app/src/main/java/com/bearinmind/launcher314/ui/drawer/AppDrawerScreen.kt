@@ -43,6 +43,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.Orientation
@@ -542,13 +543,13 @@ fun AppDrawerScreen(
     // Animation values
     val animationProgress by animateFloatAsState(
         targetValue = if (isFolderVisible) 1f else 0f,
-        // Match Lawnchair: 200ms tween with FastOutSlowInEasing
-        // (cubic-bezier 0.4, 0, 0.2, 1 — their standard_interpolator),
-        // plus a 30ms start-delay on open (config_folderDelay).
-        animationSpec = tween(
-            durationMillis = 200,
-            delayMillis = if (isFolderVisible) 30 else 0,
-            easing = FastOutSlowInEasing
+        // Match Lawnchair's smooth spring-based folder animation.
+        // FolderSpringAnimatorSet.kt:
+        //   STIFFNESS_SHAPE_POSITION = 380f, DAMPING_SHAPE_POSITION = 0.8f
+        animationSpec = spring(
+            dampingRatio = 0.8f,
+            stiffness = 380f,
+            visibilityThreshold = 0.001f
         ),
         label = "folder_animation"
     )
@@ -791,9 +792,16 @@ fun AppDrawerScreen(
                 }
                 val fCenteredLeft = clickedFolderPosition.x - fPopupWpx / 2f
                 val fPopupX = fCenteredLeft.coerceIn(fSafePx, (fScreenWpx - fPopupWpx - fSafePx).coerceAtLeast(fSafePx))
-                val fPivotY = if (fGoesAbove) 1f else 0f
-                val fPivotXpx = (clickedFolderPosition.x - fPopupX).coerceIn(0f, fPopupWpx)
-                val fPivotX = if (fPopupWpx > 0f) fPivotXpx / fPopupWpx else 0.5f
+                // Pivot at icon center, initial scale = icon-size / popup-size
+                // for the rect-reveal-from-icon effect.
+                val fPivotPxX = (clickedFolderPosition.x - fPopupX).coerceIn(0f, fPopupWpx)
+                val fPivotPxY = (clickedFolderPosition.y - fPopupY).coerceIn(0f, fPopupHpx)
+                val fPivotX = if (fPopupWpx > 0f) fPivotPxX / fPopupWpx else 0.5f
+                val fPivotY = if (fPopupHpx > 0f) fPivotPxY / fPopupHpx else 0.5f
+                val fInitialScaleX = if (fPopupWpx > 0f)
+                    (fIconSidePx / fPopupWpx).coerceIn(0.01f, 1f) else 0.1f
+                val fInitialScaleY = if (fPopupHpx > 0f)
+                    (fIconSidePx / fPopupHpx).coerceIn(0.01f, 1f) else 0.1f
 
                 // Dim backdrop — tap-outside closes the folder. Dim alpha
                 // tracks progress directly so dim + popup animate in sync,
@@ -815,8 +823,10 @@ fun AppDrawerScreen(
                             width = with(drawerFolderDensity) { fPopupWpx.toDp() },
                             height = with(drawerFolderDensity) { fPopupHpx.toDp() }
                         )
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.background)
+                        // graphicsLayer MUST come before .clip and
+                        // .background — otherwise the bg is drawn OUTSIDE
+                        // the layer and snaps to full opacity instantly
+                        // while only the apps inside animate.
                         .graphicsLayer {
                             // During escape drag: freeze scale at 1 to avoid
                             // pointer coordinate distortion, hide with alpha=0.
@@ -826,13 +836,13 @@ fun AppDrawerScreen(
                                 alpha = 0f
                             } else {
                                 transformOrigin = TransformOrigin(fPivotX, fPivotY)
-                                val initialScale = 0.05f
-                                val s = initialScale + (1f - initialScale) * animationProgress
-                                scaleX = s
-                                scaleY = s
+                                scaleX = fInitialScaleX + (1f - fInitialScaleX) * animationProgress
+                                scaleY = fInitialScaleY + (1f - fInitialScaleY) * animationProgress
                                 alpha = animationProgress
                             }
                         }
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.background)
                 ) {
                     FolderContentScreen(
                         folder = currentFolder.copy(
