@@ -70,11 +70,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.changedToUp
@@ -6535,6 +6538,7 @@ fun LauncherScreen(
         val escIconBottomPx = escIconCenterY + escIconSidePx / 2f
         val escIconWidthPx = escIconSidePx
         val escIconHeightPx = escIconSidePx
+        // Adjacent-to-icon placement, matching the open animation.
         val escGoesAbove = escIconTopPx - escPopupH - escSafe >= escSafe ||
             (escIconBottomPx + escPopupH + escSafe > escScreenH - escSafe)
         val escPopupY = if (escGoesAbove) {
@@ -6544,16 +6548,14 @@ fun LauncherScreen(
         }
         val escCenteredLeft = escCellCx - escPopupW / 2f
         val escPopupX = escCenteredLeft.coerceIn(escSafe, (escScreenW - escPopupW - escSafe).coerceAtLeast(escSafe))
-        // Pivot at icon center in popup-local fraction; initial scale =
-        // ratio of icon size to popup size (rect-reveal from icon).
-        val escPivotPxX = (escCellCx - escPopupX).coerceIn(0f, escPopupW)
-        val escPivotPxY = (escIconCenterY - escPopupY).coerceIn(0f, escPopupH)
-        val escPivotX = if (escPopupW > 0f) escPivotPxX / escPopupW else 0.5f
-        val escPivotY = if (escPopupH > 0f) escPivotPxY / escPopupH else 0.5f
-        val escInitialScaleX = if (escPopupW > 0f)
-            (escIconWidthPx / escPopupW).coerceIn(0.01f, 1f) else 0.1f
-        val escInitialScaleY = if (escPopupH > 0f)
-            (escIconHeightPx / escPopupH).coerceIn(0.01f, 1f) else 0.1f
+        // Clip-reveal rect in popup-local px (folder-icon rect → full popup),
+        // matching the open animation's reveal.
+        val escRevStartLeft = (escCellCx - escIconWidthPx / 2f) - escPopupX
+        val escRevStartTop = (escIconCenterY - escIconHeightPx / 2f) - escPopupY
+        val escRevStartRight = escRevStartLeft + escIconWidthPx
+        val escRevStartBottom = escRevStartTop + escIconHeightPx
+        val escRevStartRadiusPx = escIconWidthPx * 0.29f
+        val escFinalRadiusPx = with(escDensity) { 20.dp.toPx() }
         Box(
             modifier = Modifier
                 .offset { IntOffset(escPopupX.roundToInt(), escPopupY.roundToInt()) }
@@ -6561,13 +6563,19 @@ fun LauncherScreen(
                     width = with(escDensity) { escPopupW.toDp() },
                     height = with(escDensity) { escPopupH.toDp() }
                 )
-                // graphicsLayer before .clip so alpha applies to everything.
-                .graphicsLayer {
-                    val p = escapeCloseAnim.value
-                    transformOrigin = TransformOrigin(escPivotX, escPivotY)
-                    scaleX = escInitialScaleX + (1f - escInitialScaleX) * p
-                    scaleY = escInitialScaleY + (1f - escInitialScaleY) * p
-                    alpha = p
+                .graphicsLayer { alpha = escapeCloseAnim.value }
+                .drawWithContent {
+                    val p = escapeCloseAnim.value.coerceIn(0f, 1f)
+                    if (p >= 0.999f) { drawContent(); return@drawWithContent }
+                    val l = escRevStartLeft + (0f - escRevStartLeft) * p
+                    val t = escRevStartTop + (0f - escRevStartTop) * p
+                    val r = escRevStartRight + (size.width - escRevStartRight) * p
+                    val b = escRevStartBottom + (size.height - escRevStartBottom) * p
+                    val rad = escRevStartRadiusPx + (escFinalRadiusPx - escRevStartRadiusPx) * p
+                    val revealPath = Path().apply {
+                        addRoundRect(RoundRect(l, t, r, b, CornerRadius(rad, rad)))
+                    }
+                    clipPath(revealPath) { this@drawWithContent.drawContent() }
                 }
                 .clip(RoundedCornerShape(20.dp))
         ) {
@@ -6803,45 +6811,61 @@ fun LauncherScreen(
         // but achieved with scaleX/scaleY + pivot at the icon center).
         val iconWidthPx = iconBounds?.width ?: iconSidePx
         val iconHeightPx = iconBounds?.height ?: iconSidePx
-        // Pick side: prefer ABOVE when there's room.
+        // Popup sits ADJACENT to the folder icon — above when there's room,
+        // below otherwise — fully covering the icon (the icon's far edge sits
+        // flush with the popup's far edge). The reveal still grows from the
+        // icon rect so it reads as "growing out of the folder".
         val popupGoesAbove = iconTopPx - popupHpx - safePx >= safePx ||
             (iconBottomPx + popupHpx + safePx > screenHpx - safePx)
-        // Popup FULLY covers the folder icon — the icon's far edge sits
-        // flush with the popup's far edge. Above: popup BOTTOM = icon
-        // BOTTOM (icon is hidden under the popup's bottom). Below: popup
-        // TOP = icon TOP (icon hidden under the popup's top).
         val popupY = if (popupGoesAbove) {
             (iconBottomPx - popupHpx).coerceAtLeast(safePx)
         } else {
             iconTopPx.coerceAtMost(screenHpx - popupHpx - safePx)
         }
-        // X centers on the ACTUAL icon center, clamped to safe area.
         val centeredLeft = iconCenterX - popupWpx / 2f
         val popupX = centeredLeft.coerceIn(safePx, (screenWpx - popupWpx - safePx).coerceAtLeast(safePx))
-        // Pivot at the icon's CENTER in popup-local fraction. The popup
-        // scales out of (and back into) this point in all 4 directions.
-        val pivotPxX = (iconCenterX - popupX).coerceIn(0f, popupWpx)
-        val pivotPxY = (iconCenterY - popupY).coerceIn(0f, popupHpx)
-        val popupPivotX = if (popupWpx > 0f) pivotPxX / popupWpx else 0.5f
-        val popupPivotY = if (popupHpx > 0f) pivotPxY / popupHpx else 0.5f
-        // Initial scale = ratio of icon-side to popup-side, so progress=0
-        // gives a popup the EXACT size of the folder icon at the icon's
-        // position. As progress→1, all four edges sweep outward to the
-        // final layout (a rect-reveal that morphs from the icon).
-        val popupInitialScaleX = if (popupWpx > 0f)
-            (iconWidthPx / popupWpx).coerceIn(0.01f, 1f) else 0.1f
-        val popupInitialScaleY = if (popupHpx > 0f)
-            (iconHeightPx / popupHpx).coerceIn(0.01f, 1f) else 0.1f
 
-        // Dim backdrop — tap-outside closes the folder (or commits the
-        // pending name edit first, mirroring the header's tap-to-close).
-        // Dim alpha tracks progress directly so dim + popup animate in
-        // perfect sync. No lag formula, no two-step.
+        // ── Clip-reveal geometry (Launcher3 RoundedRectRevealOutlineProvider)
+        // The popup is laid out at FULL size; a rounded-rect clip grows from
+        // the folder-icon rect to the full popup, with the corner radius
+        // easing from the icon's radius to the popup's. Content draws crisp
+        // at final layout — no scale distortion. Rect is in popup-LOCAL px.
+        val iconLeftLocal = (iconBounds?.left ?: (iconCenterX - iconWidthPx / 2f)) - popupX
+        val iconTopLocal = (iconBounds?.top ?: (iconCenterY - iconHeightPx / 2f)) - popupY
+        val revStartLeft = iconLeftLocal
+        val revStartTop = iconTopLocal
+        val revStartRight = iconLeftLocal + iconWidthPx
+        val revStartBottom = iconTopLocal + iconHeightPx
+        val revStartRadiusPx = iconWidthPx * 0.29f
+        val finalRadiusPx = with(folderDensity) { 20.dp.toPx() }
+
+        // ── Preview-icon morph (Launcher3 FolderAnimationManager): the up-to-
+        // 4 preview icons shown in the CLOSED folder's 2x2 mini-grid fly to
+        // their open-grid slots. miniCenters = each preview slot's center in
+        // ROOT px; open cells 0..3 animate from here to their laid-out slot.
+        val miniCenters: List<Offset> = if (iconBounds != null) {
+            val ib = iconBounds
+            val miniPad = ib.width * 0.12f
+            val miniCell = (ib.width - miniPad * 2f) / 2f
+            (0 until 4).map { k ->
+                val col = k % 2; val row = k / 2
+                Offset(
+                    ib.left + miniPad + col * miniCell + miniCell / 2f,
+                    ib.top + miniPad + row * miniCell + miniCell / 2f
+                )
+            }
+        } else emptyList()
+        val miniScale = if (iconBounds != null && iconSidePx > 0f)
+            ((iconBounds.width * 0.38f) / iconSidePx).coerceIn(0.1f, 0.9f) else 0.4f
+
+        // Invisible tap-catcher backdrop — Launcher3 / Lawnchair / Neo do
+        // NOT dim or scrim the wallpaper when a folder opens (the opaque
+        // folder card carries the contrast). So no .background here; the Box
+        // exists only to catch tap-outside-to-close (and commit a pending
+        // name edit first, mirroring the header's tap-to-close).
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = folderAnimProgress }
-                .background(Color.Black.copy(alpha = 0.5f))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -6874,33 +6898,29 @@ fun LauncherScreen(
                     width = with(folderDensity) { popupWpx.toDp() },
                     height = with(folderDensity) { popupHpx.toDp() }
                 )
-                // graphicsLayer MUST come before .clip and .background, or
-                // those modifiers draw OUTSIDE the layer — the popup's bg
-                // would snap to full opacity instantly while only the
-                // content inside the layer animated. Order matters here.
-                .graphicsLayer {
-                    if (escapedToHomeGrid) {
-                        // During escape drag: keep popup at full scale but
-                        // invisible. The home grid overlay renders the dragged
-                        // icon instead. CRITICAL: scale stays 1.0 so pointer
-                        // coordinates aren't distorted by the inverse-transform
-                        // — otherwise deltas get amplified as the close
-                        // animation scales down, causing the icon to fly.
-                        alpha = 0f
-                    } else {
-                        val p = folderAnimProgress
-                        // Pivot at the icon CENTER (in popup-local coords).
-                        // Initial scaleX/Y match the icon's width/height so
-                        // at p=0 the popup IS the folder icon (same rect,
-                        // same position). As p→1, all four edges expand
-                        // outward to the full popup. On close (p:1→0) the
-                        // four edges sweep back into the icon — fully
-                        // symmetric, never collapses to a point.
-                        transformOrigin = TransformOrigin(popupPivotX, popupPivotY)
-                        scaleX = popupInitialScaleX + (1f - popupInitialScaleX) * p
-                        scaleY = popupInitialScaleY + (1f - popupInitialScaleY) * p
-                        alpha = p
+                // Escape-drag: keep the popup at full layout but invisible —
+                // the home-grid overlay renders the dragged icon instead.
+                // No scale (scale would distort child pointer coords).
+                .graphicsLayer { alpha = if (escapedToHomeGrid) 0f else 1f }
+                // Clip-reveal (Launcher3 RoundedRectRevealOutlineProvider):
+                // the content is laid out full-size and drawn crisp, then
+                // clipped to a rounded rect that grows from the folder-icon
+                // rect to the full popup. drawWithContent sits BEFORE the
+                // .clip/.background below so its drawContent() includes the
+                // background + children, all clipped by the reveal path.
+                .drawWithContent {
+                    if (escapedToHomeGrid) { drawContent(); return@drawWithContent }
+                    val p = folderAnimProgress.coerceIn(0f, 1f)
+                    if (p >= 0.999f) { drawContent(); return@drawWithContent }
+                    val l = revStartLeft + (0f - revStartLeft) * p
+                    val t = revStartTop + (0f - revStartTop) * p
+                    val r = revStartRight + (size.width - revStartRight) * p
+                    val b = revStartBottom + (size.height - revStartBottom) * p
+                    val rad = revStartRadiusPx + (finalRadiusPx - revStartRadiusPx) * p
+                    val revealPath = Path().apply {
+                        addRoundRect(RoundRect(l, t, r, b, CornerRadius(rad, rad)))
                     }
+                    clipPath(revealPath) { this@drawWithContent.drawContent() }
                 }
                 .clip(RoundedCornerShape(20.dp))
                 .background(MaterialTheme.colorScheme.background)
@@ -6916,6 +6936,21 @@ fun LauncherScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
+                    // Animate the title + menu in with the same fade/scale as
+                    // the app icons so the whole header isn't static while the
+                    // grid flies out. Identity at p=1 so it never interferes
+                    // once the folder is open. graphicsLayer is draw-only, so
+                    // folderHeaderBottomY (measured below) stays accurate for
+                    // escape-drag detection.
+                    .graphicsLayer {
+                        val mp = folderAnimProgress.coerceIn(0f, 1f)
+                        if (mp < 0.999f && !escapedToHomeGrid) {
+                            val a = ((mp - 0.12f) / 0.55f).coerceIn(0f, 1f)
+                            alpha = a
+                            val s = 0.8f + 0.2f * a
+                            scaleX = s; scaleY = s
+                        }
+                    }
                     .onGloballyPositioned { coords ->
                         folderHeaderBottomY = coords.positionInRoot().y + coords.size.height
                     },
@@ -7078,11 +7113,41 @@ fun LauncherScreen(
                                     HomeGridCell.Empty
                                 }
 
+                                // Open/close morph for this cell. Preview
+                                // slots (0..3, with an app) fly from the
+                                // closed folder's 2x2 mini-grid to this slot
+                                // (Launcher3 preview-item → content morph);
+                                // the rest fade in with a slight stagger.
+                                // Identity at p=1 so it never interferes with
+                                // drag / resize once the folder is open.
+                                val morphCellPos = folderCellPositions[cellIdx]
+                                val isPreviewSlot = cellApp != null && cellIdx < miniCenters.size
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
                                         .fillMaxHeight()
-                                        .graphicsLayer { clip = false }
+                                        .graphicsLayer {
+                                            clip = false
+                                            val mp = folderAnimProgress.coerceIn(0f, 1f)
+                                            if (mp < 0.999f && !escapedToHomeGrid) {
+                                                if (isPreviewSlot && morphCellPos != null &&
+                                                    folderCellSize.width > 0) {
+                                                    val cx = morphCellPos.x + folderCellSize.width / 2f
+                                                    val cy = morphCellPos.y + folderCellSize.height / 2f
+                                                    translationX = (miniCenters[cellIdx].x - cx) * (1f - mp)
+                                                    translationY = (miniCenters[cellIdx].y - cy) * (1f - mp)
+                                                    val s = miniScale + (1f - miniScale) * mp
+                                                    scaleX = s; scaleY = s
+                                                    alpha = ((mp - 0.05f) / 0.45f).coerceIn(0f, 1f)
+                                                } else if (cellApp != null) {
+                                                    val delay = (0.22f + 0.03f * cellIdx).coerceAtMost(0.6f)
+                                                    val a = ((mp - delay) / (1f - delay)).coerceIn(0f, 1f)
+                                                    alpha = a
+                                                    val s = 0.75f + 0.25f * a
+                                                    scaleX = s; scaleY = s
+                                                }
+                                            }
+                                        }
                                 ) {
                                     DraggableGridCell(
                                         cell = folderGridCell,
