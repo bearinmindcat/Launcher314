@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -64,27 +65,33 @@ fun FolderResizePanel(
     maxGrid: Int = 8,
     progress: Float = 1f,
     interactive: Boolean = true,
+    // When the folder popup is in the TOP half of the screen, anchor the
+    // panel to the BOTTOM (and vice-versa) so it sits OPPOSITE the popup and
+    // never overlaps the folder card.
+    anchorBottom: Boolean = false,
     onColumnsChange: (Int) -> Unit,
     onRowsChange: (Int) -> Unit,
     onReset: () -> Unit,
     onDone: () -> Unit
 ) {
+    // Full-screen positioning container (no background / no pointer handler,
+    // so taps on empty space fall through to the close-backdrop below). The
+    // card aligns to the side opposite the popup.
     Box(modifier = Modifier
-        .fillMaxWidth()
+        .fillMaxSize()
         .windowInsetsPadding(WindowInsets.systemBars)
         .padding(horizontal = 12.dp, vertical = 8.dp)
         .zIndex(15f)
-        // Fade + slight slide-up on enter / exit so the panel reads as
-        // arriving from / receding into the top of the screen alongside
-        // the outline's collapse into the popup card.
-        .graphicsLayer {
-            alpha = progress
-            translationY = -16f * (1f - progress)
-        }
     ) {
         Box(modifier = Modifier
-            .fillMaxWidth()
-            .wrapContentSize(Alignment.TopCenter)
+            .align(if (anchorBottom) Alignment.BottomCenter else Alignment.TopCenter)
+            .wrapContentSize()
+            // Fade + slide from the anchored edge on enter / exit, in sync
+            // with the outline's collapse into the popup card.
+            .graphicsLayer {
+                alpha = progress
+                translationY = (if (anchorBottom) 16f else -16f) * (1f - progress)
+            }
         ) {
             Column(
                 modifier = Modifier

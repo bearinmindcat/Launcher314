@@ -6578,6 +6578,11 @@ fun LauncherScreen(
                     clipPath(revealPath) { this@drawWithContent.drawContent() }
                 }
                 .clip(RoundedCornerShape(20.dp))
+                .border(
+                    1.dp,
+                    com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current,
+                    RoundedCornerShape(20.dp)
+                )
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // No header — matches the title-bar-less popup. Just the
@@ -6787,6 +6792,29 @@ fun LauncherScreen(
             .coerceIn(minPopupWpx, maxPopupWpx)
         val popupHpx = (resizeHeightOverride ?: defaultPopupHpx)
             .coerceIn(minPopupHpx, maxPopupHpx)
+
+        // ── Auto-shrink folder icons so they never overlap (folder-only) ──
+        // The grid cells split the popup evenly (weight 1f). Compute each
+        // cell's px size from the popup content area, then cap the icon so it
+        // fits its cell with margin. min() with the normal home icon size
+        // means icons only ever get SMALLER than home — never bigger — so a
+        // sparse folder still looks like the home screen, but a dense grid
+        // (or a small / resized popup) flows the icons down instead of
+        // overlapping. Home and dock are untouched; this is the folder only.
+        val folderGridPadPx = with(folderDensity) { 16.dp.toPx() }   // 8dp each side
+        val folderTitleBarPx2 = with(folderDensity) { 52.dp.toPx() }
+        val folderContentWpx = (popupWpx - folderGridPadPx).coerceAtLeast(1f)
+        val folderContentHpx = (popupHpx - folderTitleBarPx2 - folderGridPadPx).coerceAtLeast(1f)
+        val folderCellWpx = folderContentWpx / folderGridColumns.coerceAtLeast(1)
+        val folderCellHpx = folderContentHpx / folderGridRows.coerceAtLeast(1)
+        // Icon must fit horizontally (≤ ~82% of cell width) AND leave room
+        // below for the label (≤ ~58% of cell height).
+        val folderFitIconPx = minOf(folderCellWpx * 0.82f, folderCellHpx * 0.58f)
+        val baseFolderIconPx = with(folderDensity) { iconSizeDp.dp.toPx() }
+        val folderIconPx = minOf(baseFolderIconPx, folderFitIconPx).coerceAtLeast(1f)
+        val folderIconSizeDp = with(folderDensity) { folderIconPx.toDp() }.value.toInt()
+            .coerceAtLeast(1)
+
         // Popup sits ADJACENT to the folder icon (above when there's room,
         // below otherwise) — the popup's near edge touches the icon's edge,
         // so the icon stays visible below/above the popup. Pivot is set at
@@ -6855,8 +6883,11 @@ fun LauncherScreen(
                 )
             }
         } else emptyList()
-        val miniScale = if (iconBounds != null && iconSidePx > 0f)
-            ((iconBounds.width * 0.38f) / iconSidePx).coerceIn(0.1f, 0.9f) else 0.4f
+        // Scale relative to the FOLDER icon size (which may be auto-shrunk),
+        // so the flying preview icon starts at roughly the closed mini-icon
+        // size and lands at the actual in-folder icon size.
+        val miniScale = if (iconBounds != null && folderIconPx > 0f)
+            ((iconBounds.width * 0.38f) / folderIconPx).coerceIn(0.1f, 0.9f) else 0.4f
 
         // Invisible tap-catcher backdrop — Launcher3 / Lawnchair / Neo do
         // NOT dim or scrim the wallpaper when a folder opens (the opaque
@@ -6924,6 +6955,15 @@ fun LauncherScreen(
                 }
                 .clip(RoundedCornerShape(20.dp))
                 .background(MaterialTheme.colorScheme.background)
+                // Same 1dp outline as the closed folder icon on the home grid
+                // (LocalFolderBorderColor). It sits after .background but
+                // before .onGloballyPositioned, so it's part of the content
+                // the reveal clip wipes open — the outline reveals with the card.
+                .border(
+                    1.dp,
+                    com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current,
+                    RoundedCornerShape(20.dp)
+                )
                 .onGloballyPositioned { folderOverlayRootPos = it.positionInRoot() }
         ) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -7152,7 +7192,7 @@ fun LauncherScreen(
                                     DraggableGridCell(
                                         cell = folderGridCell,
                                         index = cellIdx,
-                                        iconSize = iconSizeDp,
+                                        iconSize = folderIconSizeDp,
                                         gridColumns = folderGridColumns,
                                         gridRows = folderGridRows,
                                         isEditMode = false,
@@ -7548,6 +7588,9 @@ fun LauncherScreen(
                 currentRows = resizeRowsOverride ?: gridRows,
                 progress = resizeAnimProgress,
                 interactive = isResizingFolder,
+                // Popup in the TOP half → panel at the BOTTOM (opposite side),
+                // so the panel never sits on top of the folder card.
+                anchorBottom = (popupY + popupHpx / 2f) < screenHpx / 2f,
                 onColumnsChange = { resizeColumnsOverride = it },
                 onRowsChange = { resizeRowsOverride = it },
                 onReset = {
