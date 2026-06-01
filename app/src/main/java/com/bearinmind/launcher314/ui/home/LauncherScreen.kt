@@ -50,8 +50,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.OpenInFull
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.OpenWith
@@ -1211,6 +1213,15 @@ fun LauncherScreen(
 
     // Handle drop - move app/folder to new position, create folders, or add to folders
     // fromPage/toPage track which pages the source and destination are on
+    // Detached-from-grid apps (issue #48) keep their (position, page) row in
+    // homeApps but render as a free-floating overlay — they don't claim a grid
+    // cell. Every (position, page)-keyed removeAll / filter on homeApps below
+    // must ignore them, or a drag-drop / remove operation on a NON-detached
+    // app sharing that position would wipe the detached app's row from
+    // storage and the overlay would silently disappear.
+    fun isAttached(app: HomeScreenApp): Boolean =
+        appCustomizations.customizations[app.packageName]?.detachedFromGrid != true
+
     fun handleDrop(fromIndex: Int, toIndex: Int, fromPage: Int = currentPage, toPage: Int = currentPage) {
         android.util.Log.d("FolderDrop", "handleDrop called: from=$fromIndex to=$toIndex fromPage=$fromPage toPage=$toPage currentPage=$currentPage")
         if (fromIndex == toIndex && fromPage == toPage) {
@@ -1268,10 +1279,11 @@ fun LauncherScreen(
                 appPackageNames = listOf(targetAppPkg, sourceAppPkg)
             )
 
-            // Remove both apps from homeApps
+            // Remove both apps from homeApps (skip detached entries — they're
+            // not really at that cell, see isAttached() above).
             val updatedApps = homeApps.toMutableList()
-            updatedApps.removeAll { it.position == fromIndex && it.page == fromPage }
-            updatedApps.removeAll { it.position == toIndex && it.page == toPage }
+            updatedApps.removeAll { it.position == fromIndex && it.page == fromPage && isAttached(it) }
+            updatedApps.removeAll { it.position == toIndex && it.page == toPage && isAttached(it) }
 
             homeApps = updatedApps
             val updatedFolders = homeFolders + newFolder
@@ -1285,7 +1297,7 @@ fun LauncherScreen(
         // Case 3: App dropped on a Folder → add app to folder
         if (sourceApp != null && toCell is HomeGridCell.Folder) {
             val updatedApps = homeApps.toMutableList()
-            updatedApps.removeAll { it.position == fromIndex && it.page == fromPage }
+            updatedApps.removeAll { it.position == fromIndex && it.page == fromPage && isAttached(it) }
             homeApps = updatedApps
 
             val updatedFolders = homeFolders.map { folder ->
@@ -1304,15 +1316,25 @@ fun LauncherScreen(
         if (sourceApp != null && (toCell is HomeGridCell.Empty || toCell == null)) {
             val updatedApps = homeApps.toMutableList()
 
-            // Safety: verify target position isn't already occupied in homeApps
-            val targetOccupied = updatedApps.any { it.position == toIndex && it.page == toPage }
+            // Safety: verify target position isn't already occupied in homeApps.
+            // Detached-from-grid apps (issue #48) keep their original (position,
+            // page) row in homeApps even though they render as a free-floating
+            // overlay and their cell is treated as Empty in buildGridCellsForPage.
+            // The occupancy check here must mirror that — otherwise dropping into
+            // a visually-empty cell that was once a detached app's home position
+            // gets rejected with "already occupied".
+            val targetOccupied = updatedApps.any {
+                it.position == toIndex && it.page == toPage &&
+                    appCustomizations.customizations[it.packageName]?.detachedFromGrid != true
+            }
             if (targetOccupied) {
                 android.util.Log.w("FolderDrop", "handleDrop: target position $toIndex on page $toPage already occupied, aborting move")
                 return
             }
 
-            // Remove app from old position and page
-            updatedApps.removeAll { it.position == fromIndex && it.page == fromPage }
+            // Remove app from old position and page (only the attached entry —
+            // a detached app sharing the source cell stays put).
+            updatedApps.removeAll { it.position == fromIndex && it.page == fromPage && isAttached(it) }
 
             // Move to new cell on target page
             updatedApps.add(HomeScreenApp(sourceApp.appInfo.packageName, toIndex, toPage))
@@ -1358,7 +1380,7 @@ fun LauncherScreen(
         }
         if (sourceAppInfo == null) return
 
-        val updatedGridApps = homeApps.filter { !(it.position == fromGridIndex && it.page == fromPage) }
+        val updatedGridApps = homeApps.filter { !(it.position == fromGridIndex && it.page == fromPage && isAttached(it)) }
 
         if (existingDockApp == null && existingDockFolder == null) {
             // Empty slot → place app
@@ -1514,7 +1536,7 @@ fun LauncherScreen(
                         is HomeGridCell.App -> {
                             val targetAppPkg = targetCell.appInfo?.packageName
                             if (targetAppPkg != null) {
-                                homeApps = homeApps.filter { !(it.position == effectiveIndex && it.page == intendedPage) }
+                                homeApps = homeApps.filter { !(it.position == effectiveIndex && it.page == intendedPage && isAttached(it)) }
                                 val newFolder = HomeFolder(
                                     name = "Folder",
                                     position = effectiveIndex,
@@ -2236,7 +2258,7 @@ fun LauncherScreen(
                 // App dropped on existing grid app → create new folder
                 dropAction = {
                     val updatedApps = homeApps.toMutableList()
-                    updatedApps.removeAll { it.position == targetGridCell && it.page == intendedPage }
+                    updatedApps.removeAll { it.position == targetGridCell && it.page == intendedPage && isAttached(it) }
                     val newFolder = HomeFolder(
                         name = "Folder",
                         position = targetGridCell,
@@ -2947,7 +2969,7 @@ fun LauncherScreen(
                                                             tween(300, easing = FastOutSlowInEasing)
                                                         )
                                                         if (cell is HomeGridCell.App) {
-                                                            saveHomeApps(homeApps.filter { !(it.position == cell.position && it.page == page) })
+                                                            saveHomeApps(homeApps.filter { !(it.position == cell.position && it.page == page && isAttached(it)) })
                                                         } else if (cell is HomeGridCell.Folder) {
                                                             saveHomeFolders(homeFolders.filter { it.id != cell.folder.id })
                                                         }
@@ -3003,7 +3025,7 @@ fun LauncherScreen(
                                                     if (parts.size == 2) {
                                                         val page = parts[0].toIntOrNull() ?: return@forEach
                                                         val pos = parts[1].toIntOrNull() ?: return@forEach
-                                                        updatedApps.removeAll { it.page == page && it.position == pos }
+                                                        updatedApps.removeAll { it.page == page && it.position == pos && isAttached(it) }
                                                     }
                                                 }
                                                 homeApps = updatedApps
@@ -6272,10 +6294,10 @@ fun LauncherScreen(
                     if (p.size == 2) {
                         val pg = p[0].toIntOrNull() ?: return@forEach
                         val pos = p[1].toIntOrNull() ?: return@forEach
-                        val app = updatedApps.find { it.page == pg && it.position == pos }
+                        val app = updatedApps.find { it.page == pg && it.position == pos && isAttached(it) }
                         if (app != null) {
                             selectedPkgs.add(app.packageName)
-                            updatedApps.removeAll { it.page == pg && it.position == pos }
+                            updatedApps.removeAll { it.page == pg && it.position == pos && isAttached(it) }
                         }
                     }
                 }
@@ -6478,10 +6500,16 @@ fun LauncherScreen(
                         // Match Lawnchair's spring-based close motion.
                         spring(dampingRatio = 0.8f, stiffness = 380f, visibilityThreshold = 0.001f)
                     )
-                    // FIX: Without this, lastOpenedFolder was never nulled after escape drag
-                    // because finishedListener ran while escapedToHomeGrid was still true.
-                    // The folder overlay stayed in the tree with stale remember() cache.
-                    if (openHomeFolder == null) {
+                    // Null lastOpenedFolder ONLY if the user has already let go
+                    // of their finger (escapedToHomeGrid resets to false in
+                    // onDragEnd). If still dragging, leave it alone — the
+                    // DraggableGridCell that started the drag MUST stay in
+                    // the composition tree, or its pointerInput coroutine
+                    // gets cancelled and the drag silently dies mid-air,
+                    // making it look like the system "dropped" the icon
+                    // when the close animation finishes. onDragEnd nulls
+                    // lastOpenedFolder itself when the real drop fires.
+                    if (openHomeFolder == null && !escapedToHomeGrid) {
                         lastOpenedFolder = null
                     }
                 }
@@ -6710,11 +6738,47 @@ fun LauncherScreen(
         // wide 85%-screen version felt like a generic dialog floating over
         // the wallpaper; this size makes the popup feel like the folder
         // cell itself stretched outward. Height = grid area + title bar so
-        // adding the title doesn't squish the apps.
+        // adding the title doesn't squish the apps. The user can drag-
+        // resize the popup via the title-bar's "Resize" menu — saved
+        // dimensions live in AppCustomization keyed by folder ID and
+        // override the defaults below when present.
         val maxCardWpx = with(folderDensity) { 320.dp.toPx() }
-        val popupWpx = (screenWpx * 0.72f).coerceAtMost(maxCardWpx)
+        val defaultPopupWpx = (screenWpx * 0.72f).coerceAtMost(maxCardWpx)
         val titleBarPx = with(folderDensity) { 52.dp.toPx() }
-        val popupHpx = screenHpx * 0.38f + titleBarPx
+        val defaultPopupHpx = screenHpx * 0.38f + titleBarPx
+        val folderCust = appCustomizations.customizations[folder.id]
+        var resizeWidthOverride by remember(folder.id) {
+            mutableStateOf(folderCust?.folderPopupWidthPx?.toFloat())
+        }
+        var resizeHeightOverride by remember(folder.id) {
+            mutableStateOf(folderCust?.folderPopupHeightPx?.toFloat())
+        }
+        // Per-folder grid overrides. Null while the user hasn't opted in;
+        // the Resize panel seeds these from the global gridColumns/gridRows
+        // on first open so the steppers start from a real value.
+        var resizeColumnsOverride by remember(folder.id) {
+            mutableStateOf(folderCust?.folderGridColumns)
+        }
+        var resizeRowsOverride by remember(folder.id) {
+            mutableStateOf(folderCust?.folderGridRows)
+        }
+        var isResizingFolder by remember(folder.id) { mutableStateOf(false) }
+        // Effective grid dims used by the folder render loop. The Resize
+        // session updates the overrides live; the loop reads these.
+        val folderGridColumns = resizeColumnsOverride ?: gridColumns
+        val folderGridRows = resizeRowsOverride ?: gridRows
+        val minPopupWpx = with(folderDensity) { 200.dp.toPx() }
+        val minPopupHpx = with(folderDensity) { 200.dp.toPx() }
+        val maxPopupWpx = screenWpx - 2f * with(folderDensity) { 16.dp.toPx() }
+        // Cap at HALF the screen height so the popup can always sit ABOVE or
+        // BELOW the folder icon no matter where the icon is on screen — the
+        // grow-from-icon animation only reads correctly when one full popup
+        // height fits between the icon's edge and the matching screen edge.
+        val maxPopupHpx = screenHpx * 0.5f
+        val popupWpx = (resizeWidthOverride ?: defaultPopupWpx)
+            .coerceIn(minPopupWpx, maxPopupWpx)
+        val popupHpx = (resizeHeightOverride ?: defaultPopupHpx)
+            .coerceIn(minPopupHpx, maxPopupHpx)
         // Popup sits ADJACENT to the folder icon (above when there's room,
         // below otherwise) — the popup's near edge touches the icon's edge,
         // so the icon stays visible below/above the popup. Pivot is set at
@@ -6931,6 +6995,43 @@ fun LauncherScreen(
                         onDismissRequest = { headerMenuOpen = false }
                     ) {
                         DropdownMenuItem(
+                            text = { Text(if (isResizingFolder) "Done resizing" else "Resize") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (isResizingFolder) Icons.Outlined.Check
+                                        else Icons.Outlined.AspectRatio,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                headerMenuOpen = false
+                                if (isResizingFolder) {
+                                    // Commit the in-flight overrides to the
+                                    // folder's customization so they persist.
+                                    val newCust = (appCustomizations.customizations[folder.id]
+                                        ?: AppCustomization()).copy(
+                                        folderPopupWidthPx = resizeWidthOverride?.roundToInt(),
+                                        folderPopupHeightPx = resizeHeightOverride?.roundToInt(),
+                                        folderGridColumns = resizeColumnsOverride,
+                                        folderGridRows = resizeRowsOverride
+                                    )
+                                    appCustomizations = setCustomization(
+                                        context, appCustomizations, folder.id, newCust
+                                    )
+                                    isResizingFolder = false
+                                } else {
+                                    // Start resize mode — seed the overrides
+                                    // with the current values so steppers and
+                                    // drag handles begin from the visible state.
+                                    if (resizeWidthOverride == null) resizeWidthOverride = popupWpx
+                                    if (resizeHeightOverride == null) resizeHeightOverride = popupHpx
+                                    if (resizeColumnsOverride == null) resizeColumnsOverride = gridColumns
+                                    if (resizeRowsOverride == null) resizeRowsOverride = gridRows
+                                    isResizingFolder = true
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Remove") },
                             leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
                             onClick = {
@@ -6959,15 +7060,15 @@ fun LauncherScreen(
                 val isDraggingInFolder = draggedPkg != null && !isFolderDropAnimating
 
                 Column(modifier = Modifier.fillMaxSize().graphicsLayer { clip = false }) {
-                    for (fRow in 0 until gridRows) {
+                    for (fRow in 0 until folderGridRows) {
                         Row(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
                                 .graphicsLayer { clip = false }
                         ) {
-                            for (fCol in 0 until gridColumns) {
-                                val cellIdx = fRow * gridColumns + fCol
+                            for (fCol in 0 until folderGridColumns) {
+                                val cellIdx = fRow * folderGridColumns + fCol
                                 val cellApp = folderCellAppMap[cellIdx]
                                 val isDragged = cellApp != null && draggedPkg == cellApp.packageName
 
@@ -6987,8 +7088,8 @@ fun LauncherScreen(
                                         cell = folderGridCell,
                                         index = cellIdx,
                                         iconSize = iconSizeDp,
-                                        gridColumns = gridColumns,
-                                        gridRows = gridRows,
+                                        gridColumns = folderGridColumns,
+                                        gridRows = folderGridRows,
                                         isEditMode = false,
                                         isDragging = isDragged,
                                         checkIsDragOwner = { draggedFolderCellIdx == cellIdx },
@@ -7033,8 +7134,17 @@ fun LauncherScreen(
                                                     cellPos.y + folderCellSize.height / 2f + dragOffset.y
                                                 )
 
-                                                // If dragged into header area, escape to home grid drag
-                                                if (dragCenter.y < folderHeaderBottomY && cellApp != null) {
+                                                // Escape to the home grid as soon as the dragged center
+                                                // leaves the popup rect on ANY side (above header bar,
+                                                // below the popup, or off either side). Matches
+                                                // Lawnchair / Neo Launcher feel — drag anywhere outside
+                                                // the card and the folder closes back to the home grid.
+                                                val outsidePopup =
+                                                    dragCenter.y < folderHeaderBottomY ||
+                                                    dragCenter.y > popupY + popupHpx ||
+                                                    dragCenter.x < popupX ||
+                                                    dragCenter.x > popupX + popupWpx
+                                                if (outsidePopup && cellApp != null) {
                                                     val escapedApp = allAvailableApps.find { it.packageName == cellApp.packageName }
                                                     if (escapedApp != null) {
                                                         // Remove app from folder (replace with empty string to preserve positions)
@@ -7326,7 +7436,86 @@ fun LauncherScreen(
                 }
             }
         }
+
         } // end wrapper Box
+
+        // Widget-style resize overlay (see FolderResizeOverlay). Rendered as
+        // a SIBLING of the popup Box (not a child) because the popup uses
+        // .clip() which propagates to children's pointer hit-testing — any
+        // edge/corner handle sticking OUT of the popup's rounded rect would
+        // never receive touches if it were inside. Positions itself at the
+        // popup's offset and size; outline + handles are drawn inside.
+        //
+        // Spring-driven enter/exit so the outline visually grows out of /
+        // collapses back into the popup card — same spring parameters as
+        // the folder open/close anim (Lawnchair's FolderSpringAnimatorSet).
+        val resizeAnimProgress by animateFloatAsState(
+            targetValue = if (isResizingFolder) 1f else 0f,
+            animationSpec = spring(
+                dampingRatio = 0.8f,
+                stiffness = 380f,
+                visibilityThreshold = 0.001f
+            ),
+            label = "folderResizeAnim"
+        )
+        if (isResizingFolder || resizeAnimProgress > 0.001f) {
+            FolderResizeOverlay(
+                folderId = folder.id,
+                popupOffsetXpx = popupX,
+                popupOffsetYpx = popupY,
+                popupWidthPx = popupWpx,
+                popupHeightPx = popupHpx,
+                minWidthPx = minPopupWpx,
+                maxWidthPx = maxPopupWpx,
+                minHeightPx = minPopupHpx,
+                maxHeightPx = maxPopupHpx,
+                onWidthChange = { resizeWidthOverride = it },
+                onHeightChange = { resizeHeightOverride = it },
+                progress = resizeAnimProgress,
+                interactive = isResizingFolder
+            )
+            // Control panel — sits at the top of the screen with steppers
+            // for rows / columns + Reset / Done buttons. Drag handles
+            // remain active in parallel so pixel-size and grid can both
+            // be tuned during the same Resize session.
+            FolderResizePanel(
+                currentColumns = resizeColumnsOverride ?: gridColumns,
+                currentRows = resizeRowsOverride ?: gridRows,
+                progress = resizeAnimProgress,
+                interactive = isResizingFolder,
+                onColumnsChange = { resizeColumnsOverride = it },
+                onRowsChange = { resizeRowsOverride = it },
+                onReset = {
+                    resizeWidthOverride = null
+                    resizeHeightOverride = null
+                    resizeColumnsOverride = gridColumns
+                    resizeRowsOverride = gridRows
+                    val cleared = (appCustomizations.customizations[folder.id]
+                        ?: AppCustomization()).copy(
+                        folderPopupWidthPx = null,
+                        folderPopupHeightPx = null,
+                        folderGridColumns = null,
+                        folderGridRows = null
+                    )
+                    appCustomizations = setCustomization(
+                        context, appCustomizations, folder.id, cleared
+                    )
+                },
+                onDone = {
+                    val newCust = (appCustomizations.customizations[folder.id]
+                        ?: AppCustomization()).copy(
+                        folderPopupWidthPx = resizeWidthOverride?.roundToInt(),
+                        folderPopupHeightPx = resizeHeightOverride?.roundToInt(),
+                        folderGridColumns = resizeColumnsOverride,
+                        folderGridRows = resizeRowsOverride
+                    )
+                    appCustomizations = setCustomization(
+                        context, appCustomizations, folder.id, newCust
+                    )
+                    isResizingFolder = false
+                }
+            )
+        }
 
         // Delete folder confirmation dialog
         if (showFolderDeleteConfirm) {

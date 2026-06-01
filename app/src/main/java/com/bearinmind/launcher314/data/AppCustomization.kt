@@ -54,7 +54,16 @@ data class AppCustomization(
     // When true the rendered icon ignores every image-side customization
     // (custom path, shape, tint, icon-pack) and falls back to the app's
     // own launcher icon. Mutually exclusive with iconText (text mode).
-    val useOriginalIcon: Boolean = false
+    val useOriginalIcon: Boolean = false,
+    // Folder popup overrides — only meaningful when this AppCustomization
+    // is keyed by a folder ID. Pixel-px values committed by the in-popup
+    // "Resize" drag handle. Null = use default popup size.
+    val folderPopupWidthPx: Int? = null,
+    val folderPopupHeightPx: Int? = null,
+    // Per-folder grid override (set from the in-popup "Resize" panel).
+    // Null = inherit the home-screen grid columns / rows.
+    val folderGridColumns: Int? = null,
+    val folderGridRows: Int? = null
 )
 
 @Serializable
