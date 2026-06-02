@@ -59,17 +59,26 @@ fun FolderResizeOverlay(
     onWidthChange: (Float) -> Unit,
     onHeightChange: (Float) -> Unit,
     progress: Float = 1f,
-    interactive: Boolean = true
+    interactive: Boolean = true,
+    // Folder-icon rect in ROOT px — the outline collapses INTO this rect as
+    // progress → 0, matching the folder popup's clip-reveal-into-icon close.
+    iconLeftPx: Float = popupOffsetXpx,
+    iconTopPx: Float = popupOffsetYpx,
+    iconRightPx: Float = popupOffsetXpx + popupWidthPx,
+    iconBottomPx: Float = popupOffsetYpx + popupHeightPx
 ) {
-    // Enter / exit animation. The outline + handles are drawn at a scaled
-    // rect anchored at the popup's CENTER — so as progress goes 1 → 0 the
-    // outline visually collapses back INTO the popup (and vice versa for
-    // 0 → 1). Alpha follows progress directly so it fades in / out in sync.
-    val scale = 0.92f + 0.08f * progress
-    val effWidthPx = popupWidthPx * scale
-    val effHeightPx = popupHeightPx * scale
-    val effOffsetXpx = popupOffsetXpx + (popupWidthPx - effWidthPx) / 2f
-    val effOffsetYpx = popupOffsetYpx + (popupHeightPx - effHeightPx) / 2f
+    // Enter / exit animation. The outline + handles are drawn at a rect that
+    // LERPS from the folder-icon rect (progress 0) to the full popup rect
+    // (progress 1) — so it grows out of / collapses into the folder icon
+    // exactly like the popup's clip-reveal, for a homogenous open/close.
+    // Alpha follows progress so it fades in / out in sync.
+    val p = progress.coerceIn(0f, 1f)
+    val effOffsetXpx = iconLeftPx + (popupOffsetXpx - iconLeftPx) * p
+    val effOffsetYpx = iconTopPx + (popupOffsetYpx - iconTopPx) * p
+    val effRightPx = iconRightPx + ((popupOffsetXpx + popupWidthPx) - iconRightPx) * p
+    val effBottomPx = iconBottomPx + ((popupOffsetYpx + popupHeightPx) - iconBottomPx) * p
+    val effWidthPx = (effRightPx - effOffsetXpx).coerceAtLeast(1f)
+    val effHeightPx = (effBottomPx - effOffsetYpx).coerceAtLeast(1f)
     val density = LocalDensity.current
     val strokeWidthPx = with(density) { 2.dp.toPx() }
     val cornerRadiusPx = with(density) { 16.dp.toPx() }

@@ -6958,6 +6958,24 @@ fun LauncherScreen(
                         keyboardController?.hide()
                         focusManager.clearFocus()
                     } else {
+                        // If closing while in resize mode, commit the in-flight
+                        // resize and exit resize mode so the resize outline +
+                        // panel play their exit animation IN SYNC with the
+                        // folder collapsing — one homogenous close, not the
+                        // outline snapping away while the popup shrinks.
+                        if (isResizingFolder) {
+                            val newCust = (appCustomizations.customizations[folder.id]
+                                ?: AppCustomization()).copy(
+                                folderPopupWidthPx = resizeWidthOverride?.roundToInt(),
+                                folderPopupHeightPx = resizeHeightOverride?.roundToInt(),
+                                folderGridColumns = resizeColumnsOverride,
+                                folderGridRows = resizeRowsOverride
+                            )
+                            appCustomizations = setCustomization(
+                                context, appCustomizations, folder.id, newCust
+                            )
+                            isResizingFolder = false
+                        }
                         openHomeFolder = null
                     }
                 }
@@ -7613,7 +7631,17 @@ fun LauncherScreen(
         // Spring-driven enter/exit so the outline visually grows out of /
         // collapses back into the popup card — same spring parameters as
         // the folder open/close anim (Lawnchair's FolderSpringAnimatorSet).
-        if (isResizingFolder || resizeAnimProgress > 0.001f) {
+        // Resize UI visibility tracks BOTH the resize enter/exit spring AND the
+        // folder open/close progress: min() means when the folder is closing
+        // (folderAnimProgress 1→0) the resize outline + panel collapse / fade
+        // into the folder in lockstep with the popup — one homogenous close.
+        // During a normal resize the folder is fully open (folderAnimProgress=1)
+        // so this is just resizeAnimProgress.
+        val resizeUiProgress = minOf(
+            resizeAnimProgress,
+            folderAnimProgress.coerceIn(0f, 1f)
+        )
+        if ((isResizingFolder || resizeAnimProgress > 0.001f) && resizeUiProgress > 0.001f) {
             FolderResizeOverlay(
                 folderId = folder.id,
                 popupOffsetXpx = popupX,
@@ -7626,8 +7654,14 @@ fun LauncherScreen(
                 maxHeightPx = maxPopupHpx,
                 onWidthChange = { resizeWidthOverride = it },
                 onHeightChange = { resizeHeightOverride = it },
-                progress = resizeAnimProgress,
-                interactive = isResizingFolder
+                progress = resizeUiProgress,
+                interactive = isResizingFolder,
+                // Folder-icon rect (root px) so the resize outline collapses
+                // INTO the icon on close, matching the popup's clip-reveal.
+                iconLeftPx = iconBounds?.left ?: (iconCenterX - iconWidthPx / 2f),
+                iconTopPx = iconBounds?.top ?: (iconCenterY - iconHeightPx / 2f),
+                iconRightPx = iconBounds?.right ?: (iconCenterX + iconWidthPx / 2f),
+                iconBottomPx = iconBounds?.bottom ?: (iconCenterY + iconHeightPx / 2f)
             )
             // Control panel — sits at the top of the screen with steppers
             // for rows / columns + Reset / Done buttons. Drag handles
@@ -7636,7 +7670,7 @@ fun LauncherScreen(
             FolderResizePanel(
                 currentColumns = resizeColumnsOverride ?: gridColumns,
                 currentRows = resizeRowsOverride ?: gridRows,
-                progress = resizeAnimProgress,
+                progress = resizeUiProgress,
                 interactive = isResizingFolder,
                 // Popup in the TOP half → panel at the BOTTOM (opposite side),
                 // so the panel never sits on top of the folder card.
