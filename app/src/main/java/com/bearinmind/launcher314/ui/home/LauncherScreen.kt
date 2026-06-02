@@ -291,6 +291,34 @@ private fun OverlayLabel(
 }
 
 /**
+ * Resolve a folder's (index → package) cell map to (index → HomeAppInfo),
+ * reflowing any app whose index lands OUTSIDE the visible grid into the first
+ * free in-grid cell. Prevents an app from being real in appPackageNames but
+ * never rendered (so it shows in the compacted 2x2 closed preview yet vanishes
+ * when the folder opens). In-grid gaps are preserved so drag-reorder works.
+ * Top-level (not inline) to keep LauncherScreen under the JVM 64KB method limit.
+ */
+private fun reflowFolderCells(
+    folderCellMap: Map<Int, String>,
+    allAvailableApps: List<HomeAppInfo>,
+    cellCount: Int
+): Map<Int, HomeAppInfo> {
+    val resolved = folderCellMap.mapNotNull { (idx, pkg) ->
+        allAvailableApps.find { it.packageName == pkg }?.let { idx to it }
+    }
+    val placed = resolved.filter { it.first in 0 until cellCount }.toMap().toMutableMap()
+    val overflow = resolved.filter { it.first !in 0 until cellCount }.map { it.second }
+    if (overflow.isNotEmpty()) {
+        var c = 0
+        for (app in overflow) {
+            while (c < cellCount && placed.containsKey(c)) c++
+            if (c < cellCount) { placed[c] = app; c++ } else break
+        }
+    }
+    return placed.toMap()
+}
+
+/**
  * Overlay content for a dragged app — renders icon + label matching DraggableGridCell layout exactly.
  * Extracted to a separate composable to keep LauncherScreen method under JVM 64KB limit.
  */
@@ -6776,6 +6804,18 @@ fun LauncherScreen(
             mutableStateOf(folderCust?.folderGridRows)
         }
         var isResizingFolder by remember(folder.id) { mutableStateOf(false) }
+        // Spring-driven resize enter/exit progress (declared here so the popup
+        // card's static border can cross-fade out as the dashed resize outline
+        // fades in — see the .border below).
+        val resizeAnimProgress by animateFloatAsState(
+            targetValue = if (isResizingFolder) 1f else 0f,
+            animationSpec = spring(
+                dampingRatio = 0.8f,
+                stiffness = 380f,
+                visibilityThreshold = 0.001f
+            ),
+            label = "folderResizeAnim"
+        )
         // Effective grid dims used by the folder render loop. The Resize
         // session updates the overrides live; the loop reads these.
         val folderGridColumns = resizeColumnsOverride ?: gridColumns
@@ -6959,9 +6999,16 @@ fun LauncherScreen(
                 // (LocalFolderBorderColor). It sits after .background but
                 // before .onGloballyPositioned, so it's part of the content
                 // the reveal clip wipes open — the outline reveals with the card.
+                // Fades OUT as the dashed resize outline (FolderResizeOverlay)
+                // fades in, so the two never overlap / double up.
                 .border(
                     1.dp,
-                    com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current,
+                    com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current.let {
+                        // coerceIn: the spring overshoots past 1.0, so
+                        // (1 - progress) can go slightly negative → negative
+                        // alpha → Color.copy throws. Clamp to [0,1].
+                        it.copy(alpha = (it.alpha * (1f - resizeAnimProgress)).coerceIn(0f, 1f))
+                    },
                     RoundedCornerShape(20.dp)
                 )
                 .onGloballyPositioned { folderOverlayRootPos = it.positionInRoot() }
@@ -7126,11 +7173,17 @@ fun LauncherScreen(
                     .fillMaxHeight()
                     .padding(8.dp)
             ) {
-                // Resolve cell map to HomeAppInfo for rendering
-                val folderCellAppMap = remember(folderCellMap, allAvailableApps) {
-                    folderCellMap.mapNotNull { (idx, pkg) ->
-                        allAvailableApps.find { it.packageName == pkg }?.let { idx to it }
-                    }.toMap()
+                // Resolve cell map to HomeAppInfo for rendering. Reflow any
+                // app whose stored index lands OUTSIDE the visible grid into
+                // the first free in-grid cell — otherwise an app that ended up
+                // at a high index (e.g. after escape-drag out then re-add left
+                // a gap, or after the grid was shrunk) would be real in
+                // appPackageNames but never rendered, so it shows in the closed
+                // 2x2 preview (which compacts) yet vanishes when the folder is
+                // opened. In-grid gaps are preserved so drag-reorder still works.
+                val folderCellCount = (folderGridColumns * folderGridRows).coerceAtLeast(1)
+                val folderCellAppMap = remember(folderCellMap, allAvailableApps, folderCellCount) {
+                    reflowFolderCells(folderCellMap, allAvailableApps, folderCellCount)
                 }
                 val isDraggingInFolder = draggedPkg != null && !isFolderDropAnimating
 
@@ -7536,7 +7589,13 @@ fun LauncherScreen(
                             .padding(gridMarkerHalfSize),
                         contentAlignment = Alignment.Center
                     ) {
-                        OverlayAppContent(context, draggedApp, iconSizeDp, iconSizePercent, gridIconTextSpacer, gridAppNameFont, selectedFontFamily, overlayTextAlpha, globalIconShape, showLabel = true, globalIconBgColor = globalIconBgColor)
+                        // Use folderIconSizeDp (the auto-shrunk in-folder size),
+                        // NOT iconSizeDp — otherwise the picked-up icon renders
+                        // at the full home size while the folder cells are
+                        // smaller, so it looks oversized / squished against the
+                        // cell. Matching the size keeps the drag icon 1:1 with
+                        // the grid it came from.
+                        OverlayAppContent(context, draggedApp, folderIconSizeDp, iconSizePercent, gridIconTextSpacer, gridAppNameFont, selectedFontFamily, overlayTextAlpha, globalIconShape, showLabel = true, globalIconBgColor = globalIconBgColor)
                     }
                 }
             }
@@ -7554,15 +7613,6 @@ fun LauncherScreen(
         // Spring-driven enter/exit so the outline visually grows out of /
         // collapses back into the popup card — same spring parameters as
         // the folder open/close anim (Lawnchair's FolderSpringAnimatorSet).
-        val resizeAnimProgress by animateFloatAsState(
-            targetValue = if (isResizingFolder) 1f else 0f,
-            animationSpec = spring(
-                dampingRatio = 0.8f,
-                stiffness = 380f,
-                visibilityThreshold = 0.001f
-            ),
-            label = "folderResizeAnim"
-        )
         if (isResizingFolder || resizeAnimProgress > 0.001f) {
             FolderResizeOverlay(
                 folderId = folder.id,

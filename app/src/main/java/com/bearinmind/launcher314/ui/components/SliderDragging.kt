@@ -852,6 +852,20 @@ object SliderConfigs {
         label = "App Drawer Rows"
     )
 
+    val folderColumns = HorizontalSliderConfig(
+        minValue = 1f,
+        maxValue = 8f,
+        tickValues = listOf(1, 2, 3, 4, 5, 6, 7, 8),
+        label = "Columns"
+    )
+
+    val folderRows = HorizontalSliderConfig(
+        minValue = 1f,
+        maxValue = 8f,
+        tickValues = listOf(1, 2, 3, 4, 5, 6, 7, 8),
+        label = "Rows"
+    )
+
     val dockColumns = HorizontalSliderConfig(
         minValue = 1f,
         maxValue = 7f,
