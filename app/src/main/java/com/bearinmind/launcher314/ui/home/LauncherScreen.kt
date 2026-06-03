@@ -298,6 +298,43 @@ private fun OverlayLabel(
  * when the folder opens). In-grid gaps are preserved so drag-reorder works.
  * Top-level (not inline) to keep LauncherScreen under the JVM 64KB method limit.
  */
+// Re-derive the live folder for the open-folder overlay from the current
+// homeFolders / dockFolders by ID. The open snapshot (openHomeFolder /
+// lastOpenedFolder) is a point-in-time copy that does NOT update when the
+// underlying folder changes (e.g. re-adding an escaped app), so rendering off
+// it showed stale until a full reload. Falls back to the snapshot mid-close.
+// Top-level (not inline) to keep LauncherScreen under the JVM 64KB limit.
+// Resolve the app shown in a folder cell. Falls back to the actively-dragged
+// app for its owning cell so that cell keeps rendering as App for the whole
+// drag (even after escape removes it from the map) — otherwise the cell flips
+// App→Empty mid-drag, disposing the running pointerInput and auto-dropping.
+// Top-level (not inline) to keep LauncherScreen under the JVM 64KB limit.
+private fun resolveFolderCellApp(
+    folderCellAppMap: Map<Int, HomeAppInfo>,
+    cellIdx: Int,
+    draggedPkg: String?,
+    draggedFolderCellIdx: Int?,
+    allAvailableApps: List<HomeAppInfo>
+): HomeAppInfo? {
+    return folderCellAppMap[cellIdx]
+        ?: if (draggedPkg != null && draggedFolderCellIdx == cellIdx)
+            allAvailableApps.find { it.packageName == draggedPkg } else null
+}
+
+private fun liveFolder(
+    snapshot: HomeFolder,
+    homeFolders: List<HomeFolder>,
+    dockFolders: List<DockFolder>
+): HomeFolder {
+    return if (snapshot.page == -1) {
+        dockFolders.find { it.id == snapshot.id }
+            ?.let { HomeFolder(id = it.id, name = it.name, position = -1, page = -1, appPackageNames = it.appPackageNames) }
+            ?: snapshot
+    } else {
+        homeFolders.find { it.id == snapshot.id } ?: snapshot
+    }
+}
+
 private fun reflowFolderCells(
     folderCellMap: Map<Int, String>,
     allAvailableApps: List<HomeAppInfo>,
@@ -1542,7 +1579,33 @@ fun LauncherScreen(
             // Helper: find first empty cell on this page as fallback
             fun findFirstEmptyCell(): Int? = targetCells.indexOfFirst { it is HomeGridCell.Empty }.takeIf { it >= 0 }
 
-            val effectiveIndex = targetGridIndex ?: findFirstEmptyCell()
+            // The escape closes the folder, so "putting it back in the folder"
+            // means dropping over the (now-closed) folder's own cell. Resolve
+            // the source folder and whether the drop landed on it, so the app
+            // reliably goes BACK into it instead of becoming a stray home app.
+            val sourceFolder = homeFolders.find { it.id == dragFromFolderId }
+            val sourceFolderCell = sourceFolder?.position?.takeIf { it in targetCells.indices }
+            // Generous catch area: count the drop as "back on the folder" when
+            // it lands within HALF a cell of the source folder's cell on every
+            // side. The escape closes the folder, so the user is aiming at a
+            // small closed icon — a tight hit-test made re-adds miss constantly.
+            val droppedOnSourceFolder = sourceFolderCell != null &&
+                cellPositions[sourceFolderCell]?.let { p ->
+                    val mx = cellSize.width * 0.5f
+                    val my = cellSize.height * 0.5f
+                    centerPos.x >= p.x - mx && centerPos.x < p.x + cellSize.width + mx &&
+                    centerPos.y >= p.y - my && centerPos.y < p.y + cellSize.height + my
+                } == true
+
+            // Drop on source folder → back in it. Resolved elsewhere → that
+            // cell. Unresolved (null, e.g. mid-close-animation) → default to
+            // the source folder rather than dumping it in a random empty cell.
+            val effectiveIndex = when {
+                droppedOnSourceFolder -> sourceFolderCell
+                targetGridIndex != null -> targetGridIndex
+                sourceFolderCell != null -> sourceFolderCell
+                else -> findFirstEmptyCell()
+            }
             val originalPos = dragOriginalCellPos ?: Offset.Zero
 
             if (effectiveIndex != null && !isDropAnimating) {
@@ -6666,7 +6729,21 @@ fun LauncherScreen(
 
     // Keep the folder overlay alive during escape drag (cell's gesture handler needs it)
     if (lastOpenedFolder != null && (folderAnimProgress > 0f || escapedToHomeGrid)) {
-        val folder = openHomeFolder ?: lastOpenedFolder!!
+        // Re-derive the folder from LIVE homeFolders / dockFolders by ID rather
+        // than using the captured open snapshot. openHomeFolder/lastOpenedFolder
+        // are point-in-time copies that DON'T update when the underlying folder
+        // changes (e.g. re-adding an escaped app), so the open folder rendered
+        // stale until a full reload (leaving + returning to the home screen).
+        // Falling back to the snapshot keeps it alive mid-close.
+        // Use the FROZEN snapshot while an escape drag is active — re-deriving
+        // live would change folder.appPackageNames the instant the app is
+        // removed, flipping the folder grid's remember() keys mid-drag and
+        // killing the dragged cell's gesture (it would auto-drop). Once the
+        // drag ends (escapedToHomeGrid=false) use the LIVE folder so re-adds
+        // and other changes show immediately.
+        val folderSnapshot = openHomeFolder ?: lastOpenedFolder!!
+        val folder = if (escapedToHomeGrid) folderSnapshot
+            else liveFolder(folderSnapshot, homeFolders, dockFolders)
         val folderDropScope = rememberCoroutineScope()
 
         // Position-based cell map: cellIndex → packageName (supports empty cells between apps, filters hidden)
@@ -7215,7 +7292,10 @@ fun LauncherScreen(
                         ) {
                             for (fCol in 0 until folderGridColumns) {
                                 val cellIdx = fRow * folderGridColumns + fCol
-                                val cellApp = folderCellAppMap[cellIdx]
+                                // Keep the gesture-owning cell rendering as an App
+                                // for the whole drag (see resolveFolderCellApp) so
+                                // its pointerInput isn't disposed mid-drag.
+                                val cellApp = resolveFolderCellApp(folderCellAppMap, cellIdx, draggedPkg, draggedFolderCellIdx, allAvailableApps)
                                 val isDragged = cellApp != null && draggedPkg == cellApp.packageName
 
                                 val folderGridCell: HomeGridCell = if (cellApp != null) {

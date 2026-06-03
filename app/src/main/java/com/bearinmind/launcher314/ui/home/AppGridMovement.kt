@@ -409,7 +409,14 @@ fun DraggableGridCell(
                                     try {
                                         while (true) {
                                             val event = awaitPointerEvent()
-                                            val change = event.changes.firstOrNull() ?: break
+                                            // Track OUR pointer specifically — not event.changes.first().
+                                            // Other cells / overlays inject pointer events (e.g. when
+                                            // hovering over the source folder during an escape drag);
+                                            // first() could be an unrelated, already-released change,
+                                            // and !pressed on it would end the drag early ("thinks I
+                                            // let go"). If our pointer isn't in this event, ignore it.
+                                            val change = event.changes.firstOrNull { it.id == down.id }
+                                                ?: continue
 
                                             if (change.pressed) {
                                                 val dx = change.position.x - startPosition.x
