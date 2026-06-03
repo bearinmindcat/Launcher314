@@ -461,12 +461,18 @@ private fun OverlayAppContent(
     val needBgColorIcon = useBgColorIcon && bgColorEffectiveShape != null && globalIconBgColor != null
     var bgColorAsyncPath by remember(appInfo.packageName, bgColorEffectiveShape, globalIconBgColor, needBgColorIcon) {
         val initial: String = if (needBgColorIcon) {
-            // Try the cache directly; getOrGenerateBgColorShapedIcon writes
-            // into a cache dir keyed by (pkg, shape, color) — if the helper
-            // has a known cache path we'd use it, but at this scope we only
-            // know to attempt the call. For init, fall back to finalIconPath
-            // and let the LaunchedEffect upgrade once.
-            finalIconPath
+            // Cache-FIRST init (mirrors the grid cell). A cached bg-color icon
+            // shows IMMEDIATELY instead of starting on the no-bg icon and then
+            // async-swapping — that swap was the one-frame "ghost flash" to the
+            // original icon when picking up an app. Filename mirrors
+            // getOrGenerateBgColorShapedIcon (pkg_shape_colorHex_intensity).
+            val colorHex = Integer.toHexString(globalIconBgColor!!)
+            val intensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)
+            val cacheFile = File(
+                com.bearinmind.launcher314.helpers.getBgColorShapedDir(context),
+                "${appInfo.packageName}_${bgColorEffectiveShape}_${colorHex}_${intensity}.png"
+            )
+            if (cacheFile.exists()) cacheFile.absolutePath else finalIconPath
         } else finalIconPath
         mutableStateOf(initial)
     }
