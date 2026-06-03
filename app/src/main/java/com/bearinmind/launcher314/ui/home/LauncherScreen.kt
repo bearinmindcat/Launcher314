@@ -1579,33 +1579,15 @@ fun LauncherScreen(
             // Helper: find first empty cell on this page as fallback
             fun findFirstEmptyCell(): Int? = targetCells.indexOfFirst { it is HomeGridCell.Empty }.takeIf { it >= 0 }
 
-            // The escape closes the folder, so "putting it back in the folder"
-            // means dropping over the (now-closed) folder's own cell. Resolve
-            // the source folder and whether the drop landed on it, so the app
-            // reliably goes BACK into it instead of becoming a stray home app.
-            val sourceFolder = homeFolders.find { it.id == dragFromFolderId }
-            val sourceFolderCell = sourceFolder?.position?.takeIf { it in targetCells.indices }
-            // Generous catch area: count the drop as "back on the folder" when
-            // it lands within HALF a cell of the source folder's cell on every
-            // side. The escape closes the folder, so the user is aiming at a
-            // small closed icon — a tight hit-test made re-adds miss constantly.
-            val droppedOnSourceFolder = sourceFolderCell != null &&
-                cellPositions[sourceFolderCell]?.let { p ->
-                    val mx = cellSize.width * 0.5f
-                    val my = cellSize.height * 0.5f
-                    centerPos.x >= p.x - mx && centerPos.x < p.x + cellSize.width + mx &&
-                    centerPos.y >= p.y - my && centerPos.y < p.y + cellSize.height + my
-                } == true
-
-            // Drop on source folder → back in it. Resolved elsewhere → that
-            // cell. Unresolved (null, e.g. mid-close-animation) → default to
-            // the source folder rather than dumping it in a random empty cell.
-            val effectiveIndex = when {
-                droppedOnSourceFolder -> sourceFolderCell
-                targetGridIndex != null -> targetGridIndex
-                sourceFolderCell != null -> sourceFolderCell
-                else -> findFirstEmptyCell()
-            }
+            // Drop where it actually landed. If the drop resolves to the
+            // source folder's own cell, targetCell is that Folder → the Folder
+            // branch re-adds it; anywhere else → that cell; unresolved → first
+            // empty cell. NOTE: do NOT special-case "near the folder" or
+            // default unresolved drops back to the source folder — right after
+            // escape the drop cell briefly resolves to null, and those
+            // fallbacks made the app snap back into the folder even when
+            // dropped clearly away (had to wait for it to settle).
+            val effectiveIndex = targetGridIndex ?: findFirstEmptyCell()
             val originalPos = dragOriginalCellPos ?: Offset.Zero
 
             if (effectiveIndex != null && !isDropAnimating) {
