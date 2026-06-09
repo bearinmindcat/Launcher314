@@ -154,6 +154,28 @@ fun LauncherWithDrawer(
     val drawerOnColor = drawerDynamicScheme?.onSurface
         ?: androidx.compose.ui.graphics.Color.White
 
+    // Octopi noise grain: a tiled grayscale-noise brush overlaid faintly on the
+    // frosted drawer so it reads like real glass, not flat plastic blur (Octopi's
+    // HazeStyle noiseFactor = 0.15). Generated once.
+    val noiseBrush = remember {
+        val n = 128
+        val px = IntArray(n * n)
+        val rnd = java.util.Random(7L)
+        for (i in px.indices) {
+            val v = rnd.nextInt(256)
+            px[i] = android.graphics.Color.argb(255, v, v, v)
+        }
+        val bmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+        bmp.setPixels(px, 0, n, 0, 0, n, n)
+        androidx.compose.ui.graphics.ShaderBrush(
+            androidx.compose.ui.graphics.ImageShader(
+                bmp.asImageBitmap(),
+                androidx.compose.ui.graphics.TileMode.Repeated,
+                androidx.compose.ui.graphics.TileMode.Repeated
+            )
+        )
+    }
+
     // Track if search is active in drawer (disables swipe-to-close)
     var isDrawerSearchActive by remember { mutableStateOf(false) }
     var dismissSearchTrigger by remember { mutableStateOf(0) }
@@ -349,22 +371,6 @@ fun LauncherWithDrawer(
                     }
                 }
             }
-        }
-    }
-
-    // Calculate alpha for home screen (pager) based on swipe progress
-    // Key on screenHeight so derivedStateOf recalculates if screen dimensions change
-    val pagerAlpha by remember(screenHeight) {
-        derivedStateOf {
-            val threshold = drawerRangePx / 2
-            ((effectiveSwipeY - threshold) / threshold).coerceIn(0f, 1f)
-        }
-    }
-
-    // Calculate alpha for app drawer (inverse of pager)
-    val drawerAlpha by remember(screenHeight) {
-        derivedStateOf {
-            (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
         }
     }
 
@@ -1143,12 +1149,13 @@ fun LauncherWithDrawer(
                     }
                 }
                 .graphicsLayer {
-                    // Lawnchair workspace: scale 1.0->0.92, fade 1->0, all within
-                    // the first 40% of the swipe (WORKSPACE_SCALE_MANUAL 0->0.4).
-                    // NOTE: the workspace itself stays SHARP — Lawnchair does NOT
-                    // blur the workspace; the depth blur is applied to the WALLPAPER
-                    // behind it (DepthController). So no .blur() here; the wallpaper
-                    // backdrop + system window-blur handle the frosted depth.
+                    // OCTOPI: the home APPS fade out (alpha 1 -> 0) and scale back as
+                    // the drawer opens — so through the transparent drawer you see the
+                    // blurred WALLPAPER, not the app icons. (The icons also blur as
+                    // they fade, so the fade-out itself looks frosted.) The blurred
+                    // wallpaper is produced by the system window-blur / custom-wallpaper
+                    // blur above; the drawer's transparency slider controls how much
+                    // of it shows through the scrim.
                     if (drawerToHomeActive) {
                         alpha = homeScreenFadeInAlpha
                     } else {
@@ -1157,6 +1164,12 @@ fun LauncherWithDrawer(
                         scaleY = homeScale
                     }
                 }
+                // Blur the icons as they fade out (0 -> 30dp over the first 40%) so the
+                // fade reads as a frost dissolve rather than a hard cut. API 31+.
+                .blur(
+                    if (drawerToHomeActive || Build.VERSION.SDK_INT < 31) 0.dp
+                    else homeBlurDp.dp
+                )
         ) {
             LauncherScreen(
                 gestureUiCallbacks = gestureUiCallbacks,
@@ -1215,6 +1228,21 @@ fun LauncherWithDrawer(
                     .fillMaxSize()
                     .graphicsLayer { alpha = scrimEffectiveAlpha }
                     .background(drawerScrimColor)
+            )
+        }
+
+        // Layer 1.6: NOISE GRAIN — faint tiled grayscale noise over the frosted
+        // area (Octopi's HazeStyle noiseFactor). Makes the blur read as real glass.
+        // Fades in with the scrim; very low alpha so it's a texture, not visible dots.
+        if (showAppDrawer || effectiveSwipeY < drawerRangePx) {
+            val grainAlpha =
+                if (drawerToHomeActive) drawerToHomeFadeAlpha * 0.05f
+                else scrimPhase * 0.05f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = grainAlpha }
+                    .background(noiseBrush)
             )
         }
 
