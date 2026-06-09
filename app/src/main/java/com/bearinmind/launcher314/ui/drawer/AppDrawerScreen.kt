@@ -193,7 +193,8 @@ fun AppDrawerScreen(
     onSettingsClick: () -> Unit = {},
     onAddToHome: (AppInfo) -> Unit = {},
     onAddFolderToHome: (AppFolder) -> Unit = {},
-    homeDragCallbacks: HomeDragCallbacks = HomeDragCallbacks()
+    homeDragCallbacks: HomeDragCallbacks = HomeDragCallbacks(),
+    drawBackground: Boolean = true
 ) {
     val onDragToHome = homeDragCallbacks.onDragToHome
     val onDragToHomeMove = homeDragCallbacks.onDragToHomeMove
@@ -594,7 +595,12 @@ fun AppDrawerScreen(
     // 100% = fully transparent (see through to home screen behind)
     val drawerTransparency = getDrawerTransparency(LocalContext.current)
     val backgroundAlpha = (100 - drawerTransparency) / 100f
-    val drawerBackground = Color(0xFF121212).copy(alpha = backgroundAlpha)
+    // When drawBackground = false the host (LauncherWithDrawer) paints the dark
+    // all-apps scrim as a separate, non-translating layer (Launcher3 staggers
+    // scrim fade vs content fade), so the drawer itself stays transparent.
+    val drawerBackground = if (drawBackground)
+        Color(0xFF121212).copy(alpha = backgroundAlpha)
+    else Color.Transparent
 
     val resolvedTextColor = run {
         if (globalTextColor != null) {
