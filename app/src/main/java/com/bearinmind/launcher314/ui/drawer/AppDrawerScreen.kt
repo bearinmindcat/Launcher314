@@ -194,7 +194,8 @@ fun AppDrawerScreen(
     onAddToHome: (AppInfo) -> Unit = {},
     onAddFolderToHome: (AppFolder) -> Unit = {},
     homeDragCallbacks: HomeDragCallbacks = HomeDragCallbacks(),
-    drawBackground: Boolean = true
+    drawBackground: Boolean = true,
+    defaultLabelColor: Color = Color.White
 ) {
     val onDragToHome = homeDragCallbacks.onDragToHome
     val onDragToHomeMove = homeDragCallbacks.onDragToHomeMove
@@ -607,7 +608,7 @@ fun AppDrawerScreen(
             val i = globalTextColorIntensity / 100f
             val b = Color(globalTextColor!!)
             Color(b.red * i, b.green * i, b.blue * i, b.alpha)
-        } else Color.White
+        } else defaultLabelColor   // contrasts the dynamic Material-You scrim
     }
 
     val drawerFolderBorder = run {

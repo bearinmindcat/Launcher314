@@ -16,6 +16,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.view.WindowManager
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
@@ -121,6 +124,36 @@ fun LauncherWithDrawer(
         derivedStateOf { if (isDrawerDragging) dragShift else swipeUpY.value }
     }
 
+    // Lawnchair SETTLE physics: after release, Launcher3 animates to the target
+    // with a DECELERATE interpolator over a VELOCITY-computed duration (not a
+    // spring) — scrollInterpolatorForVelocity + BaseSwipeDetector.calculateDuration.
+    // We mirror that: LinearOutSlowInEasing (decelerate) and a duration scaled by
+    // the remaining distance / release speed, clamped. A fast flick settles in
+    // ~120ms; a slow release in up to ~320ms.
+    suspend fun settleDrawer(target: Float, velocityPxPerSec: Float) {
+        val remaining = kotlin.math.abs(target - swipeUpY.value)
+        val v = kotlin.math.abs(velocityPxPerSec).coerceAtLeast(1f)
+        val dur = (remaining / v * 1000f).roundToInt().coerceIn(120, 320)
+        swipeUpY.animateTo(target, tween(durationMillis = dur, easing = LinearOutSlowInEasing))
+    }
+
+    // #1 — Material You drawer tint (1:1 with Lawnchair): the all-apps scrim color
+    // is derived from the WALLPAPER (dynamic color, API 31+) and flips with the
+    // system light/dark mode, instead of a fixed #121212. Scoped to JUST the scrim
+    // so the rest of the app's gray theme is untouched. Falls back to #121212 below
+    // API 31 (no dynamic color available).
+    val systemDark = isSystemInDarkTheme()
+    val drawerDynamicScheme = if (Build.VERSION.SDK_INT >= 31) {
+        if (systemDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else null
+    val drawerScrimColor = drawerDynamicScheme?.surface
+        ?: androidx.compose.ui.graphics.Color(0xFF121212)
+    // The label/text color that CONTRASTS the dynamic scrim (Lawnchair flips the
+    // drawer text color with its background). Used as the drawer's default label
+    // color so a light Material-You scrim in light mode never hides white labels.
+    val drawerOnColor = drawerDynamicScheme?.onSurface
+        ?: androidx.compose.ui.graphics.Color.White
+
     // Track if search is active in drawer (disables swipe-to-close)
     var isDrawerSearchActive by remember { mutableStateOf(false) }
     var dismissSearchTrigger by remember { mutableStateOf(0) }
@@ -142,13 +175,7 @@ fun LauncherWithDrawer(
             override fun openDrawer() {
                 coroutineScope.launch {
                     showAppDrawer = true
-                    swipeUpY.animateTo(
-                        targetValue = 0f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessLow
-                        )
-                    )
+                    settleDrawer(0f, 0f)   // Lawnchair decelerate open
                 }
             }
             override fun showRecentApps() {
@@ -221,10 +248,7 @@ fun LauncherWithDrawer(
     // Home button pressed: close the drawer and return to home screen
     LaunchedEffect(homeButtonTrigger) {
         if (homeButtonTrigger > 0 && showAppDrawer) {
-            swipeUpY.animateTo(
-                targetValue = drawerRangePx,
-                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
-            )
+            settleDrawer(drawerRangePx, 0f)   // Lawnchair decelerate close
             showAppDrawer = false
             homeRefreshTrigger++
         }
@@ -256,13 +280,7 @@ fun LauncherWithDrawer(
             lastConsumedDrawerTrigger = openDrawerTrigger
             drawerOpenedViaTrigger = true
             showAppDrawer = true
-            swipeUpY.animateTo(
-                targetValue = 0f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
-            )
+            settleDrawer(0f, 0f)   // Lawnchair decelerate open
         }
     }
 
@@ -523,13 +541,7 @@ fun LauncherWithDrawer(
         if (showAppDrawer && swipeUpY.value < drawerRangePx) {
             // Drawer is visible — close it and return to home screen
             coroutineScope.launch {
-                swipeUpY.animateTo(
-                    targetValue = drawerRangePx,
-                    animationSpec = androidx.compose.animation.core.tween(
-                        durationMillis = 300,
-                        easing = androidx.compose.animation.core.FastOutSlowInEasing
-                    )
-                )
+                settleDrawer(drawerRangePx, 0f)   // Lawnchair decelerate close
                 showAppDrawer = false
                 homeRefreshTrigger++
             }
@@ -543,13 +555,13 @@ fun LauncherWithDrawer(
     val nestedScrollConnection = remember(screenHeight, isDrawerSearchActive) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // When drawer is partially open (in transition), intercept ALL vertical gestures
-                // This prevents the list from scrolling while drawer is being dragged
-                if (swipeUpY.value > 0 && !isDrawerSearchActive) {
-                    coroutineScope.launch {
-                        val newValue = (swipeUpY.value + available.y).coerceIn(0f, drawerRangePx)
-                        swipeUpY.snapTo(newValue)
-                    }
+                // While the drawer is partially open / actively being dragged closed,
+                // intercept ALL vertical scroll and write the SYNCHRONOUS drag float
+                // directly (no launch{snapTo} lag — same 1:1 fix as the open drag).
+                val cur = if (isDrawerDragging) dragShift else swipeUpY.value
+                if (cur > 0f && !isDrawerSearchActive) {
+                    if (!isDrawerDragging) { dragShift = swipeUpY.value; isDrawerDragging = true }
+                    dragShift = (dragShift + available.y).coerceIn(0f, drawerRangePx)
                     return available.copy(x = 0f)  // Consume all vertical scroll
                 }
                 return Offset.Zero
@@ -570,48 +582,38 @@ fun LauncherWithDrawer(
                     dismissSearchTrigger++
                     return Offset(0f, available.y)
                 }
-                if (available.y > 0 && swipeUpY.value == 0f && !isDrawerSearchActive) {
-                    coroutineScope.launch {
-                        val newValue = (swipeUpY.value + available.y).coerceIn(0f, drawerRangePx)
-                        swipeUpY.snapTo(newValue)
-                    }
+                if (available.y > 0f && !isDrawerDragging && swipeUpY.value == 0f && !isDrawerSearchActive) {
+                    // Begin the close drag synchronously from fully-open.
+                    dragShift = swipeUpY.value
+                    isDrawerDragging = true
+                    dragShift = (dragShift + available.y).coerceIn(0f, drawerRangePx)
                     return Offset(0f, available.y)
                 }
                 return Offset.Zero
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
-                // Close commit mirrors the OPEN rule (symmetry): a downward fling
-                // closes regardless of distance; otherwise close only if dragged
-                // down past ~30% from fully-open. Velocity carries into the settle.
-                if (swipeUpY.value > 0 && swipeUpY.value < drawerRangePx) {
+                // Close commit mirrors the OPEN rule: a fling sets direction (down
+                // closes, up reopens) regardless of distance; otherwise commit by
+                // position past 0.4. Hand the synchronous drag position to the
+                // Animatable, clear the drag flag, then DECELERATE-settle.
+                if (isDrawerDragging) {
+                    val startY = dragShift
+                    swipeUpY.snapTo(startY)
+                    isDrawerDragging = false
                     val flingThreshold = 600f
-                    val closedness = swipeUpY.value / drawerRangePx  // 0 open -> 1 closed
+                    val closedness = startY / drawerRangePx  // 0 open -> 1 closed
                     val shouldClose = when {
                         available.y > flingThreshold -> true
                         available.y < -flingThreshold -> false
-                        else -> closedness > 0.3f
+                        else -> closedness > 0.4f
                     }
                     if (shouldClose) {
-                        swipeUpY.animateTo(
-                            targetValue = drawerRangePx,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            ),
-                            initialVelocity = available.y
-                        )
+                        settleDrawer(drawerRangePx, available.y)
                         showAppDrawer = false
                         homeRefreshTrigger++
                     } else {
-                        swipeUpY.animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            ),
-                            initialVelocity = available.y
-                        )
+                        settleDrawer(0f, available.y)
                     }
                     return available
                 }
@@ -619,29 +621,18 @@ fun LauncherWithDrawer(
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                // Ensure drawer snaps to a stable state (progress-based, symmetric).
-                if (swipeUpY.value > 0 && swipeUpY.value < drawerRangePx) {
-                    val closedness = swipeUpY.value / drawerRangePx
-                    if (closedness > 0.3f) {
-                        swipeUpY.animateTo(
-                            targetValue = drawerRangePx,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            ),
-                            initialVelocity = available.y
-                        )
+                // Safety net: if a drag is somehow still active after onPreFling,
+                // settle it to the nearest stable state.
+                if (isDrawerDragging) {
+                    val startY = dragShift
+                    swipeUpY.snapTo(startY)
+                    isDrawerDragging = false
+                    if (startY / drawerRangePx > 0.4f) {
+                        settleDrawer(drawerRangePx, available.y)
                         showAppDrawer = false
                         homeRefreshTrigger++
                     } else {
-                        swipeUpY.animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            ),
-                            initialVelocity = available.y
-                        )
+                        settleDrawer(0f, available.y)
                     }
                 }
                 return Velocity.Zero
@@ -871,22 +862,56 @@ fun LauncherWithDrawer(
         if (Build.VERSION.SDK_INT >= 31 &&
             wallpaperMode != com.bearinmind.launcher314.data.WALLPAPER_MODE_CUSTOM) {
             val depthActivity = remember(context) { context.findActivity() }
-            // Launcher3 max depth blur radius ~ 23dp. (Wallpaper zoom-out is a
-            // hidden API — setWallpaperZoomOut isn't in the public SDK — so we do
-            // the blur portion of DepthController, which is the visible frost.)
-            val maxWindowBlurPx = with(density) { 23.dp.toPx() }
+            val maxWindowBlurPx = with(density) { 23.dp.toPx() }   // Launcher3 max depth blur
+            // setWallpaperZoomOut is a hidden API (not in the public SDK), so we
+            // reach it via REFLECTION the way third-party launchers (Lawnchair/Nova)
+            // do. If the hidden-API blocklist or the OEM blocks it, this resolves to
+            // null and we simply skip the zoom (graceful — never crashes).
+            val zoomMethod = remember {
+                runCatching {
+                    android.app.WallpaperManager::class.java.getMethod(
+                        "setWallpaperZoomOut",
+                        android.os.IBinder::class.java,
+                        Float::class.javaPrimitiveType
+                    )
+                }.getOrNull()
+            }
             DisposableEffect(depthActivity) {
                 onDispose {
-                    depthActivity?.window?.let { w -> runCatching { w.setBackgroundBlurRadius(0) } }
+                    depthActivity?.window?.let { w ->
+                        runCatching { w.setBackgroundBlurRadius(0) }
+                        runCatching {
+                            val wm = w.context.getSystemService(Context.WALLPAPER_SERVICE)
+                                as? android.app.WallpaperManager
+                            w.decorView.windowToken?.let { tok -> zoomMethod?.invoke(wm, tok, 0f) }
+                        }
+                    }
                 }
             }
             LaunchedEffect(depthActivity) {
                 val win = depthActivity?.window ?: return@LaunchedEffect
                 val wmSvc = win.context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
                 val blurSupported = wmSvc?.isCrossWindowBlurEnabled == true
-                if (blurSupported) {
-                    snapshotFlow { homePhase }.collect { ph ->
-                        runCatching { win.setBackgroundBlurRadius((ph * maxWindowBlurPx).roundToInt()) }
+                val wallpaperMgr = win.context.getSystemService(Context.WALLPAPER_SERVICE)
+                    as? android.app.WallpaperManager
+                // FIX: read the SNAPSHOT state (effectiveSwipeY) inside the flow and
+                // derive the phase here. Previously this read the plain `homePhase`
+                // val, which was captured once and never updated — so the blur never
+                // actually ramped. Now it tracks the drag/animation live.
+                snapshotFlow { effectiveSwipeY }.collect { y ->
+                    val prog = (1f - (y / drawerRangePx)).coerceIn(0f, 1f)
+                    val blurPhase = (prog / 0.4f).coerceIn(0f, 1f)   // BLUR_MANUAL 0->0.4
+                    if (blurSupported) {
+                        runCatching { win.setBackgroundBlurRadius((blurPhase * maxWindowBlurPx).roundToInt()) }
+                    }
+                    // Wallpaper zoom-out tracks the full open progress (Lawnchair
+                    // pushes the wallpaper back gradually as you open). Subtle (0.5 max).
+                    if (zoomMethod != null) {
+                        runCatching {
+                            win.decorView.windowToken?.let { tok ->
+                                zoomMethod.invoke(wallpaperMgr, tok, (prog * 0.5f).coerceIn(0f, 1f))
+                            }
+                        }
                     }
                 }
             }
@@ -1080,33 +1105,18 @@ fun LauncherWithDrawer(
                                     val shouldOpen = when {
                                         releaseVelocityY < -flingThreshold -> true
                                         releaseVelocityY > flingThreshold -> false
-                                        else -> openProgress > 0.3f
+                                        else -> openProgress > 0.4f   // ALL_APPS_STATE_TRANSITION_MANUAL
                                     }
                                     if (shouldOpen &&
                                         swipeUpAction is com.bearinmind.launcher314.data.GestureAction.OpenDrawer) {
-                                        // Commit open — carry the release velocity into
-                                        // the settle spring so it continues your motion
-                                        // (Launcher3 uses a velocity-scaled settle).
+                                        // Commit open — Launcher3 decelerate settle, with
+                                        // a duration scaled by the release velocity.
                                         showAppDrawer = true
-                                        swipeUpY.animateTo(
-                                            targetValue = 0f,
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            ),
-                                            initialVelocity = releaseVelocityY
-                                        )
+                                        settleDrawer(0f, releaseVelocityY)
                                     } else {
                                         // Cancel back to home (short slow drag, or a
                                         // downward fling), or fire a reassigned action.
-                                        swipeUpY.animateTo(
-                                            targetValue = drawerRangePx,
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            ),
-                                            initialVelocity = releaseVelocityY
-                                        )
+                                        settleDrawer(drawerRangePx, releaseVelocityY)
                                         showAppDrawer = false
                                         homeRefreshTrigger++
                                         if (swipeUpEnabled &&
@@ -1124,10 +1134,7 @@ fun LauncherWithDrawer(
                                 coroutineScope.launch {
                                     if (swipeUpMovesDrawer) swipeUpY.snapTo(dragShift)
                                     isDrawerDragging = false
-                                    swipeUpY.animateTo(
-                                        targetValue = drawerRangePx,
-                                        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
-                                    )
+                                    settleDrawer(drawerRangePx, 0f)
                                     showAppDrawer = false
                                     homeRefreshTrigger++
                                 }
@@ -1156,13 +1163,7 @@ fun LauncherWithDrawer(
                 onOpenAppDrawer = {
                     coroutineScope.launch {
                         showAppDrawer = true
-                        swipeUpY.animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        )
+                        settleDrawer(0f, 0f)   // Lawnchair decelerate open
                     }
                 },
                 onOpenSettings = onSettingsClick,
@@ -1213,7 +1214,7 @@ fun LauncherWithDrawer(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer { alpha = scrimEffectiveAlpha }
-                    .background(androidx.compose.ui.graphics.Color(0xFF121212))
+                    .background(drawerScrimColor)
             )
         }
 
@@ -1238,6 +1239,9 @@ fun LauncherWithDrawer(
                     // Background is the external scrim above (Launcher3 separates
                     // scrim fade from content fade), so the drawer paints none.
                     drawBackground = false,
+                    // Drawer label color contrasts the dynamic Material-You scrim
+                    // (used only when the user hasn't set a custom global text color).
+                    defaultLabelColor = drawerOnColor,
                     onSearchActiveChanged = {
                         isDrawerSearchActive = it
                         if (it) searchDismissed = false
