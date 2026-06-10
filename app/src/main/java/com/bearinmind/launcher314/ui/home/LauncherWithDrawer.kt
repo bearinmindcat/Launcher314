@@ -8,7 +8,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import android.os.Build
@@ -19,6 +18,9 @@ import android.view.WindowManager
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
@@ -220,6 +222,25 @@ fun LauncherWithDrawer(
     // Refresh trigger for home screen - increments when drawer closes
     var homeRefreshTrigger by remember { mutableIntStateOf(0) }
 
+    // REST-STATE RESET (both references do this): Launcher3 calls
+    // moveToRestState() in onStop and Octopi hard-resets its progress float on
+    // pause (jx.java:67). So when the launcher stops — e.g. you LAUNCH AN APP
+    // FROM THE DRAWER, or the screen turns off — the drawer snaps closed, and
+    // coming back always lands on the home screen, never a stale open drawer.
+    val drawerLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(drawerLifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && (showAppDrawer || isDrawerDragging)) {
+                isDrawerDragging = false
+                showAppDrawer = false
+                homeRefreshTrigger++
+                coroutineScope.launch { swipeUpY.snapTo(drawerRangePx) }
+            }
+        }
+        drawerLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { drawerLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Drawer-to-home drag transition state
     var drawerToHomeActive by remember { mutableStateOf(false) }
     var drawerToHomeItem by remember { mutableStateOf<Any?>(null) }
@@ -381,38 +402,29 @@ fun LauncherWithDrawer(
     // STAGGER is what makes it read as Lawnchair. Vertical shift is LINEAR 1:1
     // with the finger; responsiveness for short swipes comes from the FLING
     // commit, NOT from gain/decelerate.
-    val progress by remember(screenHeight) {
-        derivedStateOf { (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f) }
-    }
-    // clampToProgress(p, start, end): renormalize p into [start,end] -> [0,1].
-    fun clampToProgress(p: Float, start: Float, end: Float): Float =
-        if (end <= start) (if (p >= end) 1f else 0f)
-        else ((p - start) / (end - start)).coerceIn(0f, 1f)
-
-    val p = progress
-    // EXACT Launcher3 AllAppsSwipeController manual ranges. Manual drag is LINEAR
-    // (no easing on the clamps) — the curve you feel "fast then slow at the top"
-    // is the RELEASE SETTLE, not the drag. p = openness (0 home -> 1 all-apps).
+    // EXACT Launcher3 AllAppsSwipeController manual ranges, but computed AT DRAW
+    // TIME inside each layer's graphicsLayer lambda (reading effectiveSwipeY there
+    // defers the read to the draw phase). Composition holds only BOOLEAN gates via
+    // derivedStateOf — they invalidate composition ONLY when they flip, so a drag
+    // frame re-draws three layers and recomposes NOTHING. This is the Compose
+    // equivalent of how Lawnchair/Octopi animate (per-frame property sets on
+    // views, never re-inflating) and is what keeps the drag at full frame rate.
     //
-    // Home (workspace): scales to 0.92, blurs to 30dp, fades to 0 over 0.0 -> 0.4
-    // (WORKSPACE_SCALE_MANUAL / BLUR_MANUAL).
-    val homePhase = clampToProgress(p, 0f, 0.4f)
-    val homeScale = 1f - 0.08f * homePhase            // 1.0 -> 0.92
-    val homeAlpha = (1f - homePhase).coerceIn(0f, 1f) // 1.0 -> 0.0
-    val homeBlurDp = (homePhase * 30f)                 // 0 -> 30dp depth blur
-    // Scrim (dark all-apps background): SCRIM_FADE_MANUAL = 0.117 -> 0.4. Full-
-    // screen, non-translating (no sliding top edge). Comes in before the content.
-    val scrimPhase = clampToProgress(p, 0.117f, 0.4f)
-    // Drawer CONTENT (icons / search): ALL_APPS_FADE_MANUAL = 0.4 -> 0.8. In
-    // Launcher3 this is the SAME view as the translation: it TRANSLATES UP 1:1
-    // with the finger over the full 300dp shift range (offset = effectiveSwipeY),
-    // but its ALPHA only fades in over 0.4 -> 0.8 of the openness. So the content
-    // is invisible for the first 40% of the rise (you see the home recede + scrim
-    // darken), then fades in over the next 40% as it nears its final position,
-    // and the last 20% it's fully opaque, just settling the final ~60dp up. Over
-    // the 300dp range this 0.4->0.8 fade is only ~120dp of travel, so it reads as
-    // one cohesive motion (not the exposed dead zone the full-screen range had).
-    val contentPhase = clampToProgress(p, 0.4f, 0.8f)
+    // The ranges (p = openness 0 home -> 1 all-apps, all LINEAR — the "fast then
+    // slow at the top" feel is the RELEASE SETTLE, not the drag):
+    //   home  scale/alpha/blur : 0.0   -> 0.4   (WORKSPACE_SCALE/BLUR_MANUAL)
+    //   scrim fade             : 0.117 -> 0.4   (SCRIM_FADE_MANUAL)
+    //   content fade           : 0.4   -> 0.8   (ALL_APPS_FADE_MANUAL)
+    //   translation            : full 300dp, 1:1 with the finger
+    val drawerComposed by remember {
+        derivedStateOf { showAppDrawer || effectiveSwipeY < drawerRangePx }
+    }
+    val drawerFullyOpen by remember {
+        derivedStateOf { effectiveSwipeY == 0f && showAppDrawer }
+    }
+    val drawerBlockerVisible by remember {
+        derivedStateOf { effectiveSwipeY > 10f }
+    }
 
     // Fixed corner radius for rounded top corners like Fossify Launcher
     val drawerCornerRadius = 0.dp
@@ -819,8 +831,8 @@ fun LauncherWithDrawer(
         } else if (customWallpaperPath != null) {
             // Base user wallpaper-blur + a depth ramp tied to the first 40% of the
             // swipe (Launcher3 BLUR_MANUAL 0->0.4), so the wallpaper softens as the
-            // drawer takes over — adds the all-apps "depth" behind the scrim.
-            val blurRadiusDp = (wallpaperBlurPercent / 100f * 25f + homePhase * 22f).dp
+            // drawer takes over. Radius computed at DRAW time (state read inside the
+            // graphicsLayer lambda) so dragging doesn't recompose the image.
             coil.compose.AsyncImage(
                 model = java.io.File(customWallpaperPath),
                 contentDescription = null,
@@ -828,14 +840,18 @@ fun LauncherWithDrawer(
                 modifier = Modifier
                     .fillMaxSize()
                     .then(
-                        if ((wallpaperBlurPercent > 0 || homePhase > 0.001f) &&
-                            android.os.Build.VERSION.SDK_INT >= 31) {
+                        if (android.os.Build.VERSION.SDK_INT >= 31) {
                             Modifier.graphicsLayer {
-                                renderEffect = androidx.compose.ui.graphics.BlurEffect(
-                                    radiusX = with(density) { blurRadiusDp.toPx() },
-                                    radiusY = with(density) { blurRadiusDp.toPx() },
-                                    edgeTreatment = androidx.compose.ui.graphics.TileMode.Clamp
-                                )
+                                val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
+                                val ph = (pr / 0.4f).coerceIn(0f, 1f)
+                                val r = wallpaperBlurPercent / 100f * 25.dp.toPx() + ph * 22.dp.toPx()
+                                renderEffect = if (r > 0.5f) {
+                                    androidx.compose.ui.graphics.BlurEffect(
+                                        radiusX = r,
+                                        radiusY = r,
+                                        edgeTreatment = androidx.compose.ui.graphics.TileMode.Clamp
+                                    )
+                                } else null
                             }
                         } else Modifier
                     )
@@ -1149,27 +1165,33 @@ fun LauncherWithDrawer(
                     }
                 }
                 .graphicsLayer {
-                    // OCTOPI: the home APPS fade out (alpha 1 -> 0) and scale back as
-                    // the drawer opens — so through the transparent drawer you see the
-                    // blurred WALLPAPER, not the app icons. (The icons also blur as
-                    // they fade, so the fade-out itself looks frosted.) The blurred
-                    // wallpaper is produced by the system window-blur / custom-wallpaper
-                    // blur above; the drawer's transparency slider controls how much
-                    // of it shows through the scrim.
+                    // OCTOPI look, but computed AT DRAW TIME: reading effectiveSwipeY
+                    // inside this lambda defers the read to the draw phase, so a drag
+                    // frame only re-DRAWS this layer — it does NOT recompose the whole
+                    // launcher tree (home grid + widgets + drawer) per pixel like the
+                    // old composition-computed vals did. This is how Lawnchair/Octopi
+                    // get their fluidity: per-frame property sets, never re-layout.
+                    // Home APPS fade out (1 -> 0), scale back, and BLUR as they fade
+                    // (frost dissolve) over the first 40% of the swipe; through the
+                    // transparent drawer you then see the blurred WALLPAPER.
                     if (drawerToHomeActive) {
                         alpha = homeScreenFadeInAlpha
+                        renderEffect = null
                     } else {
-                        alpha = homeAlpha
-                        scaleX = homeScale
-                        scaleY = homeScale
+                        val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
+                        val ph = (pr / 0.4f).coerceIn(0f, 1f)   // WORKSPACE/BLUR_MANUAL 0->0.4
+                        alpha = 1f - ph
+                        val s = 1f - 0.08f * ph                  // 1.0 -> 0.92
+                        scaleX = s
+                        scaleY = s
+                        renderEffect = if (Build.VERSION.SDK_INT >= 31 && ph > 0.001f) {
+                            val r = ph * 30.dp.toPx()            // 0 -> 30dp depth blur
+                            androidx.compose.ui.graphics.BlurEffect(
+                                r, r, androidx.compose.ui.graphics.TileMode.Clamp
+                            )
+                        } else null
                     }
                 }
-                // Blur the icons as they fade out (0 -> 30dp over the first 40%) so the
-                // fade reads as a frost dissolve rather than a hard cut. API 31+.
-                .blur(
-                    if (drawerToHomeActive || Build.VERSION.SDK_INT < 31) 0.dp
-                    else homeBlurDp.dp
-                )
         ) {
             LauncherScreen(
                 gestureUiCallbacks = gestureUiCallbacks,
@@ -1217,31 +1239,39 @@ fun LauncherWithDrawer(
         // Fades in with the content; the user's drawer transparency setting caps
         // its max opacity. Gated on effectiveSwipeY so it renders during the
         // synchronous drag (swipeUpY only updates on release).
-        if (showAppDrawer || effectiveSwipeY < drawerRangePx) {
+        if (drawerComposed) {
             val scrimMaxAlpha = ((100 - com.bearinmind.launcher314.helpers
                 .getDrawerTransparency(context)) / 100f).coerceIn(0f, 1f)
-            val scrimEffectiveAlpha =
-                if (drawerToHomeActive) drawerToHomeFadeAlpha * scrimMaxAlpha
-                else scrimPhase * scrimMaxAlpha
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = scrimEffectiveAlpha }
+                    .graphicsLayer {
+                        // SCRIM_FADE_MANUAL 0.117 -> 0.4, computed at DRAW time
+                        // (state read inside the lambda = no per-frame recomposition).
+                        alpha = if (drawerToHomeActive) {
+                            drawerToHomeFadeAlpha * scrimMaxAlpha
+                        } else {
+                            val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
+                            ((pr - 0.117f) / 0.283f).coerceIn(0f, 1f) * scrimMaxAlpha
+                        }
+                    }
                     .background(drawerScrimColor)
             )
-        }
 
-        // Layer 1.6: NOISE GRAIN — faint tiled grayscale noise over the frosted
-        // area (Octopi's HazeStyle noiseFactor). Makes the blur read as real glass.
-        // Fades in with the scrim; very low alpha so it's a texture, not visible dots.
-        if (showAppDrawer || effectiveSwipeY < drawerRangePx) {
-            val grainAlpha =
-                if (drawerToHomeActive) drawerToHomeFadeAlpha * 0.05f
-                else scrimPhase * 0.05f
+            // Layer 1.6: NOISE GRAIN — faint tiled grayscale noise over the frosted
+            // area (Octopi's HazeStyle noiseFactor). Makes the blur read as real
+            // glass. Fades with the scrim; draw-phase alpha like everything else.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = grainAlpha }
+                    .graphicsLayer {
+                        alpha = if (drawerToHomeActive) {
+                            drawerToHomeFadeAlpha * 0.05f
+                        } else {
+                            val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
+                            ((pr - 0.117f) / 0.283f).coerceIn(0f, 1f) * 0.05f
+                        }
+                    }
                     .background(noiseBrush)
             )
         }
@@ -1251,13 +1281,18 @@ fun LauncherWithDrawer(
         // as the translation, so it DRAGS UP 1:1 WITH THE FINGER (offset =
         // effectiveSwipeY) and fades in as it rises. effectiveSwipeY is the
         // SYNCHRONOUS drag position, so it tracks the finger with no frame lag.
-        if (showAppDrawer || effectiveSwipeY < drawerRangePx) {
+        if (drawerComposed) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .offset { IntOffset(0, effectiveSwipeY.roundToInt()) }
                     .graphicsLayer {
-                        alpha = if (drawerToHomeActive) drawerToHomeFadeAlpha else contentPhase
+                        // ALL_APPS_FADE_MANUAL 0.4 -> 0.8, computed at DRAW time so
+                        // dragging never recomposes the app grid underneath.
+                        alpha = if (drawerToHomeActive) drawerToHomeFadeAlpha else {
+                            val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
+                            ((pr - 0.4f) / 0.4f).coerceIn(0f, 1f)
+                        }
                     }
                     .clip(RoundedCornerShape(topStart = drawerCornerRadius, topEnd = drawerCornerRadius))
                     .nestedScroll(nestedScrollConnection)
@@ -1274,7 +1309,7 @@ fun LauncherWithDrawer(
                         isDrawerSearchActive = it
                         if (it) searchDismissed = false
                     },
-                    isDrawerFullyOpen = effectiveSwipeY == 0f && showAppDrawer,
+                    isDrawerFullyOpen = drawerFullyOpen,
                     onSettingsClick = onSettingsClick,
                     onAddToHome = addAppToHome,
                     onAddFolderToHome = addFolderToHome,
@@ -1292,7 +1327,7 @@ fun LauncherWithDrawer(
                 // made swipe-down-to-close feel unresponsive immediately after
                 // swipe-up-to-open. Once value <= 10f the drawer is "open
                 // enough" and stray-tap risk is gone.
-                if (effectiveSwipeY > 10f) {
+                if (drawerBlockerVisible) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
