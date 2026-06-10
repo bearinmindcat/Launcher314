@@ -3,7 +3,6 @@ package com.bearinmind.launcher314.ui.home
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -126,17 +125,24 @@ fun LauncherWithDrawer(
         derivedStateOf { if (isDrawerDragging) dragShift else swipeUpY.value }
     }
 
-    // Lawnchair SETTLE physics: after release, Launcher3 animates to the target
-    // with a DECELERATE interpolator over a VELOCITY-computed duration (not a
-    // spring) — scrollInterpolatorForVelocity + BaseSwipeDetector.calculateDuration.
-    // We mirror that: LinearOutSlowInEasing (decelerate) and a duration scaled by
-    // the remaining distance / release speed, clamped. A fast flick settles in
-    // ~120ms; a slow release in up to ~320ms.
+    // SETTLE physics: a soft springy bounce as the drawer lands, with asymmetric
+    // springs for direction:
+    //   • OPEN  (target 0):       crisp + bouncy  — spring(0.6, 1500)
+    //   • CLOSE (target range):   softer, gentler — spring(0.8, 800)
+    // The release velocity carries into the spring so it continues your flick's
+    // momentum, overshoots slightly past the resting point, and bounces back.
+    // (swipeUpY has no bounds, so the overshoot physically moves the layer; the
+    // progress consumers clamp to 0..1 so alphas/blur never go out of range.)
     suspend fun settleDrawer(target: Float, velocityPxPerSec: Float) {
-        val remaining = kotlin.math.abs(target - swipeUpY.value)
-        val v = kotlin.math.abs(velocityPxPerSec).coerceAtLeast(1f)
-        val dur = (remaining / v * 1000f).roundToInt().coerceIn(120, 320)
-        swipeUpY.animateTo(target, tween(durationMillis = dur, easing = LinearOutSlowInEasing))
+        val opening = target < swipeUpY.value
+        swipeUpY.animateTo(
+            targetValue = target,
+            animationSpec = if (opening)
+                spring(dampingRatio = 0.6f, stiffness = 1500f)
+            else
+                spring(dampingRatio = 0.8f, stiffness = 800f),
+            initialVelocity = velocityPxPerSec
+        )
     }
 
     // #1 — Material You drawer tint (1:1 with Lawnchair): the all-apps scrim color
@@ -156,9 +162,9 @@ fun LauncherWithDrawer(
     val drawerOnColor = drawerDynamicScheme?.onSurface
         ?: androidx.compose.ui.graphics.Color.White
 
-    // Octopi noise grain: a tiled grayscale-noise brush overlaid faintly on the
-    // frosted drawer so it reads like real glass, not flat plastic blur (Octopi's
-    // HazeStyle noiseFactor = 0.15). Generated once.
+    // Noise grain: a tiled grayscale-noise brush overlaid faintly on the
+    // frosted drawer so it reads like real glass, not flat plastic blur.
+    // Generated once.
     val noiseBrush = remember {
         val n = 128
         val px = IntArray(n * n)
@@ -222,11 +228,10 @@ fun LauncherWithDrawer(
     // Refresh trigger for home screen - increments when drawer closes
     var homeRefreshTrigger by remember { mutableIntStateOf(0) }
 
-    // REST-STATE RESET (both references do this): Launcher3 calls
-    // moveToRestState() in onStop and Octopi hard-resets its progress float on
-    // pause (jx.java:67). So when the launcher stops — e.g. you LAUNCH AN APP
-    // FROM THE DRAWER, or the screen turns off — the drawer snaps closed, and
-    // coming back always lands on the home screen, never a stale open drawer.
+    // REST-STATE RESET (Launcher3 calls moveToRestState() in onStop): when the
+    // launcher stops — e.g. you LAUNCH AN APP FROM THE DRAWER, or the screen
+    // turns off — the drawer snaps closed, and coming back always lands on the
+    // home screen, never a stale open drawer.
     val drawerLifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(drawerLifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -407,8 +412,8 @@ fun LauncherWithDrawer(
     // defers the read to the draw phase). Composition holds only BOOLEAN gates via
     // derivedStateOf — they invalidate composition ONLY when they flip, so a drag
     // frame re-draws three layers and recomposes NOTHING. This is the Compose
-    // equivalent of how Lawnchair/Octopi animate (per-frame property sets on
-    // views, never re-inflating) and is what keeps the drag at full frame rate.
+    // equivalent of how Lawnchair animates (per-frame property sets on views,
+    // never re-inflating) and is what keeps the drag at full frame rate.
     //
     // The ranges (p = openness 0 home -> 1 all-apps, all LINEAR — the "fast then
     // slow at the top" feel is the RELEASE SETTLE, not the drag):
@@ -1165,12 +1170,12 @@ fun LauncherWithDrawer(
                     }
                 }
                 .graphicsLayer {
-                    // OCTOPI look, but computed AT DRAW TIME: reading effectiveSwipeY
-                    // inside this lambda defers the read to the draw phase, so a drag
-                    // frame only re-DRAWS this layer — it does NOT recompose the whole
-                    // launcher tree (home grid + widgets + drawer) per pixel like the
-                    // old composition-computed vals did. This is how Lawnchair/Octopi
-                    // get their fluidity: per-frame property sets, never re-layout.
+                    // Frosted-dissolve look, computed AT DRAW TIME: reading
+                    // effectiveSwipeY inside this lambda defers the read to the draw
+                    // phase, so a drag frame only re-DRAWS this layer — it does NOT
+                    // recompose the whole launcher tree (home grid + widgets + drawer)
+                    // per pixel like the old composition-computed vals did. Per-frame
+                    // property sets, never re-layout — that's the fluidity.
                     // Home APPS fade out (1 -> 0), scale back, and BLUR as they fade
                     // (frost dissolve) over the first 40% of the swipe; through the
                     // transparent drawer you then see the blurred WALLPAPER.
@@ -1259,8 +1264,8 @@ fun LauncherWithDrawer(
             )
 
             // Layer 1.6: NOISE GRAIN — faint tiled grayscale noise over the frosted
-            // area (Octopi's HazeStyle noiseFactor). Makes the blur read as real
-            // glass. Fades with the scrim; draw-phase alpha like everything else.
+            // area. Makes the blur read as real glass instead of flat plastic.
+            // Fades with the scrim; draw-phase alpha like everything else.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
