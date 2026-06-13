@@ -13,7 +13,6 @@ import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import com.bearinmind.launcher314.data.getWidgetCornerRadiusPercent
 import com.bearinmind.launcher314.data.getWidgetRoundedCornersEnabled
-import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import kotlin.math.abs
 
 /**
@@ -75,8 +74,15 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
     // internal horizontal scroll, so swallowing horizontal UPs is safe.
     private var swipeWasHorizontal = false
 
-    /** Current corner radius in dp. Change this and call invalidateOutline() to update. */
-    private var cornerRadiusDp: Float = 0f
+    /**
+     * Corner roundness as 0–100%. Mapped to a FRACTION of the clipped view's
+     * smaller dimension (100% = half the short side = full pill), NOT a fixed
+     * dp value. A dp cap of 32 was useless on Android 12+: the system already
+     * bakes ~28dp corners into every widget card, so the old 0–32dp range
+     * could only ever add an invisible ~4dp — the "slider does nothing" bug.
+     * Fraction mapping guarantees the upper range visibly reshapes any widget.
+     */
+    private var cornerPercent: Float = 0f
 
     init {
         applyRoundedCorners(context)
@@ -122,28 +128,76 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
             val enabled = getWidgetRoundedCornersEnabled(ctx)
             if (enabled) getWidgetCornerRadiusPercent(ctx) else 0
         }
-        val radiusDp = percent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
-        cornerRadiusDp = radiusDp
+        cornerPercent = percent.toFloat().coerceIn(0f, 100f)
+        enforceRoundedCorners()
+    }
 
-        if (radiusDp > 0f) {
-            clipToOutline = true
-            outlineProvider = object : ViewOutlineProvider() {
-                override fun getOutline(view: View, outline: Outline) {
-                    val radiusPx = cornerRadiusDp * density
-                    outline.setRoundRect(0, 0, view.width, view.height, radiusPx)
-                }
-            }
-        } else {
+    /**
+     * Launcher3/Lawnchair-style corner enforcement (RoundedCornerEnforcement):
+     * clip the widget's actual BACKGROUND card view (@android:id/background,
+     * required on Android 12+ widgets) instead of the host's outer frame. The
+     * frame's corners are usually transparent (the card is inset), so clipping
+     * the frame visibly does nothing — clipping the card itself is what makes
+     * the radius slider actually reshape real widgets. Falls back to clipping
+     * the host bounds when no single background view exists (pre-12 widgets).
+     */
+    private var enforcedBackgroundView: View? = null
+
+    private fun enforceRoundedCorners() {
+        // Undo any previous enforcement (the RemoteViews tree may have been
+        // replaced since, in which case this is a harmless no-op on a detached view).
+        enforcedBackgroundView?.let {
+            it.clipToOutline = false
+            it.outlineProvider = ViewOutlineProvider.BACKGROUND
+        }
+        enforcedBackgroundView = null
+
+        if (cornerPercent <= 0f) {
             clipToOutline = false
             outlineProvider = ViewOutlineProvider.BACKGROUND
+            invalidateOutline()
+            return
         }
-        invalidateOutline()
+
+        val background = findBackgroundView(this)
+        val target: View = background ?: this
+        if (background != null) {
+            // Enforcing on the card — the host itself must not clip.
+            clipToOutline = false
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            enforcedBackgroundView = background
+        }
+        target.clipToOutline = true
+        target.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                // 100% = half the shorter side = full pill
+                val radiusPx = minOf(view.width, view.height) / 2f * (cornerPercent / 100f)
+                outline.setRoundRect(0, 0, view.width, view.height, radiusPx)
+            }
+        }
+        target.invalidateOutline()
+    }
+
+    /** The single view tagged @android:id/background, or null if none/ambiguous. */
+    private fun findBackgroundView(root: View): View? {
+        val found = mutableListOf<View>()
+        fun walk(v: View) {
+            if (found.size > 1) return
+            if (v.id == android.R.id.background) { found.add(v); return }
+            if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(root)
+        return found.singleOrNull()
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
-        if (cornerRadiusDp > 0f) {
-            invalidateOutline()
+        // RemoteViews updates replace the child tree (asynchronously, via the
+        // background executor), which would silently drop the outline clip from
+        // the old background view — re-enforce after every layout so the clip
+        // always lives on the CURRENT card view.
+        if (cornerPercent > 0f) {
+            enforceRoundedCorners()
         }
     }
 

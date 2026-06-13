@@ -58,7 +58,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.bearinmind.launcher314.R
-import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import com.bearinmind.launcher314.data.WIDGET_MAX_PADDING_DP
 import com.bearinmind.launcher314.ui.components.SliderConfigs
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
@@ -132,8 +131,10 @@ fun WidgetCustomizeDialog(
                             RoundedCornerShape(12.dp)
                         )
                 ) {
-                    // Corners track the dialog's own slider (live preview)
-                    val previewCornerDp = cornerPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
+                    // Corners track the dialog's own slider (live preview). Same
+                    // mapping as the real widget clip: percent of the shorter
+                    // side, 100% = full pill (Compose percent shapes: 50 = pill).
+                    val previewCornerShape = RoundedCornerShape((cornerPercent / 2f).roundToInt())
                     val previewPaddingDp = spacing / 100f * WIDGET_MAX_PADDING_DP
                     val previewTextScale = fontScale / 100f
                     // "+" markers sit at grid intersections. Inset the widget
@@ -185,7 +186,7 @@ fun WidgetCustomizeDialog(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(previewPaddingDp.dp)
-                                    .clip(RoundedCornerShape(previewCornerDp.dp))
+                                    .clip(previewCornerShape)
                                     .background(Color.White.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {

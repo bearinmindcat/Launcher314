@@ -319,10 +319,12 @@ fun WidgetsScreen(
                                 onDismissRequest = { showMenu = false },
                                 gapDp = 4
                             ) {
-                                // Sample widget preview
-                                val previewCornerDp = if (widgetRoundedCornersEnabled)
-                                    widgetCornerRadius / 100f * WIDGET_MAX_CORNER_RADIUS_DP
-                                else 0f
+                                // Sample widget preview. Corner mapping matches the
+                                // real widget clip: percent of the shorter side,
+                                // 100% = full pill (Compose percent shapes: 50 = pill).
+                                val previewCornerShape = RoundedCornerShape(
+                                    if (widgetRoundedCornersEnabled) (widgetCornerRadius / 2f).roundToInt() else 0
+                                )
                                 val previewPaddingDp = widgetPadding / 100f * com.bearinmind.launcher314.data.WIDGET_MAX_PADDING_DP
                                 val previewTextScale = widgetFontScale / 100f
                                 // Outer wrapper: "+" markers sit at grid intersections.
@@ -375,7 +377,7 @@ fun WidgetsScreen(
                                             modifier = Modifier
                                                 .fillMaxSize()
                                                 .padding(previewPaddingDp.dp)
-                                                .clip(RoundedCornerShape(previewCornerDp.dp))
+                                                .clip(previewCornerShape)
                                                 .background(Color.White.copy(alpha = 0.12f)),
                                             contentAlignment = Alignment.Center
                                         ) {
