@@ -463,7 +463,35 @@ fun WidgetsScreen(
                                     )
                                 }
 
-                                // Rounded corners toggle
+                                // Corner radius slider — always visible so the
+                                // Corner Roundness (%) reads even when the toggle is
+                                // off; just disabled (greyed) until it's turned on.
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp)
+                                        .padding(bottom = 4.dp)
+                                ) {
+                                    ThumbDragHorizontalSlider(
+                                        currentValue = widgetCornerRadius,
+                                        config = SliderConfigs.cornerRoundness,
+                                        enabled = widgetRoundedCornersEnabled,
+                                        onValueChange = { newVal ->
+                                            widgetCornerRadius = newVal
+                                            setWidgetCornerRadiusPercent(context, newVal.roundToInt())
+                                        },
+                                        onValueChangeFinished = {
+                                            WidgetManager.refreshAllWidgetCorners(context)
+                                        },
+                                        onDoubleTap = {
+                                            widgetCornerRadius = 50f
+                                            setWidgetCornerRadiusPercent(context, 50)
+                                            WidgetManager.refreshAllWidgetCorners(context)
+                                        }
+                                    )
+                                }
+
+                                // Rounded corners on/off — sits BELOW the slider.
                                 DropdownMenuItem(
                                     text = { Text("Rounded corners") },
                                     onClick = {
@@ -485,33 +513,6 @@ fun WidgetsScreen(
                                         )
                                     }
                                 )
-
-                                // Corner radius slider (only when enabled)
-                                if (widgetRoundedCornersEnabled) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 24.dp)
-                                            .padding(bottom = 4.dp)
-                                    ) {
-                                        ThumbDragHorizontalSlider(
-                                            currentValue = widgetCornerRadius,
-                                            config = SliderConfigs.cornerRoundness,
-                                            onValueChange = { newVal ->
-                                                widgetCornerRadius = newVal
-                                                setWidgetCornerRadiusPercent(context, newVal.roundToInt())
-                                            },
-                                            onValueChangeFinished = {
-                                                WidgetManager.refreshAllWidgetCorners(context)
-                                            },
-                                            onDoubleTap = {
-                                                widgetCornerRadius = 50f
-                                                setWidgetCornerRadiusPercent(context, 50)
-                                                WidgetManager.refreshAllWidgetCorners(context)
-                                            }
-                                        )
-                                    }
-                                }
                             }
                         }
                     }

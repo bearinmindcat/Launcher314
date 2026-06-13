@@ -35,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -100,6 +101,12 @@ fun WidgetCustomizeDialog(
     var cornerPercent by remember {
         mutableFloatStateOf((initialCornerRadiusPercent ?: globalCornerRadiusPercent).toFloat())
     }
+    // Per-widget rounded-corners on/off (mirrors the global widgets-menu toggle).
+    // ON = use the slider's radius; OFF = square (0%). Initialized from whether
+    // this widget currently resolves to any rounding.
+    var roundedEnabled by remember {
+        mutableStateOf((initialCornerRadiusPercent ?: globalCornerRadiusPercent) > 0)
+    }
     var slideshowEnabled by remember { mutableStateOf(initialSlideshowEnabled) }
     var slideshowInterval by remember {
         mutableFloatStateOf(initialSlideshowIntervalSec.toFloat())
@@ -131,10 +138,11 @@ fun WidgetCustomizeDialog(
                             RoundedCornerShape(12.dp)
                         )
                 ) {
-                    // Corners track the dialog's own slider (live preview). Same
-                    // mapping as the real widget clip: percent of the shorter
-                    // side, 100% = full pill (Compose percent shapes: 50 = pill).
-                    val previewCornerShape = RoundedCornerShape((cornerPercent / 2f).roundToInt())
+                    // Corners track the dialog's own slider + on/off toggle (live
+                    // preview). Same mapping as the real widget clip: percent of the
+                    // shorter side, 100% = full pill (Compose percent shapes: 50 = pill).
+                    val effPreviewCorner = if (roundedEnabled) cornerPercent else 0f
+                    val previewCornerShape = RoundedCornerShape((effPreviewCorner / 2f).roundToInt())
                     val previewPaddingDp = spacing / 100f * WIDGET_MAX_PADDING_DP
                     val previewTextScale = fontScale / 100f
                     // "+" markers sit at grid intersections. Inset the widget
@@ -354,13 +362,44 @@ fun WidgetCustomizeDialog(
                                         onDoubleTap = { spacing = globalPaddingPercent.toFloat() }
                                     )
                                 }
+                                // Corner Roundness slider — always visible so the %
+                                // reads even when the toggle is off; just disabled
+                                // (greyed) until rounded corners is turned on.
                                 Box(modifier = Modifier.fillMaxWidth()) {
                                     ThumbDragHorizontalSlider(
                                         currentValue = cornerPercent,
                                         config = SliderConfigs.cornerRoundness,
+                                        enabled = roundedEnabled,
                                         onValueChange = { cornerPercent = it },
                                         onValueChangeFinished = { },
                                         onDoubleTap = { cornerPercent = globalCornerRadiusPercent.toFloat() }
+                                    )
+                                }
+                                // Rounded corners on/off — sits BELOW the slider.
+                                // OFF squares this widget; ON enables the slider above.
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "Rounded corners",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.align(Alignment.CenterStart)
+                                    )
+                                    Switch(
+                                        checked = roundedEnabled,
+                                        onCheckedChange = {
+                                            roundedEnabled = it
+                                            // Turning ON with a 0 slider would still
+                                            // be square — seed a sensible radius from
+                                            // the global default (or 50%).
+                                            if (it && cornerPercent <= 0f) {
+                                                cornerPercent =
+                                                    (if (globalCornerRadiusPercent > 0) globalCornerRadiusPercent else 50).toFloat()
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .scale(0.7f)
                                     )
                                 }
                             }
@@ -428,7 +467,8 @@ fun WidgetCustomizeDialog(
                         onClick = {
                             val fs = fontScale.roundToInt()
                             val sp = spacing.roundToInt()
-                            val cr = cornerPercent.roundToInt()
+                            // OFF = explicit square (0%); ON = the slider value.
+                            val cr = if (roundedEnabled) cornerPercent.roundToInt() else 0
                             if (isStack) {
                                 onSaveSlideshow(slideshowEnabled, slideshowInterval.roundToInt())
                             }

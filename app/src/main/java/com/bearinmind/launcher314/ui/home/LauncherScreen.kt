@@ -80,6 +80,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -2621,7 +2622,15 @@ fun LauncherScreen(
                 }
                 val touchSlop = viewConfiguration.touchSlop
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // Detect on the INITIAL (tunneling) pass so the root claims a
+                    // rightward swipe BEFORE the child HorizontalPager. Otherwise
+                    // the pager consumes the drag at page 0 as edge OVERSCROLL
+                    // (the stretch), marking it consumed before this Main-pass
+                    // handler ever runs — which silently killed "swipe right for…"
+                    // around the Compose-pager change in v0.0.15. We only consume
+                    // for a committed rightward drag on page 0, so leftward paging,
+                    // vertical swipes, and the drawer gesture are unaffected.
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     if (pagerState.currentPage != 0) return@awaitEachGesture
                     if (gestureUiCallbacks == null) return@awaitEachGesture
                     // Bail if the touch starts inside the dock — the dock has its
@@ -2646,7 +2655,7 @@ fun LauncherScreen(
                     var maxDx = 0f
                     var committed = false
                     do {
-                        val event = awaitPointerEvent()
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         // Respect consume: if a child handler (a detached icon
                         // being long-press-dragged, the icon-edit drag handler,
