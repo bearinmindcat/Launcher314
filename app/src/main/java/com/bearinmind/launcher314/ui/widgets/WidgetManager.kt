@@ -32,6 +32,9 @@ data class PlacedWidget(
     val stackOrder: Int = 0,      // Order within the stack (0 = first/primary)
     val paddingPercent: Int? = null,  // Per-widget padding override (null = use global)
     val fontScalePercent: Int? = null, // Per-widget text size override (null = use global)
+    // Per-widget corner roundness override (null = use the global rounded-corners
+    // toggle + radius). When set, it wins regardless of the global toggle.
+    val cornerRadiusPercent: Int? = null,
     // Stack slideshow — when enabled, the stack's pager auto-advances to the
     // next widget every `stackSlideshowIntervalSec` seconds. Stored on every
     // widget in the stack (helper keeps them synchronized) so any one of them

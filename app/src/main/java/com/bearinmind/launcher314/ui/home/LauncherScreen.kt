@@ -3191,6 +3191,7 @@ fun LauncherScreen(
 
                                         // State for this widget's context menu
                                         var showWidgetMenu by remember { mutableStateOf(false) }
+                                        var showWidgetCustomize by remember { mutableStateOf(false) }
                                         var currentStackPage by remember { mutableIntStateOf(0) }
                                         val hapticFeedback = rememberHapticFeedback()
 
@@ -3483,9 +3484,13 @@ fun LauncherScreen(
                                             // Calculate effective padding and corner radius for this widget
                                             val effectivePaddingPercent = widget.paddingPercent ?: globalWidgetPaddingPercent
                                             val effectivePaddingDp = (effectivePaddingPercent / 100f * WIDGET_MAX_PADDING_DP).dp
-                                            val effectiveCornerRadiusDp = if (widgetRoundedCornersEnabled) {
-                                                widgetCornerRadiusPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
-                                            } else 0f
+                                            // Per-widget corner override wins regardless of the global
+                                            // toggle; null falls back to the global enabled+radius.
+                                            val effectiveCornerRadiusDp = widget.cornerRadiusPercent
+                                                ?.let { it / 100f * WIDGET_MAX_CORNER_RADIUS_DP }
+                                                ?: if (widgetRoundedCornersEnabled) {
+                                                    widgetCornerRadiusPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
+                                                } else 0f
 
                                             Box(
                                                 modifier = Modifier
@@ -3545,12 +3550,17 @@ fun LauncherScreen(
                                                         showWidgetMenu,
                                                         isWidgetBeingDragged
                                                     ) {
-                                                        if (!slideshowEnabled) {
-                                                            // Make sure the pager isn't left at
-                                                            // alpha 0 if we got cancelled mid-fade.
-                                                            slideshowAlpha.snapTo(1f)
-                                                            return@LaunchedEffect
-                                                        }
+                                                        // ALWAYS restore visibility on (re)start. This
+                                                        // effect restarts whenever a key flips (menu
+                                                        // open/close, slideshow settings change) — if
+                                                        // that restart cancels a fade MID-TRANSITION at
+                                                        // alpha ~0, the stack would stay INVISIBLE until
+                                                        // a future tick completed a full fade cycle
+                                                        // (the "stack is blank until I click around"
+                                                        // bug). Snapping to 1 here makes every restart
+                                                        // begin from a visible pager.
+                                                        slideshowAlpha.snapTo(1f)
+                                                        if (!slideshowEnabled) return@LaunchedEffect
                                                         if (stackWidgets.size <= 1) return@LaunchedEffect
                                                         while (true) {
                                                             kotlinx.coroutines.delay(slideshowIntervalMs)
@@ -3767,162 +3777,22 @@ fun LauncherScreen(
                                                                 }
                                                             )
 
-                                                            // Per-widget text size slider
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .padding(horizontal = 16.dp)
-                                                                    .padding(bottom = 4.dp)
-                                                            ) {
-                                                                ThumbDragHorizontalSlider(
-                                                                    currentValue = (widget.fontScalePercent ?: globalWidgetFontScalePercent).toFloat(),
-                                                                    config = SliderConfigs.widgetTextSize,
-                                                                    onValueChange = { newVal ->
-                                                                        val newPercent = newVal.roundToInt()
-                                                                        val perWidgetValue = if (newPercent == globalWidgetFontScalePercent) null else newPercent
-                                                                        placedWidgets = placedWidgets.map {
-                                                                            if (it.appWidgetId == widget.appWidgetId) {
-                                                                                it.copy(fontScalePercent = perWidgetValue)
-                                                                            } else it
-                                                                        }
-                                                                        WidgetManager.savePlacedWidgets(context, placedWidgets)
-                                                                    },
-                                                                    onValueChangeFinished = {
-                                                                        // Recreate this widget's view so the new font scale takes effect,
-                                                                        // then bump the refresh key so WidgetHostView re-fetches it.
-                                                                        WidgetManager.recreateWidgetView(context, widget.appWidgetId)
-                                                                        widgetViewRefreshKeys = widgetViewRefreshKeys +
-                                                                            (widget.appWidgetId to ((widgetViewRefreshKeys[widget.appWidgetId] ?: 0) + 1))
-                                                                    },
-                                                                    onDoubleTap = {
-                                                                        placedWidgets = placedWidgets.map {
-                                                                            if (it.appWidgetId == widget.appWidgetId) {
-                                                                                it.copy(fontScalePercent = null)
-                                                                            } else it
-                                                                        }
-                                                                        WidgetManager.savePlacedWidgets(context, placedWidgets)
-                                                                        WidgetManager.recreateWidgetView(context, widget.appWidgetId)
-                                                                        widgetViewRefreshKeys = widgetViewRefreshKeys +
-                                                                            (widget.appWidgetId to ((widgetViewRefreshKeys[widget.appWidgetId] ?: 0) + 1))
-                                                                    }
-                                                                )
-                                                            }
+                                                            // (Per-widget text size + spacing sliders
+                                                            // moved into the Customize popup below —
+                                                            // same style as the per-app customize.)
 
-                                                            // Per-widget padding slider
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .padding(horizontal = 16.dp)
-                                                                    .padding(bottom = 4.dp)
-                                                            ) {
-                                                                ThumbDragHorizontalSlider(
-                                                                    currentValue = (widget.paddingPercent ?: globalWidgetPaddingPercent).toFloat(),
-                                                                    config = SliderConfigs.widgetPadding,
-                                                                    onValueChange = { newVal ->
-                                                                        val newPercent = newVal.roundToInt()
-                                                                        val perWidgetValue = if (newPercent == globalWidgetPaddingPercent) null else newPercent
-                                                                        placedWidgets = placedWidgets.map {
-                                                                            if (it.appWidgetId == widget.appWidgetId) {
-                                                                                it.copy(paddingPercent = perWidgetValue)
-                                                                            } else it
-                                                                        }
-                                                                        WidgetManager.savePlacedWidgets(context, placedWidgets)
-                                                                    },
-                                                                    onValueChangeFinished = { },
-                                                                    onDoubleTap = {
-                                                                        placedWidgets = placedWidgets.map {
-                                                                            if (it.appWidgetId == widget.appWidgetId) {
-                                                                                it.copy(paddingPercent = null)
-                                                                            } else it
-                                                                        }
-                                                                        WidgetManager.savePlacedWidgets(context, placedWidgets)
-                                                                    }
-                                                                )
-                                                            }
+                                                            // (Widget slideshow toggle + interval moved
+                                                            // into the Customize popup below, alongside
+                                                            // the text size + spacing sliders.)
 
-                                                            // Widget slideshow toggle + interval
-                                                            // slider — only meaningful for stacks
-                                                            // (auto-flips between members every
-                                                            // N seconds when on). Label sized to
-                                                            // match the slider labels above; the
-                                                            // slider bar is always visible (the
-                                                            // checkbox just gates the auto-advance).
-                                                            if (widget.stackId != null) {
-                                                                // Slider FIRST (label removed via the
-                                                                // config) — the row below with the
-                                                                // "Widget slideshow" text + checkbox
-                                                                // serves as its label and toggle.
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .fillMaxWidth()
-                                                                        .padding(horizontal = 16.dp)
-                                                                        .padding(top = 4.dp)
-                                                                ) {
-                                                                    ThumbDragHorizontalSlider(
-                                                                        currentValue = widget.stackSlideshowIntervalSec.toFloat(),
-                                                                        config = SliderConfigs.widgetSlideshowInterval,
-                                                                        enabled = widget.stackSlideshowEnabled,
-                                                                        onValueChange = { newVal ->
-                                                                            placedWidgets = WidgetManager.setStackSlideshow(
-                                                                                context,
-                                                                                placedWidgets,
-                                                                                widget.stackId!!,
-                                                                                widget.stackSlideshowEnabled,
-                                                                                newVal.roundToInt()
-                                                                            )
-                                                                        },
-                                                                        onValueChangeFinished = { }
-                                                                    )
-                                                                }
-                                                                // Pull the row UP to sit right under
-                                                                // the slider's labeled-ticks, at the
-                                                                // same 4 dp gap the slider's own
-                                                                // built-in label uses (matches the
-                                                                // Widget Spacing / Widget Text Size
-                                                                // label distance). The top padding
-                                                                // on the slider Box above adds 4 dp
-                                                                // before its content, so the row's
-                                                                // own top padding stays 4 dp too.
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .fillMaxWidth()
-                                                                        .padding(horizontal = 16.dp)
-                                                                        .padding(top = 4.dp, bottom = 4.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Widget slideshow",
-                                                                        fontSize = 11.sp,
-                                                                        fontWeight = FontWeight.Medium,
-                                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                                                        textAlign = TextAlign.Center,
-                                                                        modifier = Modifier.align(Alignment.Center)
-                                                                    )
-                                                                    Checkbox(
-                                                                        checked = widget.stackSlideshowEnabled,
-                                                                        onCheckedChange = { newEnabled ->
-                                                                            placedWidgets = WidgetManager.setStackSlideshow(
-                                                                                context,
-                                                                                placedWidgets,
-                                                                                widget.stackId!!,
-                                                                                newEnabled,
-                                                                                widget.stackSlideshowIntervalSec
-                                                                            )
-                                                                        },
-                                                                        modifier = Modifier
-                                                                            .align(Alignment.CenterEnd)
-                                                                            .offset(x = 14.dp)
-                                                                            .scale(0.7f)
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            // Customize option (placeholder — wiring
-                                                            // up in a follow-up; closes the menu
-                                                            // for now so the user can see it lands).
+                                                            // Customize option — opens the per-widget
+                                                            // customize popup (text size + spacing),
+                                                            // same style as the per-app customize.
                                                             DropdownMenuItem(
                                                                 text = { Text("Customize") },
                                                                 onClick = {
                                                                     showWidgetMenu = false
+                                                                    showWidgetCustomize = true
                                                                 },
                                                                 leadingIcon = {
                                                                     Icon(
@@ -3998,6 +3868,48 @@ fun LauncherScreen(
                                                                     }
                                                                 )
                                                             }
+                                                }
+
+                                                // Per-widget customize popup (text size + spacing),
+                                                // same style as the per-app customize dialog.
+                                                if (showWidgetCustomize) {
+                                                    com.bearinmind.launcher314.ui.widgets.WidgetCustomizeDialog(
+                                                        initialFontScalePercent = widget.fontScalePercent,
+                                                        initialPaddingPercent = widget.paddingPercent,
+                                                        globalFontScalePercent = globalWidgetFontScalePercent,
+                                                        globalPaddingPercent = globalWidgetPaddingPercent,
+                                                        initialCornerRadiusPercent = widget.cornerRadiusPercent,
+                                                        // Effective global roundness: 0 when toggle off
+                                                        globalCornerRadiusPercent =
+                                                            if (widgetRoundedCornersEnabled) widgetCornerRadiusPercent else 0,
+                                                        isStack = widget.stackId != null,
+                                                        initialSlideshowEnabled = widget.stackSlideshowEnabled,
+                                                        initialSlideshowIntervalSec = widget.stackSlideshowIntervalSec,
+                                                        onSaveSlideshow = { enabled, intervalSec ->
+                                                            widget.stackId?.let { sid ->
+                                                                placedWidgets = WidgetManager.setStackSlideshow(
+                                                                    context, placedWidgets, sid, enabled, intervalSec
+                                                                )
+                                                            }
+                                                        },
+                                                        onSave = { fs, pad, corner ->
+                                                            placedWidgets = placedWidgets.map {
+                                                                if (it.appWidgetId == widget.appWidgetId) {
+                                                                    it.copy(
+                                                                        fontScalePercent = fs,
+                                                                        paddingPercent = pad,
+                                                                        cornerRadiusPercent = corner
+                                                                    )
+                                                                } else it
+                                                            }
+                                                            WidgetManager.savePlacedWidgets(context, placedWidgets)
+                                                            WidgetManager.recreateWidgetView(context, widget.appWidgetId)
+                                                            widgetViewRefreshKeys = widgetViewRefreshKeys +
+                                                                (widget.appWidgetId to ((widgetViewRefreshKeys[widget.appWidgetId] ?: 0) + 1))
+                                                            showWidgetCustomize = false
+                                                        },
+                                                        onDismiss = { showWidgetCustomize = false }
+                                                    )
                                                 }
                                         }
                                     }

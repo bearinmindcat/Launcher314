@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The single front square of the Material Symbols "stack" icon, re-centered
+     in the viewport — used as the "Widget" section icon (one layer), while
+     ic_stack (two layers) is the "Stack" section icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <group android:translateX="-120" android:translateY="840">
+        <path
+            android:fillColor="@android:color/black"
+            android:pathData="M400,-80q-33,0,-56.5,-23.5T320,-160v-400q0,-33 23.5,-56.5T400,-640h400q33,0 56.5,23.5T880,-560v400q0,33,-23.5,56.5T800,-80H400Zm0,-80h400v-400H400v400Z"/>
+    </group>
+</vector>

@@ -325,14 +325,14 @@ fun WidgetsScreen(
                                 else 0f
                                 val previewPaddingDp = widgetPadding / 100f * com.bearinmind.launcher314.data.WIDGET_MAX_PADDING_DP
                                 val previewTextScale = widgetFontScale / 100f
-                                // Outer wrapper: "+" markers sit at grid intersections
-                                // markerSize is the size of each "+" box; markers are centered on the edge
+                                // Outer wrapper: "+" markers sit at grid intersections.
+                                // Inset the widget area by HALF the marker box so the
+                                // widget's edge lands exactly ON the marker centers —
+                                // at 0% spacing the widget touches the "+" markers,
+                                // matching how a real widget fills its cells at 0%.
                                 val markerSize = 12.dp
                                 val markerHalf = markerSize / 2
-                                // Gap between marker center and widget edge at 0% spacing
-                                val baseGap = 8.dp
-                                // Total inset from outer box edge to widget content area
-                                val widgetInset = markerHalf + baseGap
+                                val widgetInset = markerHalf
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
