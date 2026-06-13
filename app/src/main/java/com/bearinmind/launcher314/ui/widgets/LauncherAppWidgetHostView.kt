@@ -113,6 +113,20 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
         super.setPadding(0, 0, 0, 0)
     }
 
+    // The constructor runs BEFORE the host binds appWidgetId, so the init call
+    // to applyRoundedCorners() can't read the per-widget override. Re-read at the
+    // real binding points so a per-widget setting (incl. an explicit 0%) is
+    // actually picked up.
+    override fun setAppWidget(appWidgetId: Int, info: android.appwidget.AppWidgetProviderInfo?) {
+        super.setAppWidget(appWidgetId, info)
+        applyRoundedCorners(context)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        applyRoundedCorners(context)
+    }
+
     /**
      * Read the user's rounded-corner preference and apply (or remove) clipping.
      */
@@ -156,6 +170,20 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
             clipToOutline = false
             outlineProvider = ViewOutlineProvider.BACKGROUND
             invalidateOutline()
+            // 0% = SHARP if possible. A clip can't square a corner (it only cuts
+            // pixels, can't fill the transparent corner back in), so for the
+            // sharp case we instead flatten the widget's background SHAPE drawable
+            // to cornerRadius 0. Works for GradientDrawable backgrounds (the
+            // standard Android 12 app_widget_background <shape>); widgets whose
+            // background is an image/9-patch/custom canvas keep their baked-in
+            // corners (genuinely can't be squared). mutate() so we don't reshape
+            // other widgets sharing the drawable's constant state.
+            findBackgroundView(this)?.background?.let { d ->
+                findGradientDrawable(d)?.let { shape ->
+                    shape.mutate()
+                    shape.cornerRadius = 0f
+                }
+            }
             return
         }
 
@@ -190,15 +218,27 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
         return found.singleOrNull()
     }
 
+    /** Dig a GradientDrawable out of common wrappers (Inset/Layer/Ripple), or null. */
+    private fun findGradientDrawable(d: android.graphics.drawable.Drawable): android.graphics.drawable.GradientDrawable? {
+        when (d) {
+            is android.graphics.drawable.GradientDrawable -> return d
+            is android.graphics.drawable.InsetDrawable -> d.drawable?.let { return findGradientDrawable(it) }
+            is android.graphics.drawable.RippleDrawable ->
+                for (i in 0 until d.numberOfLayers) d.getDrawable(i)?.let { findGradientDrawable(it) }?.let { return it }
+            is android.graphics.drawable.LayerDrawable ->
+                for (i in d.numberOfLayers - 1 downTo 0) d.getDrawable(i)?.let { findGradientDrawable(it) }?.let { return it }
+        }
+        return null
+    }
+
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
         // RemoteViews updates replace the child tree (asynchronously, via the
         // background executor), which would silently drop the outline clip from
-        // the old background view — re-enforce after every layout so the clip
-        // always lives on the CURRENT card view.
-        if (cornerPercent > 0f) {
-            enforceRoundedCorners()
-        }
+        // the old background view — re-enforce after EVERY layout (incl. 0%) so a
+        // non-zero radius re-attaches to the current card AND a 0% setting
+        // re-flattens the freshly-inflated shape drawable to stay sharp.
+        enforceRoundedCorners()
     }
 
     /**

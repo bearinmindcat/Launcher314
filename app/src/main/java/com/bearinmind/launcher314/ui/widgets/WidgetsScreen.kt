@@ -412,6 +412,57 @@ fun WidgetsScreen(
                                     }
                                 }
 
+                                // Order matches the per-widget customize popup:
+                                // Text Size → Spacing → Corner Roundness.
+
+                                // Widget text size slider
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp)
+                                        .padding(bottom = 4.dp)
+                                ) {
+                                    ThumbDragHorizontalSlider(
+                                        currentValue = widgetFontScale,
+                                        config = SliderConfigs.widgetTextSize,
+                                        onValueChange = { newVal ->
+                                            widgetFontScale = newVal
+                                            setWidgetFontScalePercent(context, newVal.roundToInt())
+                                        },
+                                        onValueChangeFinished = {
+                                            // Recreate all widget views with new font scale
+                                            WidgetManager.recreateAllWidgetViews(context)
+                                        },
+                                        onDoubleTap = {
+                                            widgetFontScale = 100f
+                                            setWidgetFontScalePercent(context, 100)
+                                            WidgetManager.recreateAllWidgetViews(context)
+                                        }
+                                    )
+                                }
+
+                                // Widget padding (spacing) slider
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp)
+                                        .padding(bottom = 4.dp)
+                                ) {
+                                    ThumbDragHorizontalSlider(
+                                        currentValue = widgetPadding,
+                                        config = SliderConfigs.widgetPadding,
+                                        onValueChange = { newVal ->
+                                            widgetPadding = newVal
+                                            setWidgetPaddingPercent(context, newVal.roundToInt())
+                                        },
+                                        onValueChangeFinished = { },
+                                        onDoubleTap = {
+                                            widgetPadding = 0f
+                                            setWidgetPaddingPercent(context, 0)
+                                        }
+                                    )
+                                }
+
                                 // Rounded corners toggle
                                 DropdownMenuItem(
                                     text = { Text("Rounded corners") },
@@ -460,54 +511,6 @@ fun WidgetsScreen(
                                             }
                                         )
                                     }
-                                }
-
-                                // Widget text size slider
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 24.dp)
-                                        .padding(bottom = 4.dp)
-                                ) {
-                                    ThumbDragHorizontalSlider(
-                                        currentValue = widgetFontScale,
-                                        config = SliderConfigs.widgetTextSize,
-                                        onValueChange = { newVal ->
-                                            widgetFontScale = newVal
-                                            setWidgetFontScalePercent(context, newVal.roundToInt())
-                                        },
-                                        onValueChangeFinished = {
-                                            // Recreate all widget views with new font scale
-                                            WidgetManager.recreateAllWidgetViews(context)
-                                        },
-                                        onDoubleTap = {
-                                            widgetFontScale = 100f
-                                            setWidgetFontScalePercent(context, 100)
-                                            WidgetManager.recreateAllWidgetViews(context)
-                                        }
-                                    )
-                                }
-
-                                // Widget padding slider
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 24.dp)
-                                        .padding(bottom = 4.dp)
-                                ) {
-                                    ThumbDragHorizontalSlider(
-                                        currentValue = widgetPadding,
-                                        config = SliderConfigs.widgetPadding,
-                                        onValueChange = { newVal ->
-                                            widgetPadding = newVal
-                                            setWidgetPaddingPercent(context, newVal.roundToInt())
-                                        },
-                                        onValueChangeFinished = { },
-                                        onDoubleTap = {
-                                            widgetPadding = 0f
-                                            setWidgetPaddingPercent(context, 0)
-                                        }
-                                    )
                                 }
                             }
                         }
