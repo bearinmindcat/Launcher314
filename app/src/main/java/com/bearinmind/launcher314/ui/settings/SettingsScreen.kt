@@ -718,7 +718,7 @@ fun SettingsScreen(
             SettingsSection(title = "Development Information") {
                 SettingsClickableItem(
                     title = "Version",
-                    subtitle = "v0.0.16-beta",
+                    subtitle = "v0.0.17-beta",
                     onClick = { }
                 )
                 SettingsClickableItem(
