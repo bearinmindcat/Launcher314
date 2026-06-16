@@ -8,9 +8,13 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -38,6 +42,10 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -1389,23 +1397,33 @@ internal fun SelectableAppItem(
             }
         }
 
+        // Live filter text for the folder search bar inside the fly-out panel.
+        var folderSearchQuery by remember { mutableStateOf("") }
+
         // The folder-expanded flag is SHARED across all menus, so it can be left
         // true from a previous interaction — which would open this menu already
         // widened. Reset it to collapsed every time this menu opens, so the popup
         // is its normal width until the user actually taps "Folder".
         LaunchedEffect(showContextMenu) {
-            if (showContextMenu) onFolderMenuExpandedChange(false)
+            if (showContextMenu) {
+                onFolderMenuExpandedChange(false)
+                folderSearchQuery = ""
+            }
         }
 
         // Single app context menu dropdown. The base menu (225dp) stays fixed in
         // place; when the Folder section is opened a panel flies out to the RIGHT
         // of it without moving or re-rendering the base menu. xAnchorWidthDp pins
         // the popup's position to the 225dp base so the extra width grows rightward.
-        // The fly-out panel is kept narrow and the total width is clamped to the
-        // screen so the expanded popup never runs edge-to-edge.
-        val folderPanelW = 170f
+        // The fly-out panel grows as wide as fits beside the 225dp base, capped at
+        // 230dp — the same width as the folder "resize" section — for readability.
+        // An 8dp margin is kept on BOTH screen edges so the wide popup never runs
+        // flush to an edge; folderPanelW / menuMaxW are sized to respect it.
+        val popupEdgeMargin = 8f
         val screenWdp = LocalConfiguration.current.screenWidthDp.toFloat()
-        val menuMaxW = (225f + 1f + folderPanelW).coerceAtMost(screenWdp - 16f)
+        val menuAvail = screenWdp - popupEdgeMargin * 2f
+        val folderPanelW = (menuAvail - 226f).coerceIn(150f, 230f)
+        val menuMaxW = (226f + folderPanelW).coerceAtMost(menuAvail)
         val menuDensity = LocalDensity.current
         // Measured height of the fixed base menu. The fly-out panel is capped to
         // this so opening Folder can ONLY widen the popup — never make it taller.
@@ -1415,7 +1433,8 @@ internal fun SelectableAppItem(
                 onDismissRequest = { showContextMenu = false },
                 iconBoundsInRoot = drawerIconBoundsInRoot,
                 maxWidthDp = menuMaxW.toInt(),
-                xAnchorWidthDp = 225
+                xAnchorWidthDp = 225,
+                edgeMarginDp = popupEdgeMargin.toInt()
             ) {
                         // Two-column body. The LEFT column is the fixed 225dp base
                         // menu (header + actions) — it never resizes or re-lays-out
@@ -1523,14 +1542,26 @@ internal fun SelectableAppItem(
                             // flying out beside the untouched base menu.
                             AnimatedVisibility(
                                 visible = isFolderMenuExpanded,
+                                // Springy fly-out to match the app's other fluid
+                                // animations — a soft bounce on open, settle on close.
                                 enter = expandHorizontally(
-                                    animationSpec = tween(260),
+                                    animationSpec = spring(
+                                        dampingRatio = 0.72f,
+                                        stiffness = Spring.StiffnessMediumLow,
+                                        visibilityThreshold = IntSize.VisibilityThreshold
+                                    ),
                                     expandFrom = Alignment.Start
-                                ) + fadeIn(animationSpec = tween(260)),
+                                ) + fadeIn(
+                                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                ),
                                 exit = shrinkHorizontally(
-                                    animationSpec = tween(200),
+                                    animationSpec = spring(
+                                        dampingRatio = 0.9f,
+                                        stiffness = Spring.StiffnessMedium,
+                                        visibilityThreshold = IntSize.VisibilityThreshold
+                                    ),
                                     shrinkTowards = Alignment.Start
-                                ) + fadeOut(animationSpec = tween(150))
+                                ) + fadeOut(animationSpec = tween(120))
                             ) {
                                 // Cap the whole panel to the base menu's height so the
                                 // popup can only grow sideways — the folder list scrolls
@@ -1553,36 +1584,107 @@ internal fun SelectableAppItem(
                                             .width(folderPanelW.dp)
                                             .fillMaxHeight()
                                     ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Create folder") },
-                                            onClick = {
-                                                showContextMenu = false
-                                                onCreateFolderWithApps(listOf(app))
-                                            },
-                                            leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) }
-                                        )
-                                        if (folders.isNotEmpty()) {
-                                            Text(
-                                                text = "Move to",
-                                                fontSize = 12.sp,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
-                                            )
-                                            // Folder list fills the remaining height inside
-                                            // the base-capped panel and scrolls for overflow.
-                                            Column(
-                                                modifier = (
-                                                    if (baseMenuHeightDp > 0.dp) Modifier.weight(1f, fill = false)
-                                                    else Modifier.heightIn(max = 190.dp)
-                                                ).verticalScroll(rememberScrollState())
+                                        // Top row: a mini search bar to filter folders,
+                                        // with the "Create folder" action reduced to just
+                                        // its icon on the trailing end.
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(start = 8.dp, end = 2.dp, top = 8.dp, bottom = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(36.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                                                    .padding(horizontal = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                folders.forEach { folder ->
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Search,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Box(
+                                                    modifier = Modifier.weight(1f),
+                                                    contentAlignment = Alignment.CenterStart
+                                                ) {
+                                                    if (folderSearchQuery.isEmpty()) {
+                                                        Text(
+                                                            text = "Search",
+                                                            fontSize = 13.sp,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                                        )
+                                                    }
+                                                    BasicTextField(
+                                                        value = folderSearchQuery,
+                                                        onValueChange = { folderSearchQuery = it },
+                                                        singleLine = true,
+                                                        textStyle = TextStyle(
+                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                            fontSize = 13.sp
+                                                        ),
+                                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    )
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    showContextMenu = false
+                                                    onCreateFolderWithApps(listOf(app))
+                                                },
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.CreateNewFolder,
+                                                    contentDescription = "Create folder",
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                        }
+
+                                        // Folder list (filtered by the search) fills the
+                                        // remaining height inside the base-capped panel and
+                                        // scrolls for overflow.
+                                        val visibleFolders = folders.filter {
+                                            it.name.contains(folderSearchQuery.trim(), ignoreCase = true)
+                                        }
+                                        Column(
+                                            modifier = (
+                                                if (baseMenuHeightDp > 0.dp) Modifier.weight(1f, fill = false)
+                                                else Modifier.heightIn(max = 190.dp)
+                                            )
+                                                .fillMaxWidth()
+                                                .verticalScroll(rememberScrollState())
+                                        ) {
+                                            if (visibleFolders.isEmpty()) {
+                                                Text(
+                                                    text = if (folders.isEmpty()) "No folders yet" else "No matches",
+                                                    fontSize = 12.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                                                )
+                                            } else {
+                                                visibleFolders.forEach { folder ->
                                                     Row(
                                                         modifier = Modifier.fillMaxWidth(),
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
                                                         DropdownMenuItem(
-                                                            text = { Text(folder.name) },
+                                                            text = {
+                                                                Text(
+                                                                    folder.name,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            },
                                                             onClick = {
                                                                 showContextMenu = false
                                                                 onAddToFolder(folder)

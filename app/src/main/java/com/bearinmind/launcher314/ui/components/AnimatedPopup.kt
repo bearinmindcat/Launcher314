@@ -39,6 +39,9 @@ private class ArrowPopupPositionProvider(
     // the right (e.g. a fly-out panel) WITHOUT the base region shifting — it
     // stays anchored under the icon. Clamping still uses the real width.
     private val xAnchorWidthPx: Int? = null,
+    // Minimum gap kept between the popup and the left/right screen edges so a
+    // wide popup never runs flush to (or past) an edge.
+    private val edgeMarginPx: Int = 0,
     private val onPlacement: (isAbove: Boolean, arrowXPx: Float) -> Unit
 ) : PopupPositionProvider {
     override fun calculatePosition(
@@ -74,7 +77,10 @@ private class ArrowPopupPositionProvider(
         // the right; clamp still uses the real width so it never runs off-screen.
         val centerWidth = (xAnchorWidthPx ?: popupContentSize.width).toFloat()
         val x = (anchorCenterX - centerWidth / 2f).toInt()
-        val clampedX = x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
+        // Keep an edge margin on BOTH sides; if the popup is too wide to honor
+        // both, fall back to pinning at the left margin.
+        val maxX = (windowSize.width - popupContentSize.width - edgeMarginPx)
+        val clampedX = x.coerceIn(edgeMarginPx, maxX.coerceAtLeast(edgeMarginPx))
 
         val gap = gapPx
         val belowY = iconBottom + gap
@@ -118,6 +124,8 @@ fun AnimatedPopup(
     // region stays anchored under the icon while wider content (a fly-out
     // panel) grows to the right rather than re-centering the whole popup.
     xAnchorWidthDp: Int? = null,
+    // Minimum gap kept between the popup and the left/right screen edges.
+    edgeMarginDp: Int = 0,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val density = LocalDensity.current
@@ -141,11 +149,13 @@ fun AnimatedPopup(
         val useArrow = popupPositionProvider == null
         val gapPx = with(density) { gapDp.dp.roundToPx() }
         val xAnchorWidthPx = xAnchorWidthDp?.let { with(density) { it.dp.roundToPx() } }
-        val provider = popupPositionProvider ?: remember(iconBoundsInRoot, gapPx, xAnchorWidthPx) {
+        val edgeMarginPx = with(density) { edgeMarginDp.dp.roundToPx() }
+        val provider = popupPositionProvider ?: remember(iconBoundsInRoot, gapPx, xAnchorWidthPx, edgeMarginPx) {
             ArrowPopupPositionProvider(
                 iconBoundsInRoot = iconBoundsInRoot,
                 gapPx = gapPx,
-                xAnchorWidthPx = xAnchorWidthPx
+                xAnchorWidthPx = xAnchorWidthPx,
+                edgeMarginPx = edgeMarginPx
             ) { above, x ->
                 isAbove = above
                 arrowXPx = x
