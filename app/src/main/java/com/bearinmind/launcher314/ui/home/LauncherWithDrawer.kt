@@ -22,9 +22,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -1025,12 +1025,47 @@ fun LauncherWithDrawer(
                             return@awaitEachGesture
                         }
 
-                        // Own the gesture — replicate detectVerticalDragGestures logic.
+                        // Own the gesture only when it is clearly VERTICAL — the
+                        // Launcher3 / Lawnchair "single-axis" rule. The built-in
+                        // awaitVerticalTouchSlopOrCancellation fires the instant the
+                        // vertical component alone crosses slop, with NO comparison to
+                        // horizontal travel, so a mostly-sideways diagonal (e.g. a page
+                        // swipe on an edge page, or a flick toward the status bar) could
+                        // hijack the drawer / notification gesture — the "diagonal feels
+                        // off vs One UI" problem.
+                        //
+                        // Instead, accumulate total dx/dy WITHOUT consuming until the
+                        // travel passes slop, then commit to the drawer ONLY if the
+                        // vertical travel dominates (|dy| > |dx|). If horizontal wins,
+                        // bail without consuming so the HorizontalPager (a CHILD, so it
+                        // sees events first) keeps the gesture cleanly. If a child has
+                        // already consumed the move, defer to it.
                         var overSlop = 0f
-                        val drag = awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
-                            change.consume()
-                            overSlop = over
-                        } ?: return@awaitEachGesture
+                        val touchSlop = viewConfiguration.touchSlop
+                        var accumDx = 0f
+                        var accumDy = 0f
+                        var committedDrag: PointerInputChange? = null
+                        while (committedDrag == null) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                                ?: return@awaitEachGesture
+                            if (!change.pressed) return@awaitEachGesture        // released before slop
+                            if (change.isConsumed) return@awaitEachGesture      // child (pager) owns it
+                            accumDx += change.positionChange().x
+                            accumDy += change.positionChange().y
+                            if (accumDx * accumDx + accumDy * accumDy > touchSlop * touchSlop) {
+                                if (kotlin.math.abs(accumDy) > kotlin.math.abs(accumDx)) {
+                                    // Vertical dominates — take the gesture.
+                                    overSlop = accumDy
+                                    change.consume()
+                                    committedDrag = change
+                                } else {
+                                    // Horizontal dominates — let the pager have it.
+                                    return@awaitEachGesture
+                                }
+                            }
+                        }
+                        val drag = committedDrag
 
                         // INTENT LOCKED BY INITIAL DIRECTION (the home gesture only
                         // runs while the drawer is closed, so up = open-drawer, down =
