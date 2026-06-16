@@ -288,10 +288,12 @@ internal fun MainDrawerContent(
 
                 // If not hovering a folder, check if hovering another app (for folder creation)
                 if (hoveredFolderKey == null) {
+                    // Cell keys are "app_<pkg>_u<serial>", so compare the full key of
+                    // the dragged app rather than a bare package name.
+                    val draggedKey = "app_${draggedPkg}_u${(drawerDraggedItem as AppInfo).userSerial ?: 0}"
                     hoveredFolderKey = drawerCellPositions.entries.firstOrNull { (key, pos) ->
                         if (!key.startsWith("app_")) return@firstOrNull false
-                        val hoveredPkg = key.removePrefix("app_")
-                        if (hoveredPkg == draggedPkg) return@firstOrNull false // Can't drop on self
+                        if (key == draggedKey) return@firstOrNull false // Can't drop on self
                         val size = drawerCellSizes[key] ?: return@firstOrNull false
                         val bounds = Rect(pos.x, pos.y, pos.x + size.width.toFloat(), pos.y + size.height.toFloat())
                         bounds.contains(overlayCenter)
@@ -323,9 +325,15 @@ internal fun MainDrawerContent(
             val isAppDrop = hoveredFolderKey!!.startsWith("app_")
 
             if (isAppDrop) {
-                // Finger lifted on another app — create a new folder with both apps
-                val targetPkg = hoveredFolderKey!!.removePrefix("app_")
-                val targetApp = filteredApps.find { it.packageName == targetPkg }
+                // Finger lifted on another app — create a new folder with both apps.
+                // Match the FULL cell key ("app_<pkg>_u<serial>") so the right app
+                // (incl. work-profile copies) is found; bare-package matching here
+                // was the reason the merge silently never fired.
+                val targetApp = allApps.firstOrNull {
+                    "app_${it.packageName}_u${it.userSerial ?: 0}" == hoveredFolderKey
+                } ?: filteredApps.firstOrNull {
+                    "app_${it.packageName}_u${it.userSerial ?: 0}" == hoveredFolderKey
+                }
                 val targetPos = drawerCellPositions[hoveredFolderKey!!] ?: Offset.Zero
                 val targetSize = drawerCellSizes[hoveredFolderKey!!] ?: IntSize.Zero
                 folderDropTargetPos = Offset(
