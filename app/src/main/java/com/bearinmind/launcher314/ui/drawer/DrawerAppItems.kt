@@ -1,14 +1,21 @@
 package com.bearinmind.launcher314.ui.drawer
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -889,21 +896,29 @@ internal fun FolderAppItem(
                                     )
 
                                     // List other folders with drive_file_move icon
-                                    otherFolders.forEach { folder ->
-                                        DropdownMenuItem(
-                                            text = { Text(folder.name) },
-                                            onClick = {
-                                                showContextMenu = false
-                                                onMoveToFolder(folder)
-                                            },
-                                            leadingIcon = {
-                                                Icon(
-                                                    painter = painterResource(R.drawable.ic_drive_file_move),
-                                                    contentDescription = null
-                                                )
-                                            },
-                                            modifier = Modifier.padding(start = 16.dp)
-                                        )
+                                    val moveListMaxHeight =
+                                        (LocalConfiguration.current.screenHeightDp * 0.40f).dp
+                                    Column(
+                                        modifier = Modifier
+                                            .heightIn(max = moveListMaxHeight)
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        otherFolders.forEach { folder ->
+                                            DropdownMenuItem(
+                                                text = { Text(folder.name) },
+                                                onClick = {
+                                                    showContextMenu = false
+                                                    onMoveToFolder(folder)
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        painter = painterResource(R.drawable.ic_drive_file_move),
+                                                        contentDescription = null
+                                                    )
+                                                },
+                                                modifier = Modifier.padding(start = 16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -982,16 +997,24 @@ internal fun FolderAppItem(
                                     )
 
                                     // List other folders
-                                    otherFolders.forEach { folder ->
-                                        DropdownMenuItem(
-                                            text = { Text(folder.name) },
-                                            onClick = {
-                                                showBulkMenu = false
-                                                onBulkMoveToFolder(folder)
-                                            },
-                                            leadingIcon = { Icon(painter = painterResource(R.drawable.ic_drive_file_move), contentDescription = null) },
-                                            modifier = Modifier.padding(start = 16.dp)
-                                        )
+                                    val bulkMoveListMaxHeight =
+                                        (LocalConfiguration.current.screenHeightDp * 0.40f).dp
+                                    Column(
+                                        modifier = Modifier
+                                            .heightIn(max = bulkMoveListMaxHeight)
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        otherFolders.forEach { folder ->
+                                            DropdownMenuItem(
+                                                text = { Text(folder.name) },
+                                                onClick = {
+                                                    showBulkMenu = false
+                                                    onBulkMoveToFolder(folder)
+                                                },
+                                                leadingIcon = { Icon(painter = painterResource(R.drawable.ic_drive_file_move), contentDescription = null) },
+                                                modifier = Modifier.padding(start = 16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1366,168 +1389,223 @@ internal fun SelectableAppItem(
             }
         }
 
-        // Single app context menu dropdown
+        // The folder-expanded flag is SHARED across all menus, so it can be left
+        // true from a previous interaction — which would open this menu already
+        // widened. Reset it to collapsed every time this menu opens, so the popup
+        // is its normal width until the user actually taps "Folder".
+        LaunchedEffect(showContextMenu) {
+            if (showContextMenu) onFolderMenuExpandedChange(false)
+        }
+
+        // Single app context menu dropdown. The base menu (225dp) stays fixed in
+        // place; when the Folder section is opened a panel flies out to the RIGHT
+        // of it without moving or re-rendering the base menu. xAnchorWidthDp pins
+        // the popup's position to the 225dp base so the extra width grows rightward.
+        // The fly-out panel is kept narrow and the total width is clamped to the
+        // screen so the expanded popup never runs edge-to-edge.
+        val folderPanelW = 170f
+        val screenWdp = LocalConfiguration.current.screenWidthDp.toFloat()
+        val menuMaxW = (225f + 1f + folderPanelW).coerceAtMost(screenWdp - 16f)
+        val menuDensity = LocalDensity.current
+        // Measured height of the fixed base menu. The fly-out panel is capped to
+        // this so opening Folder can ONLY widen the popup — never make it taller.
+        var baseMenuHeightPx by remember { mutableStateOf(0) }
             AnimatedPopup(
                 visible = showContextMenu && drawerIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
                 onDismissRequest = { showContextMenu = false },
-                iconBoundsInRoot = drawerIconBoundsInRoot
+                iconBoundsInRoot = drawerIconBoundsInRoot,
+                maxWidthDp = menuMaxW.toInt(),
+                xAnchorWidthDp = 225
             ) {
-                        // App name header with app info shortcut
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 48.dp)
-                                .padding(horizontal = 16.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Text(
-                                text = app.name,
-                                fontWeight = FontWeight.Bold,
-                                lineHeight = 22.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(end = 28.dp)
-                            )
-                            Box(
+                        // Two-column body. The LEFT column is the fixed 225dp base
+                        // menu (header + actions) — it never resizes or re-lays-out
+                        // when the Folder panel opens, so it visually "stays there".
+                        // The RIGHT folder panel is an AnimatedVisibility sibling that
+                        // expands/collapses horizontally (fly-out), so only IT animates
+                        // in and out — the same fluid primitive used elsewhere.
+                        Row {
+                            Column(
                                 modifier = Modifier
-                                    .align(Alignment.CenterEnd)
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .clickable {
-                                        showContextMenu = false
-                                        onAppInfo()
-                                    },
-                                contentAlignment = Alignment.Center
+                                    .width(225.dp)
+                                    .onSizeChanged { baseMenuHeightPx = it.height }
                             ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Info,
-                                    contentDescription = "App info"
-                                )
-                            }
-                        }
-                        Divider()
-
-                        // 1. Add to home
-                        DropdownMenuItem(
-                            text = { Text("Add to home") },
-                            onClick = {
-                                showContextMenu = false
-                                onAddToHome()
-                            },
-                            leadingIcon = { Icon(Icons.Outlined.Home, contentDescription = null) }
-                        )
-
-                        // 2. Select
-                        DropdownMenuItem(
-                            text = { Text(if (isSelected) "Deselect" else "Select") },
-                            onClick = {
-                                showContextMenu = false
-                                onSelectToggle()
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = if (isSelected) Icons.Outlined.Check else Icons.Outlined.Circle,
-                                    contentDescription = null
-                                )
-                            }
-                        )
-
-                        // 3. Uninstall
-                        DropdownMenuItem(
-                            text = { Text("Uninstall") },
-                            onClick = {
-                                showContextMenu = false
-                                onUninstall()
-                            },
-                            leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
-                        )
-
-                        // 4. Customize
-                        DropdownMenuItem(
-                            text = { Text("Customize") },
-                            onClick = {
-                                showContextMenu = false
-                                onCustomize()
-                            },
-                            leadingIcon = { Icon(imageVector = Icons.Outlined.Edit, contentDescription = null) }
-                        )
-
-                        // 5. Folder section - expandable (uses global state)
-                        DropdownMenuItem(
-                            text = { Text("Folder") },
-                            onClick = { onFolderMenuExpandedChange(!isFolderMenuExpanded) },
-                            leadingIcon = {
-                                if (isFolderMenuExpanded) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_folder_open),
-                                        contentDescription = null
+                                // App name header with app info shortcut
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .padding(horizontal = 16.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Text(
+                                        text = app.name,
+                                        fontWeight = FontWeight.Bold,
+                                        lineHeight = 22.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(end = 28.dp)
                                     )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Folder,
-                                        contentDescription = null
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .clickable {
+                                                showContextMenu = false
+                                                onAppInfo()
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Info,
+                                            contentDescription = "App info"
+                                        )
+                                    }
                                 }
-                            }
-                        )
+                                Divider()
 
-                        // Expanded folder options — animate in/out
-                        AnimatedVisibility(
-                            visible = isFolderMenuExpanded,
-                            enter = expandVertically(tween(250)) + fadeIn(tween(250)),
-                            exit = shrinkVertically(tween(200)) + fadeOut(tween(200))
-                        ) {
-                            Column {
-                                // Create folder option - passes current app to be moved to new folder
+                                // 1. Add to home
                                 DropdownMenuItem(
-                                    text = { Text("Create folder") },
+                                    text = { Text("Add to home") },
                                     onClick = {
                                         showContextMenu = false
-                                        onCreateFolderWithApps(listOf(app))
+                                        onAddToHome()
                                     },
-                                    leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
-                                    modifier = Modifier.padding(start = 16.dp)
+                                    leadingIcon = { Icon(Icons.Outlined.Home, contentDescription = null) }
                                 )
+                                // 2. Select
+                                DropdownMenuItem(
+                                    text = { Text(if (isSelected) "Deselect" else "Select") },
+                                    onClick = {
+                                        showContextMenu = false
+                                        onSelectToggle()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (isSelected) Icons.Outlined.Check else Icons.Outlined.Circle,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                                // 3. Uninstall
+                                DropdownMenuItem(
+                                    text = { Text("Uninstall") },
+                                    onClick = {
+                                        showContextMenu = false
+                                        onUninstall()
+                                    },
+                                    leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) }
+                                )
+                                // 4. Customize
+                                DropdownMenuItem(
+                                    text = { Text("Customize") },
+                                    onClick = {
+                                        showContextMenu = false
+                                        onCustomize()
+                                    },
+                                    leadingIcon = { Icon(imageVector = Icons.Outlined.Edit, contentDescription = null) }
+                                )
+                                // 5. Folder section toggle (panel flies out to the right)
+                                DropdownMenuItem(
+                                    text = { Text("Folder") },
+                                    onClick = { onFolderMenuExpandedChange(!isFolderMenuExpanded) },
+                                    leadingIcon = {
+                                        if (isFolderMenuExpanded) {
+                                            Icon(painter = painterResource(R.drawable.ic_folder_open), contentDescription = null)
+                                        } else {
+                                            Icon(imageVector = Icons.Outlined.Folder, contentDescription = null)
+                                        }
+                                    }
+                                )
+                            }
 
-                                // Move to section header
-                                if (folders.isNotEmpty()) {
-                                    Text(
-                                        text = "Move to",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                        modifier = Modifier.padding(start = 32.dp, top = 8.dp, bottom = 4.dp)
+                            // RIGHT panel — only this animates in/out (horizontally),
+                            // flying out beside the untouched base menu.
+                            AnimatedVisibility(
+                                visible = isFolderMenuExpanded,
+                                enter = expandHorizontally(
+                                    animationSpec = tween(260),
+                                    expandFrom = Alignment.Start
+                                ) + fadeIn(animationSpec = tween(260)),
+                                exit = shrinkHorizontally(
+                                    animationSpec = tween(200),
+                                    shrinkTowards = Alignment.Start
+                                ) + fadeOut(animationSpec = tween(150))
+                            ) {
+                                // Cap the whole panel to the base menu's height so the
+                                // popup can only grow sideways — the folder list scrolls
+                                // within whatever room the base menu provides.
+                                val baseMenuHeightDp =
+                                    if (baseMenuHeightPx > 0) with(menuDensity) { baseMenuHeightPx.toDp() }
+                                    else 0.dp
+                                Row(
+                                    modifier = if (baseMenuHeightDp > 0.dp) Modifier.height(baseMenuHeightDp)
+                                               else Modifier
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(1.dp)
+                                            .fillMaxHeight()
+                                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                                     )
-
-                                    // List all folders with delete button
-                                    folders.forEach { folder ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(start = 16.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text(folder.name) },
-                                                onClick = {
-                                                    showContextMenu = false
-                                                    onAddToFolder(folder)
-                                                },
-                                                leadingIcon = { Icon(painter = painterResource(R.drawable.ic_drive_file_move), contentDescription = null) },
-                                                modifier = Modifier.weight(1f)
+                                    Column(
+                                        modifier = Modifier
+                                            .width(folderPanelW.dp)
+                                            .fillMaxHeight()
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Create folder") },
+                                            onClick = {
+                                                showContextMenu = false
+                                                onCreateFolderWithApps(listOf(app))
+                                            },
+                                            leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) }
+                                        )
+                                        if (folders.isNotEmpty()) {
+                                            Text(
+                                                text = "Move to",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
                                             )
-                                            IconButton(
-                                                onClick = {
-                                                    showContextMenu = false
-                                                    folderToDeleteFromMenu = folder
-                                                },
-                                                modifier = Modifier.size(36.dp)
+                                            // Folder list fills the remaining height inside
+                                            // the base-capped panel and scrolls for overflow.
+                                            Column(
+                                                modifier = (
+                                                    if (baseMenuHeightDp > 0.dp) Modifier.weight(1f, fill = false)
+                                                    else Modifier.heightIn(max = 190.dp)
+                                                ).verticalScroll(rememberScrollState())
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Delete,
-                                                    contentDescription = "Delete folder",
-                                                    modifier = Modifier.size(20.dp),
-                                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                                )
+                                                folders.forEach { folder ->
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        DropdownMenuItem(
+                                                            text = { Text(folder.name) },
+                                                            onClick = {
+                                                                showContextMenu = false
+                                                                onAddToFolder(folder)
+                                                            },
+                                                            leadingIcon = { Icon(painter = painterResource(R.drawable.ic_drive_file_move), contentDescription = null) },
+                                                            modifier = Modifier.weight(1f)
+                                                        )
+                                                        IconButton(
+                                                            onClick = {
+                                                                showContextMenu = false
+                                                                folderToDeleteFromMenu = folder
+                                                            },
+                                                            modifier = Modifier.size(36.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Outlined.Delete,
+                                                                contentDescription = "Delete folder",
+                                                                modifier = Modifier.size(20.dp),
+                                                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1638,17 +1716,26 @@ internal fun SelectableAppItem(
                                         modifier = Modifier.padding(start = 32.dp, top = 8.dp, bottom = 4.dp)
                                     )
 
-                                    // List all folders
-                                    folders.forEach { folder ->
-                                        DropdownMenuItem(
-                                            text = { Text(folder.name) },
-                                            onClick = {
-                                                showBulkMenu = false
-                                                onBulkAddToFolder(folder)
-                                            },
-                                            leadingIcon = { Icon(painter = painterResource(R.drawable.ic_drive_file_move), contentDescription = null) },
-                                            modifier = Modifier.padding(start = 16.dp)
-                                        )
+                                    // List all folders — capped + scrollable so a long
+                                    // list stays on-screen (same fix as the single-app menu).
+                                    val bulkFolderListMaxHeight =
+                                        (LocalConfiguration.current.screenHeightDp * 0.40f).dp
+                                    Column(
+                                        modifier = Modifier
+                                            .heightIn(max = bulkFolderListMaxHeight)
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        folders.forEach { folder ->
+                                            DropdownMenuItem(
+                                                text = { Text(folder.name) },
+                                                onClick = {
+                                                    showBulkMenu = false
+                                                    onBulkAddToFolder(folder)
+                                                },
+                                                leadingIcon = { Icon(painter = painterResource(R.drawable.ic_drive_file_move), contentDescription = null) },
+                                                modifier = Modifier.padding(start = 16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }

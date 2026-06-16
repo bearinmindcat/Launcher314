@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,6 +34,11 @@ import kotlinx.coroutines.delay
 private class ArrowPopupPositionProvider(
     private val iconBoundsInRoot: androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect.Zero,
     private val gapPx: Int = 6,
+    // When set, the popup is horizontally CENTERED as if it were this wide,
+    // regardless of its actual (possibly wider) content. Lets a popup grow to
+    // the right (e.g. a fly-out panel) WITHOUT the base region shifting — it
+    // stays anchored under the icon. Clamping still uses the real width.
+    private val xAnchorWidthPx: Int? = null,
     private val onPlacement: (isAbove: Boolean, arrowXPx: Float) -> Unit
 ) : PopupPositionProvider {
     override fun calculatePosition(
@@ -62,8 +68,12 @@ private class ArrowPopupPositionProvider(
             iconBottom = anchorBounds.bottom
         }
 
-        // Horizontal: center popup on anchor center, clamped to screen edges
-        val x = (anchorCenterX - popupContentSize.width / 2f).toInt()
+        // Horizontal: center popup on anchor center, clamped to screen edges.
+        // When xAnchorWidthPx is set, center as if the popup were that wide so
+        // the base region stays put under the icon while extra content grows to
+        // the right; clamp still uses the real width so it never runs off-screen.
+        val centerWidth = (xAnchorWidthPx ?: popupContentSize.width).toFloat()
+        val x = (anchorCenterX - centerWidth / 2f).toInt()
         val clampedX = x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
 
         val gap = gapPx
@@ -100,6 +110,14 @@ fun AnimatedPopup(
     iconSizePx: Int = 0,
     iconBoundsInRoot: androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect.Zero,
     gapDp: Int = 4,
+    // When set, the popup may grow wider than the default 225dp up to this max
+    // (content-driven), e.g. for a menu whose section flies out to the right.
+    // Null keeps the original fixed 225dp width (every existing popup unchanged).
+    maxWidthDp: Int? = null,
+    // When set, the popup is positioned as if it were this wide so its base
+    // region stays anchored under the icon while wider content (a fly-out
+    // panel) grows to the right rather than re-centering the whole popup.
+    xAnchorWidthDp: Int? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val density = LocalDensity.current
@@ -122,8 +140,13 @@ fun AnimatedPopup(
     if (showPopup) {
         val useArrow = popupPositionProvider == null
         val gapPx = with(density) { gapDp.dp.roundToPx() }
-        val provider = popupPositionProvider ?: remember(iconBoundsInRoot, gapPx) {
-            ArrowPopupPositionProvider(iconBoundsInRoot = iconBoundsInRoot, gapPx = gapPx) { above, x ->
+        val xAnchorWidthPx = xAnchorWidthDp?.let { with(density) { it.dp.roundToPx() } }
+        val provider = popupPositionProvider ?: remember(iconBoundsInRoot, gapPx, xAnchorWidthPx) {
+            ArrowPopupPositionProvider(
+                iconBoundsInRoot = iconBoundsInRoot,
+                gapPx = gapPx,
+                xAnchorWidthPx = xAnchorWidthPx
+            ) { above, x ->
                 isAbove = above
                 arrowXPx = x
             }
@@ -139,6 +162,7 @@ fun AnimatedPopup(
                 showArrow = useArrow,
                 isAbove = isAbove,
                 arrowXPx = arrowXPx,
+                maxWidthDp = maxWidthDp,
                 content = content
             )
         }
@@ -151,6 +175,7 @@ private fun AnimatedPopupContent(
     showArrow: Boolean = false,
     isAbove: Boolean = false,
     arrowXPx: Float = 0f,
+    maxWidthDp: Int? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     var appeared by remember { mutableStateOf(false) }
@@ -214,7 +239,10 @@ private fun AnimatedPopupContent(
 
         Surface(
             modifier = Modifier
-                .width(225.dp)
+                .then(
+                    if (maxWidthDp != null) Modifier.widthIn(min = 225.dp, max = maxWidthDp.dp)
+                    else Modifier.width(225.dp)
+                )
                 .clip(RoundedCornerShape(12.dp))
                 .then(
                     if (showArrow && !isAbove) Modifier.offset(y = -overlap)
