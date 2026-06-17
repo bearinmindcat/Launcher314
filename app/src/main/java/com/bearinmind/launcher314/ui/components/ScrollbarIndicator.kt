@@ -1,7 +1,9 @@
 package com.bearinmind.launcher314.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -176,6 +178,90 @@ fun LazyGridScrollbar(
                             isThumbSelected = true
                             tryAwaitRelease()
                             isThumbSelected = false
+                        }
+                    )
+                }
+        )
+    }
+}
+
+/**
+ * Scrollbar for a plain scrolling container (Column/Row with verticalScroll),
+ * i.e. one backed by a [ScrollState] rather than a LazyGridState. Same look as
+ * [LazyGridScrollbar]: thin rounded thumb on the right, auto-hide, draggable.
+ * Renders nothing when there's nothing to scroll.
+ */
+@Composable
+fun VerticalScrollbar(
+    scrollState: ScrollState,
+    modifier: Modifier = Modifier,
+    thumbColor: Color = Color.White.copy(alpha = 0.3f),
+    thumbSelectedColor: Color = Color.White.copy(alpha = 0.8f),
+    thumbWidth: Dp = 4.dp,
+    thumbMinHeight: Dp = 24.dp,
+    hideDelayMillis: Int = 1200,
+    alwaysShow: Boolean = false
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+
+    val maxScroll = scrollState.maxValue
+    // Content fits — nothing to scroll, so no scrollbar.
+    if (maxScroll <= 0) return
+
+    var isThumbSelected by remember { mutableStateOf(false) }
+    val isScrolling = scrollState.isScrollInProgress
+    var isVisible by remember { mutableStateOf(alwaysShow) }
+    LaunchedEffect(isScrolling, isThumbSelected, alwaysShow) {
+        if (isScrolling || isThumbSelected || alwaysShow) {
+            isVisible = true
+        } else {
+            delay(hideDelayMillis.toLong())
+            isVisible = false
+        }
+    }
+    val alpha by animateFloatAsState(
+        targetValue = if (isVisible || alwaysShow) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "scrollbarAlpha"
+    )
+    val isActive = isScrolling || isThumbSelected
+    val animatedThumbColor by animateColorAsState(
+        targetValue = if (isActive) thumbSelectedColor else thumbColor,
+        animationSpec = tween(durationMillis = if (isActive) 100 else 500),
+        label = "thumbColor"
+    )
+
+    BoxWithConstraints(modifier = modifier.width(thumbWidth)) {
+        val trackPx = with(density) { maxHeight.toPx() }
+        val thumbMinHeightPx = with(density) { thumbMinHeight.toPx() }
+        // Thumb size proportional to viewport / content (viewport ≈ track height).
+        val contentPx = trackPx + maxScroll
+        val thumbHeightPx = (trackPx * (trackPx / contentPx)).coerceAtLeast(thumbMinHeightPx)
+        val available = (trackPx - thumbHeightPx).coerceAtLeast(0f)
+        val scrollFraction = (scrollState.value.toFloat() / maxScroll).coerceIn(0f, 1f)
+        val thumbHeightDp = with(density) { thumbHeightPx.toDp() }
+        val thumbOffsetDp = with(density) { (scrollFraction * available).toDp() }
+
+        Box(
+            modifier = Modifier
+                .width(thumbWidth)
+                .height(thumbHeightDp)
+                .align(Alignment.TopEnd)
+                .offset(y = thumbOffsetDp)
+                .alpha(alpha)
+                .clip(RoundedCornerShape(thumbWidth / 2))
+                .background(animatedThumbColor)
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onDragStart = { isThumbSelected = true },
+                        onDragEnd = { isThumbSelected = false },
+                        onDragCancel = { isThumbSelected = false },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            val dragFraction = if (available > 0f) dragAmount / available else 0f
+                            val newValue = ((scrollFraction + dragFraction).coerceIn(0f, 1f) * maxScroll).toInt()
+                            coroutineScope.launch { scrollState.scrollTo(newValue) }
                         }
                     )
                 }

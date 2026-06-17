@@ -1129,7 +1129,10 @@ internal fun MainDrawerContent(
             ) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(gridSize),
-                    contentPadding = PaddingValues(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
+                    // Symmetric left/right insets so the icon grid is centered while
+                    // keeping the side margins tight; the right still clears the
+                    // scrollbar (which sits within this inset).
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 8.dp),
                     state = gridState,
                     modifier = Modifier.fillMaxSize()
                 ) {

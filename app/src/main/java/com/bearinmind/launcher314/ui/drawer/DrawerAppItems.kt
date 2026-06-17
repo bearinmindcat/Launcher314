@@ -75,8 +75,11 @@ import coil.compose.AsyncImage
 import com.bearinmind.launcher314.R
 import com.bearinmind.launcher314.data.AppFolder
 import com.bearinmind.launcher314.data.AppInfo
+import com.bearinmind.launcher314.data.getScrollbarColor
+import com.bearinmind.launcher314.data.getScrollbarIntensity
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
+import com.bearinmind.launcher314.ui.components.VerticalScrollbar
 import java.io.File
 import kotlin.math.sqrt
 
@@ -1652,17 +1655,32 @@ internal fun SelectableAppItem(
 
                                         // Folder list (filtered by the search) fills the
                                         // remaining height inside the base-capped panel and
-                                        // scrolls for overflow.
+                                        // scrolls for overflow, with a drawer-style scrollbar.
                                         val visibleFolders = folders.filter {
                                             it.name.contains(folderSearchQuery.trim(), ignoreCase = true)
                                         }
-                                        Column(
+                                        val folderListScroll = rememberScrollState()
+                                        // Match the drawer's scrollbar color (user
+                                        // setting + intensity), same as MainDrawerContent.
+                                        val sbBase = Color(getScrollbarColor(drawerItemContext))
+                                        val sbIntensity = (getScrollbarIntensity(drawerItemContext) / 100f)
+                                            .coerceIn(0f, 1f)
+                                        val sbColor = Color(
+                                            red = sbBase.red * sbIntensity,
+                                            green = sbBase.green * sbIntensity,
+                                            blue = sbBase.blue * sbIntensity,
+                                            alpha = sbBase.alpha
+                                        )
+                                        Box(
                                             modifier = (
                                                 if (baseMenuHeightDp > 0.dp) Modifier.weight(1f, fill = false)
                                                 else Modifier.heightIn(max = 190.dp)
-                                            )
+                                            ).fillMaxWidth()
+                                        ) {
+                                        Column(
+                                            modifier = Modifier
                                                 .fillMaxWidth()
-                                                .verticalScroll(rememberScrollState())
+                                                .verticalScroll(folderListScroll)
                                         ) {
                                             if (visibleFolders.isEmpty()) {
                                                 Text(
@@ -1709,6 +1727,19 @@ internal fun SelectableAppItem(
                                                     }
                                                 }
                                             }
+                                        }
+                                        VerticalScrollbar(
+                                            scrollState = folderListScroll,
+                                            modifier = Modifier
+                                                .align(Alignment.CenterEnd)
+                                                .fillMaxHeight()
+                                                .padding(vertical = 2.dp),
+                                            thumbColor = sbColor.copy(alpha = 0.3f),
+                                            thumbSelectedColor = sbColor.copy(alpha = 0.9f),
+                                            thumbWidth = 4.dp,
+                                            thumbMinHeight = 24.dp,
+                                            alwaysShow = true
+                                        )
                                         }
                                     }
                                 }
