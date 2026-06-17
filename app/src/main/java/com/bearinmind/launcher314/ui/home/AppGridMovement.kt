@@ -1847,7 +1847,10 @@ fun DockSlot(
     onRenameDockFolder: (() -> Unit)? = null,
     homeFolders: List<com.bearinmind.launcher314.data.HomeFolder> = emptyList(),
     onAddToFolder: (com.bearinmind.launcher314.data.HomeFolder) -> Unit = {},
-    onCreateFolder: () -> Unit = {}
+    onCreateFolder: () -> Unit = {},
+    // Reports the dock folder icon's scaled visible bounds (root coords) so the
+    // folder-open popup grows from / covers the real dock icon, like home folders.
+    onFolderIconPositioned: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null
 ) {
     val dockCellContext = LocalContext.current
     val hapticFeedback = rememberHapticFeedback()
@@ -2351,6 +2354,22 @@ fun DockSlot(
                 Box(
                     modifier = Modifier
                         .size(folderBoxSize)
+                        .onGloballyPositioned { coords ->
+                            // Report the dock folder icon's bounds at the opened
+                            // scale (1.265, matching home) so the popup covers it.
+                            val targetScale = 1.265f
+                            val pos = coords.positionInRoot()
+                            val w = coords.size.width * targetScale
+                            val h = coords.size.height * targetScale
+                            val offsetX = (coords.size.width - w) / 2f
+                            val offsetY = (coords.size.height - h) / 2f
+                            onFolderIconPositioned?.invoke(
+                                androidx.compose.ui.geometry.Rect(
+                                    pos.x + offsetX, pos.y + offsetY,
+                                    pos.x + offsetX + w, pos.y + offsetY + h
+                                )
+                            )
+                        }
                         .graphicsLayer {
                             scaleX = dockCombinedScale
                             scaleY = dockCombinedScale

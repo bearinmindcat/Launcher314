@@ -5588,6 +5588,9 @@ fun LauncherScreen(
                             } else true,
                             dragOffset = if (isDockSlotDragging) dragOffset else Offset.Zero,
                             folderData = dockFolder,
+                            onFolderIconPositioned = { bounds ->
+                                dockFolder?.let { folderIconBoundsMap[it.id.hashCode()] = bounds }
+                            },
                             folderPreviewApps = dockFolderPreviewApps,
                             folderPreviewDraggedIconPath = if (dockFolder != null && hoveredDockSlot == slot &&
                                 draggedFolderData == null && (draggedItemIndex != null || externalDragActive || dragFromFolderApp != null)
@@ -6468,7 +6471,7 @@ fun LauncherScreen(
         // approximation). Falls back to null if the cell hasn't reported.
         openedFolderIconBounds = if (openHomeFolder!!.position >= 0)
             folderIconBoundsMap[openHomeFolder!!.position]
-        else null
+        else folderIconBoundsMap[openHomeFolder!!.id.hashCode()]
     }
     val folderAnimProgress by animateFloatAsState(
         // Match Lawnchair's SMOOTH (spring-based) folder animation. From
@@ -6868,7 +6871,7 @@ fun LauncherScreen(
         // open before any layout).
         val iconBounds = openedFolderIconBounds
         val iconCenterX = iconBounds?.center?.x ?: cellCenterX
-        val iconCenterY = iconBounds?.center?.y ?: (cellCenterY - with(folderDensity) { 8.dp.toPx() })
+        val iconCenterY = iconBounds?.center?.y ?: cellCenterY
         val iconTopPx = iconBounds?.top ?: (iconCenterY - iconSidePx / 2f)
         val iconBottomPx = iconBounds?.bottom ?: (iconCenterY + iconSidePx / 2f)
         // Icon WIDTH and HEIGHT in px — used to seed the popup's initial
