@@ -35,6 +35,9 @@ import com.bearinmind.launcher314.helpers.generateShapedBgTintedIcon
 import com.bearinmind.launcher314.helpers.getGlobalShapedDir
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
+import com.bearinmind.launcher314.services.getShortcutSourcePackage
+import androidx.compose.foundation.Image
+import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.bearinmind.launcher314.helpers.parseBlendMode
@@ -727,6 +730,95 @@ fun DraggableGridCell(
                                                 modifier = Modifier.size(checkmarkSize),
                                                 tint = MaterialTheme.colorScheme.onPrimary
                                             )
+                                        }
+                                    }
+                                }
+
+                                // Source badge for shortcuts / PWAs — a small icon of the
+                                // app that OPENS when tapped (the resolved launch-intent
+                                // handler), drawn in the bottom-right corner like
+                                // Launcher3's shortcut badge. Browsers stamp their own
+                                // badge inconsistently, so this makes every shortcut
+                                // uniformly show its source.
+                                if (cell.appInfo.packageName.startsWith("shortcut_") && !selectionModeActive) {
+                                    val sourcePkg = remember(cell.appInfo.packageName) {
+                                        getShortcutSourcePackage(gridContext, cell.appInfo.packageName)
+                                    }
+                                    if (sourcePkg != null) {
+                                        val badgeSize = perAppIconSizeDp * 0.40f
+                                        // Nudge the badge a hair PAST the icon's bottom-
+                                        // right edge (Launcher3 style). The icon Box has
+                                        // clip = false so the overhang shows.
+                                        val badgeOffset = perAppIconSizeDp * 0.10f
+                                        val hasGlobalCustomization = globalIconShape != null || globalIconBgColor != null
+                                        // Resolve the source app's CUSTOMIZED icon — the
+                                        // same global shape + background its own home-screen
+                                        // icon uses — so the badge matches it. Generated on
+                                        // IO; falls back to the raw app icon when there's no
+                                        // global customization.
+                                        var badgeIconPath by remember(
+                                            sourcePkg, globalIconShape, globalIconBgColor, globalIconBgIntensity
+                                        ) { mutableStateOf<String?>(null) }
+                                        LaunchedEffect(
+                                            sourcePkg, globalIconShape, globalIconBgColor, globalIconBgIntensity
+                                        ) {
+                                            if (hasGlobalCustomization) {
+                                                badgeIconPath = withContext(Dispatchers.IO) {
+                                                    try {
+                                                        resolveMiniIconPath(
+                                                            gridContext, sourcePkg, "",
+                                                            globalIconShape, globalIconBgColor, globalIconBgIntensity
+                                                        ).takeIf { it.isNotEmpty() && File(it).exists() }
+                                                    } catch (_: Exception) { null }
+                                                }
+                                            }
+                                        }
+                                        val customizedPath = badgeIconPath
+                                        if (hasGlobalCustomization && customizedPath != null) {
+                                            // Customized badge — looks like the source app's
+                                            // home icon (shaped + global background).
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomEnd)
+                                                    .offset(x = badgeOffset, y = badgeOffset)
+                                                    .size(badgeSize),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                AsyncImage(
+                                                    model = File(customizedPath),
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Fit,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                        } else {
+                                            // No global customization — raw source icon on a
+                                            // white ring (Launcher3 default).
+                                            val sourceDrawable = remember(sourcePkg) {
+                                                try { gridContext.packageManager.getApplicationIcon(sourcePkg) }
+                                                catch (_: Exception) { null }
+                                            }
+                                            if (sourceDrawable != null) {
+                                                val badgeRing = perAppIconSizeDp * 0.020f
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .offset(x = badgeOffset, y = badgeOffset)
+                                                        .size(badgeSize)
+                                                        .clip(CircleShape)
+                                                        .background(Color.White)
+                                                        .padding(badgeRing),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Image(
+                                                        painter = rememberDrawablePainter(sourceDrawable),
+                                                        contentDescription = null,
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .clip(CircleShape)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }

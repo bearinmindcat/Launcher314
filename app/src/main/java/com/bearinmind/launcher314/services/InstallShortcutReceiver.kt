@@ -37,9 +37,17 @@ class InstallShortcutReceiver : BroadcastReceiver() {
             iconBitmap.recycle()
         }
 
-        // Save shortcut metadata (name + intent URI) to a simple file
+        // Resolve the app that OPENS this shortcut (launch-intent handler), so the
+        // home icon can show a small source badge regardless of whether the source
+        // browser baked one into the bitmap.
+        val sourcePkg = launchIntent.`package`
+            ?: launchIntent.component?.packageName
+            ?: context.packageManager.resolveActivity(launchIntent, 0)?.activityInfo?.packageName
+            ?: ""
+
+        // Save shortcut metadata (name + intent URI + source package) to a simple file
         val metaFile = File(iconsDir, "$shortcutId.meta")
-        metaFile.writeText("$name\n${launchIntent.toUri(Intent.URI_INTENT_SCHEME)}")
+        metaFile.writeText("$name\n${launchIntent.toUri(Intent.URI_INTENT_SCHEME)}\n$sourcePkg")
 
         // Add to home screen at first available position on page 0
         val data = loadHomeScreenData(context)
@@ -104,5 +112,35 @@ class InstallShortcutReceiver : BroadcastReceiver() {
         }
 
         return null
+    }
+}
+
+/**
+ * Resolve the package of the app that OPENS a given shortcut (its launch-intent
+ * handler), used to draw a source badge on the shortcut's home icon. Reads the
+ * cached source package from the shortcut's `.meta` file (3rd line); if absent
+ * (shortcuts created before this was stored), derives it from the saved launch-
+ * intent URI and writes it back. Returns null if it can't be determined or if it
+ * would resolve to this launcher itself.
+ */
+fun getShortcutSourcePackage(context: Context, shortcutId: String): String? {
+    return try {
+        val metaFile = File(context.filesDir, "shortcut_icons/$shortcutId.meta")
+        if (!metaFile.exists()) return null
+        val lines = metaFile.readLines()
+        // 3rd line is the cached source package, when present.
+        lines.getOrNull(2)?.takeIf { it.isNotBlank() }?.let { return it }
+        val intentUri = lines.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return null
+        val launchIntent = Intent.parseUri(intentUri, Intent.URI_INTENT_SCHEME)
+        val pkg = launchIntent.`package`
+            ?: launchIntent.component?.packageName
+            ?: context.packageManager.resolveActivity(launchIntent, 0)?.activityInfo?.packageName
+        if (pkg != null && pkg != context.packageName) {
+            // Cache it back so subsequent renders don't re-resolve.
+            metaFile.writeText("${lines.getOrElse(0) { "Shortcut" }}\n$intentUri\n$pkg")
+            pkg
+        } else null
+    } catch (_: Exception) {
+        null
     }
 }
