@@ -35,6 +35,8 @@ import com.bearinmind.launcher314.helpers.generateShapedBgTintedIcon
 import com.bearinmind.launcher314.helpers.getGlobalShapedDir
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.bearinmind.launcher314.helpers.parseBlendMode
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -526,6 +528,13 @@ fun DraggableGridCell(
                             val hasShapeExp = cell.appInfo.customization?.iconShapeExp != null
                             val hasPerAppShape = cell.appInfo.customization?.iconShape != null
                             val gridContext = LocalContext.current
+                            // Bumped after a missing shaped/bg-color cache file is
+                            // generated below, to force this cell to re-read the now-
+                            // present file. Read in the AsyncImage cache key so the
+                            // increment recomposes the cell.
+                            var shapedIconTick by remember(
+                                cell.appInfo.packageName, globalIconShape, globalIconBgColor, globalIconBgIntensity
+                            ) { mutableStateOf(0) }
                             val iconModelPath = if (hasCustomIcon) {
                                 cell.appInfo.customization!!.customIconPath!!
                             } else if (hasShapeExp) {
@@ -586,6 +595,48 @@ fun DraggableGridCell(
                                 if (cacheFile.exists()) cacheFile.absolutePath else finalIconModelPath
                             } else finalIconModelPath
                             val isBgColorIcon = displayIconPath != finalIconModelPath
+                            // Generate the shaped / bg-color icon on a cache MISS, on
+                            // IO. The grid cell is otherwise cache-only and relies on
+                            // the drag overlay's LaunchedEffect to populate the cache —
+                            // but items added WITHOUT a drag (e.g. browser "Add to home
+                            // screen" shortcuts) never trigger that, so they showed the
+                            // raw icon until first moved. Generating here makes the
+                            // customization apply on initial render too.
+                            LaunchedEffect(
+                                cell.appInfo.packageName, globalIconShape, globalIconBgColor,
+                                globalIconBgIntensity, bgColorEffectiveShape
+                            ) {
+                                var generated = false
+                                if (!hasCustomIcon && !hasShapeExp && !hasPerAppShape && globalIconShape != null) {
+                                    val f = File(getGlobalShapedDir(gridContext), "${cell.appInfo.packageName}.png")
+                                    if (!f.exists()) {
+                                        withContext(Dispatchers.IO) {
+                                            try { getOrGenerateGlobalShapedIcon(gridContext, cell.appInfo.packageName, globalIconShape) }
+                                            catch (_: Exception) {}
+                                        }
+                                        generated = true
+                                    }
+                                }
+                                if (useBgColorIcon && bgColorEffectiveShape != null && globalIconBgColor != null) {
+                                    val colorHex = Integer.toHexString(globalIconBgColor)
+                                    val cacheFile = File(
+                                        com.bearinmind.launcher314.helpers.getBgColorShapedDir(gridContext),
+                                        "${cell.appInfo.packageName}_${bgColorEffectiveShape}_${colorHex}_${globalIconBgIntensity}.png"
+                                    )
+                                    if (!cacheFile.exists()) {
+                                        withContext(Dispatchers.IO) {
+                                            try {
+                                                getOrGenerateBgColorShapedIcon(
+                                                    gridContext, cell.appInfo.packageName,
+                                                    bgColorEffectiveShape, globalIconBgColor, globalIconBgIntensity
+                                                )
+                                            } catch (_: Exception) {}
+                                        }
+                                        generated = true
+                                    }
+                                }
+                                if (generated) shapedIconTick++
+                            }
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
@@ -609,11 +660,15 @@ fun DraggableGridCell(
                                     }
                             ) {
                                 val iconFile = File(displayIconPath)
+                                // Reading shapedIconTick here subscribes this cell to it,
+                                // so generating a missing cache file recomposes and re-
+                                // reads the now-present shaped/bg-color icon.
+                                val iconCacheKey = "${displayIconPath}_${iconFile.lastModified()}_$shapedIconTick"
                                 AsyncImage(
                                     model = coil.request.ImageRequest.Builder(gridContext)
                                         .data(iconFile)
-                                        .memoryCacheKey("${displayIconPath}_${iconFile.lastModified()}")
-                                        .diskCacheKey("${displayIconPath}_${iconFile.lastModified()}")
+                                        .memoryCacheKey(iconCacheKey)
+                                        .diskCacheKey(iconCacheKey)
                                         .build(),
                                     contentDescription = cell.appInfo.name,
                                     contentScale = if (isBgColorIcon) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
