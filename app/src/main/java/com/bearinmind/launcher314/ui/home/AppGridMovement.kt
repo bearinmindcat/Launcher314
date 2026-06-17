@@ -50,6 +50,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -199,7 +202,8 @@ fun DraggableGridCell(
     selectedCount: Int = 0,
     folderPreviewDraggedIconPath: String? = null, // When non-null, animates this cell into a folder preview
     isReceivingDrop: Boolean = false, // When true, plays a pulse scale animation on the folder cell
-    folderCustomization: com.bearinmind.launcher314.data.AppCustomization? = null // Per-folder customization
+    folderCustomization: com.bearinmind.launcher314.data.AppCustomization? = null, // Per-folder customization
+    a11yLocation: String? = null // TalkBack context appended to the name, e.g. "on home screen"
 ) {
     val cellContext = LocalContext.current
     val hapticFeedback = rememberHapticFeedback()
@@ -293,6 +297,9 @@ fun DraggableGridCell(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Empty slots have no label — hide them from TalkBack so it
+                        // doesn't stop on "unlabeled" cells (e.g. inside an open folder).
+                        .clearAndSetSemantics {}
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -360,10 +367,23 @@ fun DraggableGridCell(
                 )
                 val overlayAlpha = maxOf(if (isFingerDown) 0.25f else 0f, flashAlpha)
 
+                // Name announced to TalkBack (custom label if set, else app name),
+                // plus the location context ("on home screen") when provided.
+                val appBaseName = cell.appInfo.customization?.customLabel?.takeIf { it.isNotEmpty() }
+                    ?: cell.appInfo.name
+                val appA11yName = a11yLocation?.let { "$appBaseName, $it" } ?: appBaseName
                 // Gesture handler on full cell area (not just icon/text)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Accessibility: merge the icon + label into ONE focusable element
+                        // (announces the app name, launches on activate) so TalkBack
+                        // doesn't read the icon and label as two separate nodes — applies
+                        // to home-grid AND in-folder app cells (both use this composable).
+                        .clearAndSetSemantics {
+                            contentDescription = appA11yName
+                            onClick(label = "Open") { currentOnTap(); true }
+                        }
                         .pointerInput(isWidgetDragging) {
                             // CRITICAL: Skip ALL gesture processing when a widget is being dragged
                             // This allows the WidgetDragOverlay to receive touch events
@@ -1207,6 +1227,15 @@ fun DraggableGridCell(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Accessibility: expose the whole folder (icon + label) as ONE
+                        // focusable element that announces the folder name and opens on
+                        // activate — works even when the label is hidden or in the dock,
+                        // instead of TalkBack seeing the icon and label as two nodes.
+                        .clearAndSetSemantics {
+                            contentDescription = a11yLocation?.let { "${cell.folder.name}, $it" }
+                                ?: cell.folder.name
+                            onClick(label = "Open folder") { currentOnTap(); true }
+                        }
                         .pointerInput(isWidgetDragging) {
                             if (isWidgetDragging) return@pointerInput
                             val touchSlop = viewConfiguration.touchSlop
@@ -1870,12 +1899,22 @@ fun DockSlot(
 
 
         if (appInfo != null && folderData == null) {
+            // Accessibility: same single-node treatment as home-grid icons so
+            // TalkBack announces just the app name and launches on activate,
+            // instead of reading the icon/slot separately.
+            val dockAppA11yName = (appInfo.customization?.customLabel?.takeIf { it.isNotEmpty() } ?: appInfo.name) +
+                ", on dock bar"
+            val currentDockAppTap by rememberUpdatedState(onTap)
             // App content with drag support
             // When dragging, app is rendered in overlay layer (LauncherScreen)
             // so we hide it here to prevent duplicate rendering
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .clearAndSetSemantics {
+                        contentDescription = dockAppA11yName
+                        onClick(label = "Open") { currentDockAppTap(); true }
+                    }
                     .graphicsLayer {
                         // Hide content when dragging - it's rendered in overlay for proper z-ordering
                         // Use direct 0f/1f (no animation) to avoid one-frame flicker on drop
@@ -2195,9 +2234,17 @@ fun DockSlot(
             // Without rememberUpdatedState, tapping a dock folder after removing an app
             // would open with stale appPackageNames (showing removed apps).
             val currentOnTap by rememberUpdatedState(onTap)
+            val dockFolderName = folderData.name
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    // Accessibility: dock folders have no label, so without this they're
+                    // invisible to TalkBack. Expose the whole folder as ONE focusable
+                    // element that announces its name and opens on activate.
+                    .clearAndSetSemantics {
+                        contentDescription = "$dockFolderName, on dock bar"
+                        onClick(label = "Open folder") { currentOnTap(); true }
+                    }
                     .graphicsLayer {
                         alpha = if (isDragging) 0f else 1f
                         clip = false

@@ -30,6 +30,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -2771,6 +2775,10 @@ fun LauncherScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = gridHPadding, vertical = gridVPadding)
+                            // Group the grid as one accessibility unit so TalkBack stops
+                            // appending the enclosing pager context ("vertical pager") to
+                            // every home icon as focus moves between them.
+                            .semantics { isTraversalGroup = true }
                             .graphicsLayer { clip = false } // Allow bottom row text to overflow into padding
                     ) {
                         // Inner Box contains both grid and widget overlay
@@ -2858,6 +2866,7 @@ fun LauncherScreen(
                                         DraggableGridCell(
                                             cell = cell,
                                             index = index,
+                                            a11yLocation = "on home screen",
                                             iconSize = iconSizeDp,
                                             gridColumns = gridColumns,
                                             gridRows = gridRows,
@@ -5493,7 +5502,10 @@ fun LauncherScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = gridHPadding, vertical = gridVPadding),
+                        .padding(horizontal = gridHPadding, vertical = gridVPadding)
+                        // Group the dock as one accessibility unit (see home grid) so
+                        // TalkBack stops appending the pager context to each dock icon.
+                        .semantics { isTraversalGroup = true },
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -6923,6 +6935,14 @@ fun LauncherScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // The full-screen tap-catcher showed up in TalkBack as an "unlabeled"
+                // whole-screen target. Label it "Close folder" (it's a real close
+                // action) and push it to the END of the traversal order so TalkBack
+                // lands on the folder's apps first, with Close reachable last.
+                .semantics {
+                    contentDescription = "Close folder"
+                    traversalIndex = 1f
+                }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -6944,11 +6964,6 @@ fun LauncherScreen(
                         keyboardController?.hide()
                         focusManager.clearFocus()
                     } else {
-                        // If closing while in resize mode, commit the in-flight
-                        // resize and exit resize mode so the resize outline +
-                        // panel play their exit animation IN SYNC with the
-                        // folder collapsing — one homogenous close, not the
-                        // outline snapping away while the popup shrinks.
                         if (isResizingFolder) {
                             val newCust = (appCustomizations.customizations[folder.id]
                                 ?: AppCustomization()).copy(
