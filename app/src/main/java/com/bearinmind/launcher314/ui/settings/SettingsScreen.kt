@@ -2,6 +2,10 @@ package com.bearinmind.launcher314.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.bearinmind.launcher314.data.BackupManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -708,6 +712,104 @@ fun SettingsScreen(
                         lineHeight = 18.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            Divider(color = Color.Gray.copy(alpha = 0.2f))
+
+            // Backup & Restore Section — export/import all settings + customizations
+            // to a .json file (issue #52).
+            SettingsSection(title = "Backup & Restore") {
+                val exportLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("application/json")
+                ) { uri ->
+                    if (uri != null) {
+                        try {
+                            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                                it.write(BackupManager.exportAll(context))
+                            }
+                            Toast.makeText(context, "Backup saved", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Backup failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                val importLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.GetContent()
+                ) { uri ->
+                    if (uri != null) {
+                        try {
+                            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+                            if (text != null && BackupManager.importAll(context, text)) {
+                                Toast.makeText(context, "Backup restored — restarting…", Toast.LENGTH_SHORT).show()
+                                // Hard restart so every screen reloads from the
+                                // restored prefs + data files.
+                                val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                                launch?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                context.startActivity(launch)
+                                Runtime.getRuntime().exit(0)
+                            } else {
+                                Toast.makeText(context, "Not a valid Launcher314 backup", Toast.LENGTH_LONG).show()
+                            }
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                var showRestoreConfirm by remember { mutableStateOf(false) }
+
+                Text(
+                    text = "Export your settings, home layout, folders & per-app customizations to a .json file, or restore from one. Restoring overrides all current settings.",
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { exportLauncher.launch("Launcher314-backup.json") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Export")
+                    }
+                    Button(
+                        onClick = { showRestoreConfirm = true },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Restore")
+                    }
+                }
+
+                if (showRestoreConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showRestoreConfirm = false },
+                        title = { Text("Restore from backup?") },
+                        text = { Text("This will OVERRIDE all your current settings and customizations, then restart the launcher. Continue?") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showRestoreConfirm = false
+                                importLauncher.launch("application/json")
+                            }) { Text("Choose file") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showRestoreConfirm = false }) { Text("Cancel") }
+                        }
                     )
                 }
             }

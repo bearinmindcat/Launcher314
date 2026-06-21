@@ -997,6 +997,11 @@ fun LauncherScreen(
     var totalPages by remember { mutableIntStateOf(prefs.getInt("launcher_total_pages", 1)) }
     val pagerState = rememberPagerState(pageCount = { totalPages })
     val currentPage by remember { derivedStateOf { pagerState.currentPage } }
+    // Expose pager settle state so the drawer swipe gesture can claim a vertical
+    // swipe immediately during a page settle (see HomePagerSwipeState).
+    LaunchedEffect(pagerState.isScrollInProgress) {
+        HomePagerSwipeState.isSettling = pagerState.isScrollInProgress
+    }
 
     // Persist the current home page index so MainActivity's add-widget flow
     // can land the widget on the page the user is actually viewing instead
@@ -1073,15 +1078,36 @@ fun LauncherScreen(
             dockApps = data.dockApps
             dockFolders = data.dockFolders
             homeFolders = data.folders
-            allAvailableApps = loadAvailableApps(context)
+            // loadAvailableApps re-queries EVERY installed package (heavy) — the
+            // main cause of the "lag after closing the drawer" since refreshTrigger
+            // fires on every close. The installed-app set doesn't change just from
+            // closing the drawer, so only re-query when we don't have it yet (first
+            // load). Package install/remove is handled by its own broadcast refresh.
+            if (allAvailableApps.isEmpty()) {
+                allAvailableApps = loadAvailableApps(context)
+            }
             appCustomizations = loadAppCustomizations(context)
             placedWidgets = WidgetManager.loadPlacedWidgets(context)
             isLoading = false
         }
-        // Refresh all icon settings (may have changed in Settings)
-        globalIconShape = getGlobalIconShape(context)
-        globalIconBgColor = getGlobalIconBgColor(context)
-        globalIconBgIntensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)
+        // Refresh all icon settings (may have changed in Settings). Capture the
+        // PREVIOUS icon-affecting values so we only nuke the Coil cache when one of
+        // them actually changed (i.e. the user changed a setting) — NOT on every
+        // drawer close. refreshTrigger fires on every close; the old unconditional
+        // memoryCache.clear() then freed the whole cache every time. After SCROLLING
+        // the drawer (which fills Coil's cache with hundreds of icon bitmaps) that
+        // clear() freed a large cache at once -> GC pause + full home re-decode =
+        // the "short delay before I can do anything after scrolling then going home".
+        // Icons don't change just from closing the drawer, so skip the clear then.
+        val newIconShape = getGlobalIconShape(context)
+        val newIconBgColor = getGlobalIconBgColor(context)
+        val newIconBgIntensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)
+        val iconSettingsChanged = newIconShape != globalIconShape ||
+            newIconBgColor != globalIconBgColor ||
+            newIconBgIntensity != globalIconBgIntensity
+        globalIconShape = newIconShape
+        globalIconBgColor = newIconBgColor
+        globalIconBgIntensity = newIconBgIntensity
         iconSizePercent = getHomeIconSizePercent(context)
         iconTextSizePercent = getIconTextSizePercent(context)
         selectedFontFamily = FontManager.getSelectedFontFamily(context)
@@ -1090,8 +1116,12 @@ fun LauncherScreen(
         globalWidgetFontScalePercent = com.bearinmind.launcher314.data.getWidgetFontScalePercent(appContext)
         widgetRoundedCornersEnabled = getWidgetRoundedCornersEnabled(appContext)
         widgetCornerRadiusPercent = getWidgetCornerRadiusPercent(appContext)
-        // Clear Coil memory cache so fresh icons load
-        coil.Coil.imageLoader(context).memoryCache?.clear()
+        // Only clear the Coil memory cache when a global icon setting actually
+        // changed (so freshly-shaped icons load). On a plain drawer close nothing
+        // changed -> keep the cache -> home icons stay decoded -> instant return.
+        if (iconSettingsChanged) {
+            coil.Coil.imageLoader(context).memoryCache?.clear()
+        }
     }
 
     // Refresh settings
@@ -2750,11 +2780,10 @@ fun LauncherScreen(
                     // Default decay path is preserved so a hard flick still
                     // flings naturally before the snap takes over.
                     val homePageSnapSpec = remember {
-                        val scrollEasing = androidx.compose.animation.core.Easing { t ->
-                            val u = t - 1f
-                            u * u * u * u * u + 1f
-                        }
-                        tween<Float>(durationMillis = 750, easing = scrollEasing)
+                        // Spring settle, consistent with the drawer release settle (also
+                        // a spring) so letting go mid-page-swipe and mid-drawer-swipe feel
+                        // the same. High damping = smooth decelerate with no page bounce.
+                        spring<Float>(dampingRatio = 0.9f, stiffness = 500f)
                     }
                     val homePagerFlingBehavior = PagerDefaults.flingBehavior(
                         state = pagerState,
@@ -2764,11 +2793,30 @@ fun LauncherScreen(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
                         flingBehavior = homePagerFlingBehavior,
+                        // Pre-compose the adjacent page(s) off-screen so a swipe reveals
+                        // an ALREADY-built page instead of composing ~20 icon cells mid-
+                        // swipe (the jitter). Costs a little memory; worth it for smooth.
+                        beyondBoundsPageCount = 1,
                         // Disable manual swipe during drag, when a detached
                         // icon is in edit mode, or when widgets are being
                         // manipulated.
                         userScrollEnabled = draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged && !isStackSwipeActive && editingPackageName == null
                     ) { page ->
+                    // Build this page's cells ONCE per page (memoized) — NOT once per
+                    // cell. buildGridCellsForPage does linear scans over ALL installed
+                    // apps; it was being called inside the inner cell loop, i.e. ~gridSize²
+                    // times per recomposition for the incoming page. That made page swipes
+                    // janky and added a hitch after closing the drawer (the reload's
+                    // recomposition re-ran it per cell). Memoized per page now.
+                    // Memoize EVERY page uniformly (keyed on page + data, NOT currentPage).
+                    // Previously the current page used `gridCells` (keyed on currentPage)
+                    // and others used a separate cache; when currentPage flips at the 50%
+                    // point of a swipe, BOTH the source-switch and gridCells recomputed
+                    // mid-swipe — a recomposition hitch. Uniform per-page memo = nothing
+                    // recomputes during the swipe.
+                    val pageCells = remember(page, homeApps, allAvailableApps, placedWidgets, homeFolders, totalCells, gridColumns, appCustomizations) {
+                        buildGridCellsForPage(page)
+                    }
                     // Grid with drag and drop - using Column/Row for proper space distribution
                     // The outer Column applies padding so both grid cells AND widgets respect the same bounds
                     Column(
@@ -2802,7 +2850,6 @@ fun LauncherScreen(
                                     ) {
                                         for (column in 0 until gridColumns) {
                                     val index = row * gridColumns + column
-                                    val pageCells = if (page == currentPage) gridCells else buildGridCellsForPage(page)
                                     val cell = pageCells.getOrElse(index) { HomeGridCell.Empty }
                                     val isDragging = draggedItemIndex == index && !draggedFromDock && page == dragSourcePage
                                     val isDropTarget = draggedItemIndex != null && (draggedItemIndex != index || page != dragSourcePage)

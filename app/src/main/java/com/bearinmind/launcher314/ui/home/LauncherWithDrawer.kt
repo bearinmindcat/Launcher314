@@ -24,7 +24,9 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -105,8 +107,21 @@ fun LauncherWithDrawer(
     // "sheet" mode use the full height; phones use this small fixed translate.)
     // This is the canonical closed position / gesture range for the drawer.
     val drawerRangePx = with(density) { 300.dp.toPx() }
+    // Slack around the fully-open position (0). The open settle uses a bouncy
+    // spring that overshoots/oscillates around 0; treating "within this slack" as
+    // OPEN lets the drawer list scroll + the swipe-down-to-close gesture engage
+    // immediately while the bounce finishes, instead of waiting for swipeUpY to
+    // land exactly on 0 (the "lag before I can scroll/close" issue).
+    val drawerOpenSlackPx = with(density) { 36.dp.toPx() }
 
     val coroutineScope = rememberCoroutineScope()
+
+    // True while the drawer is animating CLOSED (committed close, settling toward
+    // the closed position). showAppDrawer stays true during this (the position-
+    // driven effect re-asserts it), so this separate flag tells the home swipe-up
+    // gesture it can engage immediately during the close settle instead of waiting
+    // for it to finish. Set in settleDrawer by target.
+    var drawerClosing by remember { mutableStateOf(false) }
 
     // Swipe tracking - starts at screenHeight (closed), goes to 0 (fully open)
     var lastSwipeUpY by rememberSaveable { mutableFloatStateOf(drawerRangePx) }
@@ -134,13 +149,29 @@ fun LauncherWithDrawer(
     // (swipeUpY has no bounds, so the overshoot physically moves the layer; the
     // progress consumers clamp to 0..1 so alphas/blur never go out of range.)
     suspend fun settleDrawer(target: Float, velocityPxPerSec: Float) {
+        // Closing if the settle target is the closed position (not 0/open). Lets the
+        // home swipe-up gesture engage during the close animation.
+        drawerClosing = target >= drawerRangePx * 0.5f
         val opening = target < swipeUpY.value
+        // OPEN: a soft, slightly-bouncy spring (nice springy reveal).
+        // CLOSE: CRITICALLY DAMPED (dampingRatio = 1) so it NEVER overshoots or
+        // oscillates around the closed position — even when released with high
+        // velocity right after a scroll/flick. The old under-damped close
+        // (0.85/500) overshot past closed and bounced for ~1s with high release
+        // velocity, repeatedly dipping the drawer back over home and blocking
+        // interaction (the "delay after scrolling then closing"). Critical damping
+        // settles straight to closed, so home frees as soon as it lands.
         swipeUpY.animateTo(
             targetValue = target,
             animationSpec = if (opening)
-                spring(dampingRatio = 0.6f, stiffness = 1500f)
+                spring(dampingRatio = 0.82f, stiffness = 650f)
             else
-                spring(dampingRatio = 0.8f, stiffness = 800f),
+                // Faster critically-damped close (700 -> 1200). Even with the blocker
+                // dropped during close, the drawer CONTENT still covers the bottom
+                // (dock / swipe-up-to-reopen zone) until it slides off; a quicker
+                // settle clears that area in ~0.17s instead of ~0.25s+ so home feels
+                // immediately live. Still dampingRatio = 1 = no overshoot/bounce.
+                spring(dampingRatio = 1f, stiffness = 1200f),
             initialVelocity = velocityPxPerSec
         )
     }
@@ -191,6 +222,20 @@ fun LauncherWithDrawer(
 
     // Track if app drawer should be shown
     var showAppDrawer by remember { mutableStateOf(false) }
+
+    // ROOT-CAUSE FIX (freeze after using the drawer scrollbar): the moment the
+    // scrollbar thumb is grabbed, clear any leaked drawer-close drag. A list
+    // overscroll can flip isDrawerDragging=true to start a close drag; if the
+    // scrollbar then steals the touch, the list never fires onPreFling/onPostFling
+    // to reset it, so it stays true forever and the nested-scroll connection then
+    // intercepts EVERY gesture -> home is dead. Snapping swipeUpY to fully-open is
+    // safe because the scrollbar is only reachable while the drawer is fully open.
+    LaunchedEffect(com.bearinmind.launcher314.ui.components.DrawerScrollbarState.isActive) {
+        if (com.bearinmind.launcher314.ui.components.DrawerScrollbarState.isActive && isDrawerDragging) {
+            isDrawerDragging = false
+            swipeUpY.snapTo(0f)
+        }
+    }
 
     // Recent Apps overlay state — toggled by GestureAction.ShowRecentApps.
     // The overlay composable itself lands in a later phase; the flag is
@@ -296,9 +341,9 @@ fun LauncherWithDrawer(
     // Home button pressed: close the drawer and return to home screen
     LaunchedEffect(homeButtonTrigger) {
         if (homeButtonTrigger > 0 && showAppDrawer) {
-            settleDrawer(drawerRangePx, 0f)   // Lawnchair decelerate close
             showAppDrawer = false
             homeRefreshTrigger++
+            settleDrawer(drawerRangePx, 0f)   // Lawnchair decelerate close
         }
     }
 
@@ -564,9 +609,9 @@ fun LauncherWithDrawer(
         if (showAppDrawer && swipeUpY.value < drawerRangePx) {
             // Drawer is visible — close it and return to home screen
             coroutineScope.launch {
-                settleDrawer(drawerRangePx, 0f)   // Lawnchair decelerate close
                 showAppDrawer = false
                 homeRefreshTrigger++
+                settleDrawer(drawerRangePx, 0f)   // Lawnchair decelerate close
             }
         }
         // else: on home screen — consume back press silently (launcher shouldn't exit)
@@ -582,7 +627,30 @@ fun LauncherWithDrawer(
                 // intercept ALL vertical scroll and write the SYNCHRONOUS drag float
                 // directly (no launch{snapTo} lag — same 1:1 fix as the open drag).
                 val cur = if (isDrawerDragging) dragShift else swipeUpY.value
-                if (cur > 0f && !isDrawerSearchActive) {
+                // Intercept (drag the drawer) when a close drag is ALREADY active, or
+                // when the drawer is meaningfully PARTIAL (beyond the open-slack). The
+                // slack only gates the START of interception so the list can scroll near
+                // open (no settle-bounce wait); once dragging, keep following the finger
+                // even within the slack — otherwise the close drag stalls.
+                //
+                // CRITICAL: bail while the drawer is COMMITTED-CLOSING. After scrolling
+                // the list, its fling momentum keeps dispatching scroll deltas here for
+                // ~1s; without this guard those deltas re-grab the drawer as a drag mid-
+                // close-settle, so it never finishes closing and home stays blocked for
+                // the fling's duration (the "1 second delay after scrolling then closing").
+                if (drawerClosing) return Offset.Zero
+                // Don't let the scrollbar's scroll dispatch start/continue a drawer
+                // close-drag (that leak froze home — see DrawerScrollbarState).
+                if (com.bearinmind.launcher314.ui.components.DrawerScrollbarState.isActive) return Offset.Zero
+                // ROOT-CAUSE FIX (dead second after scrolling the drawer): only a
+                // genuine finger DRAG may START a close-drag. A list FLING reaching the
+                // top dispatches overscroll here (source=Fling); letting it flip
+                // isDrawerDragging=true started a "close drag" that the fling never
+                // cleanly ended (no onPreFling for it), so the flag leaked TRUE and the
+                // nested-scroll then ate EVERY gesture for ~1s+. An already-active drag
+                // keeps following regardless of source.
+                val canStartClose = cur > drawerOpenSlackPx && source == NestedScrollSource.Drag
+                if ((isDrawerDragging || canStartClose) && !isDrawerSearchActive) {
                     if (!isDrawerDragging) { dragShift = swipeUpY.value; isDrawerDragging = true }
                     dragShift = (dragShift + available.y).coerceIn(0f, drawerRangePx)
                     return available.copy(x = 0f)  // Consume all vertical scroll
@@ -605,8 +673,14 @@ fun LauncherWithDrawer(
                     dismissSearchTrigger++
                     return Offset(0f, available.y)
                 }
-                if (available.y > 0f && !isDrawerDragging && swipeUpY.value == 0f && !isDrawerSearchActive) {
-                    // Begin the close drag synchronously from fully-open.
+                if (available.y > 0f && !isDrawerDragging && !drawerClosing && swipeUpY.value <= drawerOpenSlackPx && !isDrawerSearchActive &&
+                    !com.bearinmind.launcher314.ui.components.DrawerScrollbarState.isActive && source == NestedScrollSource.Drag) {
+                    // Begin the close drag synchronously from (near) fully-open — within
+                    // the open-slack so a swipe-down right after opening closes it
+                    // instead of waiting for the bounce to settle. Skip while already
+                    // committed-closing so a lingering list-fling doesn't restart it.
+                    // source==Drag: a list FLING overscroll must NOT start this (it leaked
+                    // isDrawerDragging and froze gestures — see onPreScroll).
                     dragShift = swipeUpY.value
                     isDrawerDragging = true
                     dragShift = (dragShift + available.y).coerceIn(0f, drawerRangePx)
@@ -632,12 +706,24 @@ fun LauncherWithDrawer(
                         else -> closedness > 0.4f
                     }
                     if (shouldClose) {
-                        settleDrawer(drawerRangePx, available.y)
+                        // Mark closed FIRST so home is interactive immediately while the
+                        // drawer animates away (it stays drawn via drawerComposed).
                         showAppDrawer = false
                         homeRefreshTrigger++
-                    } else {
-                        settleDrawer(0f, available.y)
                     }
+                    // ROOT-CAUSE FIX (touches/swipes do nothing after scrolling then
+                    // closing): run the settle in the STABLE composition scope, NOT
+                    // this nested-scroll fling coroutine. After SCROLLING, the drawer's
+                    // LazyGrid has a live scroll/fling coroutine and settleDrawer was
+                    // awaited INSIDE it. Any subsequent tap on the still-covering drawer
+                    // cancels that coroutine -> cancels the close animation -> swipeUpY
+                    // freezes partway -> drawerComposed stays true -> the half-open
+                    // drawer keeps eating every touch, and each new tap re-cancels the
+                    // retry. (Plain open/close has no list scroll coroutine, so it
+                    // completed -> the exact scroll-only asymmetry.) The stable scope
+                    // can't be cancelled by the list, so the close always finishes.
+                    val target = if (shouldClose) drawerRangePx else 0f
+                    coroutineScope.launch { settleDrawer(target, available.y) }
                     return available
                 }
                 return Velocity.Zero
@@ -650,13 +736,30 @@ fun LauncherWithDrawer(
                     val startY = dragShift
                     swipeUpY.snapTo(startY)
                     isDrawerDragging = false
-                    if (startY / drawerRangePx > 0.4f) {
-                        settleDrawer(drawerRangePx, available.y)
+                    val shouldClose = startY / drawerRangePx > 0.4f
+                    if (shouldClose) {
                         showAppDrawer = false
                         homeRefreshTrigger++
-                    } else {
-                        settleDrawer(0f, available.y)
                     }
+                    // Stable scope (see onPreFling) so the post-fling settle can't be
+                    // cancelled by the list's scroll coroutine and freeze the drawer.
+                    val target = if (shouldClose) drawerRangePx else 0f
+                    coroutineScope.launch { settleDrawer(target, available.y) }
+                    return available
+                }
+                // FLING-TO-CLOSE (one-shot, leak-proof): the list flung to the top and
+                // couldn't consume the rest, so leftover DOWNWARD velocity arrives here.
+                // That's a "fling down to dismiss" while the drawer is open -> commit the
+                // close directly. We do NOT enter the persistent isDrawerDragging drag
+                // (that's what leaked from fling overscroll and froze gestures); this is
+                // a single settle, so nothing can stick. The slow finger drag-to-close
+                // path still works via onPostScroll/onPreScroll (source==Drag).
+                if (available.y > 1200f && !drawerClosing && swipeUpY.value <= drawerOpenSlackPx &&
+                    !isDrawerSearchActive && !com.bearinmind.launcher314.ui.components.DrawerScrollbarState.isActive) {
+                    showAppDrawer = false
+                    homeRefreshTrigger++
+                    coroutineScope.launch { settleDrawer(drawerRangePx, available.y) }
+                    return available
                 }
                 return Velocity.Zero
             }
@@ -1016,8 +1119,12 @@ fun LauncherWithDrawer(
                             return@awaitEachGesture
                         }
 
-                        // Bail if drawer already visible or a folder is open.
-                        if (swipeUpY.value <= drawerRangePx * 0.9f || isFolderOpen) {
+                        // Bail if the drawer is genuinely OPEN (showAppDrawer) and not
+                        // yet near-closed, or a folder is open. Gating on showAppDrawer
+                        // (not just swipeUpY) means that once a close is committed
+                        // (showAppDrawer=false) the home swipe-up works IMMEDIATELY while
+                        // the drawer animates away — no waiting for the settle to finish.
+                        if ((showAppDrawer && !drawerClosing && swipeUpY.value <= drawerRangePx * 0.9f) || isFolderOpen) {
                             do {
                                 val e = awaitPointerEvent()
                                 if (e.changes.all { !it.pressed }) break
@@ -1044,15 +1151,30 @@ fun LauncherWithDrawer(
                         val touchSlop = viewConfiguration.touchSlop
                         var accumDx = 0f
                         var accumDy = 0f
+                        // If the home pager was settling (flinging) when this touch
+                        // landed, it CONSUMES the touch to stop its fling. Normally we
+                        // defer to a child that consumed (so icon drags aren't stolen),
+                        // but during a settle that ate the first swipe-up after a page
+                        // change. So while settling, ignore the pager's consumption and
+                        // decide by the real finger delta + dominant axis (a clearly-
+                        // vertical swipe opens the drawer; horizontal still goes to the
+                        // pager). At rest, deference is unchanged.
+                        val pagerSettling = com.bearinmind.launcher314.ui.home.HomePagerSwipeState.isSettling
+                        // During a page settle, peek in the INITIAL pass (parent sees
+                        // events BEFORE the pager) so a vertical claim can consume the
+                        // touch before the pager — interrupted-fling drag-state — scrolls
+                        // it sideways. That's what caused "swipe up reads as left/right".
+                        // At rest we use the Main pass and defer to children as usual.
+                        val gesturePass = if (pagerSettling) PointerEventPass.Initial else PointerEventPass.Main
                         var committedDrag: PointerInputChange? = null
                         while (committedDrag == null) {
-                            val event = awaitPointerEvent()
+                            val event = awaitPointerEvent(gesturePass)
                             val change = event.changes.firstOrNull { it.id == down.id }
                                 ?: return@awaitEachGesture
                             if (!change.pressed) return@awaitEachGesture        // released before slop
-                            if (change.isConsumed) return@awaitEachGesture      // child (pager) owns it
-                            accumDx += change.positionChange().x
-                            accumDy += change.positionChange().y
+                            if (change.isConsumed && !pagerSettling) return@awaitEachGesture  // child owns it (not a settle)
+                            accumDx += if (pagerSettling) change.positionChangeIgnoreConsumed().x else change.positionChange().x
+                            accumDy += if (pagerSettling) change.positionChangeIgnoreConsumed().y else change.positionChange().y
                             if (accumDx * accumDx + accumDy * accumDy > touchSlop * touchSlop) {
                                 if (kotlin.math.abs(accumDy) > kotlin.math.abs(accumDx)) {
                                     // Vertical dominates — take the gesture.
@@ -1107,20 +1229,37 @@ fun LauncherWithDrawer(
                         }
                         drag.consume()
 
-                        val success = verticalDrag(drag.id) { change ->
-                            velocityTracker.addPointerInputChange(change)
-                            val dy = change.positionChange().y
-                            totalDragAmount += dy
-                            if (!isSwipeDown && swipeUpMovesDrawer) {
-                                // LINEAR 1:1 finger mapping (Launcher3 manual drag is
-                                // LINEAR — no gain, no decelerate), written SYNCHRONOUSLY
-                                // on the touch event so the drawer moves exactly with
-                                // the finger. Short-swipe responsiveness comes from the
-                                // fling commit below.
-                                isDrawerDragging = true
-                                dragShift = (dragShift + dy).coerceIn(0f, drawerRangePx)
+                        // Drag continuation. Normally use Compose's verticalDrag (Main
+                        // pass). BUT if we claimed during a page settle, the pager is
+                        // still in an interrupted-fling drag-state and would grab the
+                        // moves in the Main pass (verticalDrag would get cancelled — the
+                        // "looks like swiping up but won't let me" bug). So when settling,
+                        // run the whole drag in the INITIAL pass and consume every move so
+                        // the pager never sees it.
+                        val dragBody: (androidx.compose.ui.input.pointer.PointerInputChange, Float) -> Unit =
+                            { change, dy ->
+                                velocityTracker.addPointerInputChange(change)
+                                totalDragAmount += dy
+                                if (!isSwipeDown && swipeUpMovesDrawer) {
+                                    // LINEAR 1:1 finger mapping (Launcher3 manual drag is
+                                    // LINEAR — no gain), written SYNCHRONOUSLY so the drawer
+                                    // tracks the finger with zero frame lag.
+                                    isDrawerDragging = true
+                                    dragShift = (dragShift + dy).coerceIn(0f, drawerRangePx)
+                                }
+                                change.consume()
                             }
-                            change.consume()
+                        val success = if (pagerSettling) {
+                            var lifted = false
+                            while (true) {
+                                val e = awaitPointerEvent(PointerEventPass.Initial)
+                                val c = e.changes.firstOrNull { it.id == drag.id } ?: break
+                                if (!c.pressed) { lifted = true; break }   // finger up — drag done
+                                dragBody(c, c.positionChangeIgnoreConsumed().y)
+                            }
+                            lifted
+                        } else {
+                            verticalDrag(drag.id) { change -> dragBody(change, change.positionChange().y) }
                         }
 
                         if (success) {
@@ -1178,9 +1317,11 @@ fun LauncherWithDrawer(
                                     } else {
                                         // Cancel back to home (short slow drag, or a
                                         // downward fling), or fire a reassigned action.
-                                        settleDrawer(drawerRangePx, releaseVelocityY)
+                                        // Mark closed FIRST so home is interactive while
+                                        // the drawer animates away.
                                         showAppDrawer = false
                                         homeRefreshTrigger++
+                                        settleDrawer(drawerRangePx, releaseVelocityY)
                                         if (swipeUpEnabled &&
                                             swipeUpAction !is com.bearinmind.launcher314.data.GestureAction.OpenDrawer &&
                                             swipeUpAction != com.bearinmind.launcher314.data.GestureAction.None &&
@@ -1196,9 +1337,9 @@ fun LauncherWithDrawer(
                                 coroutineScope.launch {
                                     if (swipeUpMovesDrawer) swipeUpY.snapTo(dragShift)
                                     isDrawerDragging = false
-                                    settleDrawer(drawerRangePx, 0f)
                                     showAppDrawer = false
                                     homeRefreshTrigger++
+                                    settleDrawer(drawerRangePx, 0f)
                                 }
                             }
                         }
@@ -1367,7 +1508,19 @@ fun LauncherWithDrawer(
                 // made swipe-down-to-close feel unresponsive immediately after
                 // swipe-up-to-open. Once value <= 10f the drawer is "open
                 // enough" and stray-tap risk is gone.
-                if (drawerBlockerVisible) {
+                //
+                // FIX (scroll->close->home delay): also gate on !drawerClosing.
+                // This full-screen Box CONSUMES every pointer event, and
+                // drawerBlockerVisible stays true for the WHOLE close settle. From a
+                // fully-open drawer (which scrolling requires) that meant home stayed
+                // touch-dead for the entire slide-away — the "short delay before I can
+                // do anything after scrolling then going home". During a close the
+                // drawer is LEAVING, so there's no stray-tap risk to guard against;
+                // drop the blocker so home (dock, swipe-up-to-reopen, icons) is live
+                // the instant the close starts. The quick up/down case felt instant
+                // only because it closed from a partial position (blocker cleared at
+                // once); now full-open close behaves the same.
+                if (drawerBlockerVisible && !drawerClosing) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()

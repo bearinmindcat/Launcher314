@@ -24,6 +24,23 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
+ * Shared, Compose-observable flag: is the user actively dragging the app-drawer
+ * scrollbar thumb right now? Set by [LazyGridScrollbar], read by the drawer's
+ * nested-scroll connection in LauncherWithDrawer.
+ *
+ * Why: grabbing the scrollbar can leave the drawer's `isDrawerDragging` flag
+ * stuck TRUE — a list overscroll starts a drawer-close drag, then the scrollbar
+ * steals the touch so the list never fires onPreFling/onPostFling to reset it.
+ * The stuck flag then makes the nested-scroll intercept EVERY gesture, freezing
+ * home (the "swipes do nothing after using the scrollbar" bug). This flag lets
+ * the drawer (a) refuse to start a close-drag while the scrollbar owns the touch
+ * and (b) clear a leaked one the instant the scrollbar is grabbed.
+ */
+object DrawerScrollbarState {
+    var isActive by mutableStateOf(false)
+}
+
+/**
  * Custom scrollbar indicator for LazyVerticalGrid.
  * Styled like Einstein Launcher's scrollbar.
  *
@@ -151,9 +168,9 @@ fun LazyGridScrollbar(
                 .background(animatedThumbColor)
                 .pointerInput(Unit) {
                     detectVerticalDragGestures(
-                        onDragStart = { isThumbSelected = true },
-                        onDragEnd = { isThumbSelected = false },
-                        onDragCancel = { isThumbSelected = false },
+                        onDragStart = { isThumbSelected = true; DrawerScrollbarState.isActive = true },
+                        onDragEnd = { isThumbSelected = false; DrawerScrollbarState.isActive = false },
+                        onDragCancel = { isThumbSelected = false; DrawerScrollbarState.isActive = false },
                         onVerticalDrag = { change, dragAmount ->
                             change.consume()
 
@@ -176,8 +193,10 @@ fun LazyGridScrollbar(
                     detectTapGestures(
                         onPress = {
                             isThumbSelected = true
+                            DrawerScrollbarState.isActive = true
                             tryAwaitRelease()
                             isThumbSelected = false
+                            DrawerScrollbarState.isActive = false
                         }
                     )
                 }
