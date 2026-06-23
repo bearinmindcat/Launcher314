@@ -2793,10 +2793,12 @@ fun LauncherScreen(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
                         flingBehavior = homePagerFlingBehavior,
-                        // Pre-compose the adjacent page(s) off-screen so a swipe reveals
-                        // an ALREADY-built page instead of composing ~20 icon cells mid-
-                        // swipe (the jitter). Costs a little memory; worth it for smooth.
-                        beyondBoundsPageCount = 1,
+                        // NOTE: do NOT pre-compose adjacent pages (beyondBoundsPageCount).
+                        // `cellPositions` is a single map keyed by cell index only and is
+                        // shared across pages, so composing neighbor pages lets their
+                        // OFF-SCREEN cells overwrite cellPositions[index]; drag then reads
+                        // a wrong base position and the icon doesn't follow the finger.
+                        // Smoothness is handled by the per-page cell memoization below.
                         // Disable manual swipe during drag, when a detached
                         // icon is in edit mode, or when widgets are being
                         // manipulated.
