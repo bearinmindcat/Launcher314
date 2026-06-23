@@ -626,9 +626,15 @@ private fun OverlayFolderContent(
                 contentAlignment = Alignment.Center
             ) {
                 if (previewApps.isNotEmpty()) {
-                    val padding = folderBoxSize * 0.08f
-                    val spacing = folderBoxSize * 0.04f
-                    val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
+                    // Match the REAL folder cell's sizing EXACTLY (AppGridMovement folder
+                    // branch: contentSize = box - 2dp border, padding 0.12, spacing 0.05)
+                    // so the overlay→cell hand-off on drop is seamless. Previously the
+                    // overlay used bigger icons, so they visibly shrank ("get smaller")
+                    // after the folder was placed.
+                    val contentSize = folderBoxSize - 2.dp
+                    val padding = contentSize * 0.12f
+                    val spacing = contentSize * 0.05f
+                    val miniIconSize = (contentSize - padding * 2 - spacing) / 2
                     val defaultMiniClip = if (globalIconShape != null) getIconShape(globalIconShape) ?: RoundedCornerShape(miniIconSize * 0.2f) else RoundedCornerShape(miniIconSize * 0.2f)
                     Column(
                         modifier = Modifier.padding(padding),
@@ -670,7 +676,7 @@ private fun OverlayFolderContent(
                 else if (folderCust?.labelColor != null) {
                     val li = (folderCust.labelColorIntensity ?: 100) / 100f
                     Color(folderCust.labelColor).copy(alpha = li.coerceIn(0f, 1f))
-                } else Color.White
+                } else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current // match real cell (was Color.White → caused a color change on drop)
             val folderFontSize = folderCust?.iconTextSizePercent?.let { gridAppNameFont * it / 100f } ?: gridAppNameFont
             val folderFontFamily = folderCust?.labelFontId?.let { id ->
                 FontManager.bundledFonts.find { it.id == id }?.fontFamily
@@ -6292,7 +6298,10 @@ fun LauncherScreen(
                 } else {
                     0.8f + 0.2f * p
                 }
-                val textAlpha = if (isDropAnimating && !dropTargetIsDock && !dropCreatesFolder) p else 0f
+                // Label is FULLY present during the drop (not a late fade-in) so the
+                // box + icons + label settle as one cohesive unit. The old `p` fade made
+                // the text/contents look like they rendered AFTER the folder was placed.
+                val textAlpha = if (isDropAnimating && !dropTargetIsDock && !dropCreatesFolder) 1f else 0f
 
                 val targetW = if (isDropAnimating && dropTargetIsDock) dockSlotSize.width else cellSize.width
                 val targetH = if (isDropAnimating && dropTargetIsDock) dockSlotSize.height else cellSize.height
