@@ -641,7 +641,11 @@ internal fun MainDrawerContent(
                                             }
 
                                             // Sort options
-                                            SortOption.values().forEach { option ->
+                                            // NOTE: "Manual" is intentionally hidden from the
+                                            // dropdown for now (commented out). The enum value
+                                            // still exists so existing saved prefs / code paths
+                                            // referencing SortOption.MANUAL keep working.
+                                            SortOption.values().filter { it != SortOption.MANUAL }.forEach { option ->
                                                 DropdownMenuItem(
                                                     text = { Text(option.displayName) },
                                                     onClick = {
