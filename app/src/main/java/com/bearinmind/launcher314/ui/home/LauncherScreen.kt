@@ -1482,14 +1482,26 @@ fun LauncherScreen(
         val existingDockApp = dockApps.find { it.position == toDockSlot && it.page == currentDockPage }
         val existingDockFolder = dockFolders.find { it.position == toDockSlot && it.page == currentDockPage }
 
-        // Find the source app from homeApps (page-aware)
+        // Resolve the source grid app. Primary: by (position, page). Fallback: by the
+        // LIVE drag info's package (draggedAppInfo, captured at drag start). The
+        // fallback fixes issue #58: an app dragged OUT of a folder onto the grid could
+        // not then be placed in the dock — the strict (position,page) lookup (or the
+        // allAvailableApps lookup) missed it, so this function returned silently and
+        // nothing happened. Re-adding the app from the drawer "fixed" it only because
+        // that path produced an entry the strict lookup happened to find.
         val sourceHomeApp = homeApps.find { it.position == fromGridIndex && it.page == fromPage }
-        val sourceAppInfo = sourceHomeApp?.let { ha ->
-            allAvailableApps.find { it.packageName == ha.packageName }
-        }
+            ?: draggedAppInfo?.let { dai -> homeApps.firstOrNull { it.packageName == dai.packageName } }
+        val pkgName = sourceHomeApp?.packageName ?: draggedAppInfo?.packageName
+        val sourceAppInfo = pkgName?.let { p -> allAvailableApps.find { it.packageName == p } }
         if (sourceAppInfo == null) return
 
-        val updatedGridApps = homeApps.filter { !(it.position == fromGridIndex && it.page == fromPage && isAttached(it)) }
+        // Remove the source from the grid by its ACTUAL position/page (the passed
+        // indices may not line up for a folder-extracted app).
+        val updatedGridApps = if (sourceHomeApp != null) {
+            homeApps.filter { !(it.position == sourceHomeApp.position && it.page == sourceHomeApp.page && it.packageName == sourceHomeApp.packageName && isAttached(it)) }
+        } else {
+            homeApps.filter { !(it.packageName == sourceAppInfo.packageName && isAttached(it)) }
+        }
 
         if (existingDockApp == null && existingDockFolder == null) {
             // Empty slot → place app
@@ -1525,6 +1537,87 @@ fun LauncherScreen(
             dropScope.launch(Dispatchers.IO) {
                 saveHomeScreenData(context, HomeScreenData(apps = updatedGridApps, dockApps = updatedDockApps, folders = homeFolders, dockFolders = dockFolders + newFolder))
             }
+        }
+    }
+
+    // Place an app dragged OUT OF A FOLDER directly onto a dock slot. issue #58:
+    // the folder-escape drop handler only knew how to drop on the grid, so dropping
+    // a folder app onto the dock silently did nothing (the app went to the grid).
+    // The app has already been removed from its source folder at escape start, so
+    // here we only place it (empty slot), add it to an existing dock folder, or make
+    // a new dock folder on an existing dock app — mirroring handleDropToDock — then
+    // run the same drop animation + reset the escape state.
+    fun handleEscapeDropToDock(folderApp: HomeAppInfo, toDockSlot: Int) {
+        val existingDockApp = dockApps.find { it.position == toDockSlot && it.page == currentDockPage }
+        val existingDockFolder = dockFolders.find { it.position == toDockSlot && it.page == currentDockPage }
+        val pkg = folderApp.packageName
+        val willMakeFolder = existingDockApp != null
+        val originalPos = dragOriginalCellPos ?: Offset.Zero
+        val targetPos = dockPositions[toDockSlot]
+
+        val commit: () -> Unit = {
+            when {
+                existingDockFolder != null -> {
+                    val updated = dockFolders.map { f ->
+                        if (f.id == existingDockFolder.id) f.copy(appPackageNames = addAppToFolder(f.appPackageNames, pkg)) else f
+                    }
+                    dockFolders = updated
+                    saveDockFolders(updated)
+                }
+                existingDockApp != null -> {
+                    val updatedDockApps = dockApps.filter { !(it.position == toDockSlot && it.page == currentDockPage) }
+                    val newFolder = DockFolder(name = "Folder", position = toDockSlot, appPackageNames = listOf(existingDockApp.packageName, pkg), page = currentDockPage)
+                    dockApps = updatedDockApps
+                    dockFolders = dockFolders + newFolder
+                    saveAllData()
+                }
+                else -> {
+                    val updatedDockApps = dockApps + DockApp(pkg, toDockSlot, page = currentDockPage)
+                    dockApps = updatedDockApps
+                    saveAllData()
+                }
+            }
+        }
+
+        fun resetEscape() {
+            dragFromFolderApp = null
+            dragFromFolderId = null
+            dragFromFolderPage = 0
+            dragOffset = Offset.Zero
+            draggedAppInfo = null
+            draggedFolderData = null
+            draggedFolderPreviewApps = emptyList()
+            dragOriginalCellPos = null
+            isEditMode = false
+            hoveredGridCell = null
+            hoveredDockSlot = null
+            showFolderCreationIndicator = false
+        }
+
+        if (targetPos != null && !isDropAnimating) {
+            dropTargetIsDock = true
+            dropCreatesFolder = willMakeFolder
+            if (willMakeFolder) folderReceiveDockSlot = toDockSlot
+            dropStartOffset = dragOffset
+            dropTargetOffset = Offset(targetPos.x - originalPos.x, targetPos.y - originalPos.y)
+            isDropAnimating = true
+            isEditMode = false
+            hoveredGridCell = null
+            hoveredDockSlot = null
+            showFolderCreationIndicator = false
+            dropScope.launch {
+                dropAnimProgress.snapTo(0f)
+                dropAnimProgress.animateTo(1f, tween(durationMillis = 400, easing = FastOutSlowInEasing))
+                commit()
+                folderReceiveDockSlot = null
+                if (dropCreatesFolder) dropCreatesFolder = false
+                resetEscape()
+                isDropAnimating = false
+            }
+        } else {
+            // No measured dock position (or already animating) — commit immediately.
+            commit()
+            resetEscape()
         }
     }
 
@@ -1616,6 +1709,16 @@ fun LauncherScreen(
 
             val targetCells = buildGridCellsForPage(intendedPage)
             val folderApp = dragFromFolderApp!!
+
+            // issue #58: app dragged OUT OF A FOLDER and dropped onto the DOCK. The
+            // grid logic below has no dock branch, so without this the app silently
+            // fell onto a grid cell instead of the dock. Route it to the dock and
+            // finish the drop here.
+            val escapeDockSlot = findDockSlotIndex(centerPos)
+            if (escapeDockSlot != null) {
+                handleEscapeDropToDock(folderApp, escapeDockSlot)
+                return
+            }
 
             // Helper: find first empty cell on this page as fallback
             fun findFirstEmptyCell(): Int? = targetCells.indexOfFirst { it is HomeGridCell.Empty }.takeIf { it >= 0 }
@@ -5641,8 +5744,12 @@ fun LauncherScreen(
                                 dockFolder?.let { folderIconBoundsMap[it.id.hashCode()] = bounds }
                             },
                             folderPreviewApps = dockFolderPreviewApps,
-                            folderPreviewDraggedIconPath = if (dockFolder != null && hoveredDockSlot == slot &&
-                                draggedFolderData == null && (draggedItemIndex != null || externalDragActive || dragFromFolderApp != null)
+                            folderPreviewDraggedIconPath = if (hoveredDockSlot == slot &&
+                                draggedFolderData == null && (draggedItemIndex != null || externalDragActive || dragFromFolderApp != null) &&
+                                // occupied slot (folder → add preview; app → create preview)
+                                (dockFolder != null || appInfo != null) &&
+                                // not hovering the app's own source slot
+                                !(draggedFromDock && draggedItemIndex == slot)
                             ) draggedAppInfo?.iconPath else null,
                             isReceivingDrop = folderReceiveDockSlot == slot,
                             folderCustomization = dockFolder?.let { appCustomizations.customizations["folder_${it.id}"] },

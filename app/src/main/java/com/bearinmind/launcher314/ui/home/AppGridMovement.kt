@@ -1884,6 +1884,19 @@ fun DockSlot(
     )
     val iconScale = if (isDockScaledUp) animatedDockScale else 1f
 
+    // Folder-CREATE preview: when an app is dragged over THIS dock app (occupied
+    // slot, not a folder), show the same dark folder box with both icons that the
+    // home screen shows — instead of just the grey "place here" box.
+    val showDockCreatePreview = appInfo != null && folderData == null && folderPreviewDraggedIconPath != null
+    var lastDockCreateIconPath by remember { mutableStateOf<String?>(null) }
+    if (folderPreviewDraggedIconPath != null) lastDockCreateIconPath = folderPreviewDraggedIconPath
+    val dockCreateEffectivePath = folderPreviewDraggedIconPath ?: lastDockCreateIconPath
+    val dockCreatePreviewProgress by animateFloatAsState(
+        targetValue = if (showDockCreatePreview) 1f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "dockCreatePreview"
+    )
+
     // Fill available width and use square aspect ratio
     Box(
         modifier = Modifier
@@ -1895,7 +1908,7 @@ fun DockSlot(
         // Only show background indicator for valid drop targets (blue)
         // Invalid targets show red icon tint instead (no red background)
         // Suppress when folder preview is showing (same pattern as grid folders)
-        val showDockFolderPreview = folderData != null && folderPreviewDraggedIconPath != null
+        val showDockFolderPreview = folderPreviewDraggedIconPath != null && (folderData != null || appInfo != null)
         if (!showDockFolderPreview) {
             DockSlotHoverIndicator(isHovered = isHovered && isValidDropTarget, isValidDropTarget = isValidDropTarget, markerHalfSize = markerHalfSize, cornerRadius = hoverCornerRadius)
         }
@@ -1920,8 +1933,9 @@ fun DockSlot(
                     }
                     .graphicsLayer {
                         // Hide content when dragging - it's rendered in overlay for proper z-ordering
-                        // Use direct 0f/1f (no animation) to avoid one-frame flicker on drop
-                        alpha = if (isDragging) 0f else 1f
+                        // Use direct 0f/1f (no animation) to avoid one-frame flicker on drop.
+                        // Also fade out as the folder-create preview fades in.
+                        alpha = if (isDragging) 0f else (1f - dockCreatePreviewProgress)
                         clip = false // Allow scaled content to overflow
                     }
                     .padding(markerHalfSize)
@@ -2103,6 +2117,55 @@ fun DockSlot(
                                     alpha = dockOverlayAlpha
                                 }
                         )
+                    }
+                }
+            }
+
+            // Folder-CREATE preview overlay: app dragged over this dock app. Same
+            // dark folder box + two mini icons as the home screen / drawer.
+            if (dockCreatePreviewProgress > 0f && dockCreateEffectivePath != null && appInfo != null) {
+                val dockFolderBoxSize = iconSize.dp
+                val dockFolderCorner = (iconSize * 0.29f).dp
+                val dockPreviewScale = 0.85f + 0.15f * dockCreatePreviewProgress
+                val dockPreviewClip = getIconShape(globalIconShape) ?: RoundedCornerShape(dockFolderCorner)
+                Box(
+                    modifier = Modifier
+                        .size(dockFolderBoxSize)
+                        .graphicsLayer {
+                            this.alpha = dockCreatePreviewProgress
+                            scaleX = dockPreviewScale
+                            scaleY = dockPreviewScale
+                        }
+                        .clip(dockPreviewClip)
+                        .background(Color(0xFF1A1A1A))
+                        .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, dockPreviewClip),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val dockPad = dockFolderBoxSize * 0.12f
+                    val dockSpacing = dockFolderBoxSize * 0.05f
+                    val dockMini = (dockFolderBoxSize - dockPad * 2 - dockSpacing) / 2
+                    Column(
+                        modifier = Modifier.padding(dockPad),
+                        verticalArrangement = Arrangement.spacedBy(dockSpacing)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(dockSpacing)) {
+                            AsyncImage(
+                                model = File(appInfo.iconPath),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(dockMini).clip(RoundedCornerShape(dockMini * 0.2f))
+                            )
+                            AsyncImage(
+                                model = File(dockCreateEffectivePath),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(dockMini).clip(RoundedCornerShape(dockMini * 0.2f))
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(dockSpacing)) {
+                            Spacer(modifier = Modifier.size(dockMini))
+                            Spacer(modifier = Modifier.size(dockMini))
+                        }
                     }
                 }
             }
