@@ -178,6 +178,9 @@ fun AppCustomizeDialog(
     var tintBackgroundOnly by remember { mutableStateOf(currentCustomization?.iconTintBackgroundOnly ?: false) }
     // Issue #48 — Experimental: detach the icon from the grid.
     var detachedFromGrid by remember { mutableStateOf(currentCustomization?.detachedFromGrid ?: false) }
+    // Per-app: hide the shortcut source badge (shortcuts only).
+    var hideSourceBadge by remember { mutableStateOf(currentCustomization?.hideSourceBadge ?: false) }
+    val isShortcut = appInfo.packageName.startsWith("shortcut_")
     // Text-as-icon (replaces the image when non-blank).
     var iconText by remember { mutableStateOf(currentCustomization?.iconText ?: "") }
     var iconTextColor by remember { mutableStateOf(currentCustomization?.iconTextColor) }
@@ -385,6 +388,10 @@ fun AppCustomizeDialog(
                     ) {
                         val customIconFile = customIconPath?.let { File(it) }
                         val customIconClipShape = selectedShapeExp?.let { getIconShape(it) }
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.graphicsLayer { clip = false }
+                        ) {
                         if (showOriginalForDetach) {
                             // Force the original (unmodified) icon in Exp tab.
                             AsyncImage(
@@ -472,6 +479,18 @@ fun AppCustomizeDialog(
                                         scaleY = previewSizeScale
                                     }
                             )
+                        }
+                        // Source badge on the live preview (shortcuts only). hideBadge
+                        // reads the live toggle so flipping it updates the preview at once.
+                        SourceBadge(
+                            context = context,
+                            shortcutPackageName = appInfo.packageName,
+                            perAppIconSizeDp = 64.dp,
+                            globalIconShape = com.bearinmind.launcher314.data.getGlobalIconShape(context),
+                            globalIconBgColor = com.bearinmind.launcher314.data.getGlobalIconBgColor(context),
+                            globalIconBgIntensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context),
+                            hideBadge = hideSourceBadge
+                        )
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         val previewFontFamily = selectedFontId?.let { id ->
@@ -784,6 +803,25 @@ fun AppCustomizeDialog(
                                     modifier = Modifier.fillMaxWidth(),
                                     textAlign = TextAlign.Center
                                 )
+
+                                // Shortcuts only: hide the source-app badge.
+                                if (isShortcut) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Hide source badge",
+                                            color = Color.White.copy(alpha = 0.87f),
+                                            fontSize = 14.sp
+                                        )
+                                        Switch(
+                                            checked = hideSourceBadge,
+                                            onCheckedChange = { hideSourceBadge = it }
+                                        )
+                                    }
+                                }
                             }
                         }
                         2 -> {
@@ -1446,6 +1484,7 @@ fun AppCustomizeDialog(
                                 labelColorIntensity = if (selectedLabelColor != null) labelColorIntensity.roundToInt().takeIf { it != 100 } else null,
                                 customIconPackName = selectedIconPackName,
                                 detachedFromGrid = detachedFromGrid,
+                                hideSourceBadge = hideSourceBadge,
                                 // Preserve existing position if toggling on/off mid-edit — null
                                 // only when the user explicitly re-attaches and we want to
                                 // forget the saved coords. For now keep them so toggling back

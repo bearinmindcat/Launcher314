@@ -24,6 +24,9 @@ data class AppCustomization(
     val labelColor: Long? = null,
     val labelColorIntensity: Int? = null,
     val customIconPackName: String? = null,
+    // Per-app: hide the shortcut/PWA source badge (the mini source-app icon in
+    // the corner). Only meaningful for "shortcut_" packages. Default false (shown).
+    val hideSourceBadge: Boolean = false,
     // Experimental — Issue #48. When `detachedFromGrid` is true the icon is
     // skipped in the home-grid render and instead drawn as a free-floating
     // overlay on the page, positioned by detachedX/detachedY in pixels

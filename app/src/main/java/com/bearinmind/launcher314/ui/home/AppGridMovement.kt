@@ -161,8 +161,10 @@ internal fun BoxScope.SourceBadge(
     perAppIconSizeDp: Dp,
     globalIconShape: String?,
     globalIconBgColor: Int?,
-    globalIconBgIntensity: Int
+    globalIconBgIntensity: Int,
+    hideBadge: Boolean = false
 ) {
+    if (hideBadge) return
     if (!shortcutPackageName.startsWith("shortcut_")) return
     val sourcePkg = remember(shortcutPackageName) {
         getShortcutSourcePackage(context, shortcutPackageName)
@@ -865,7 +867,8 @@ fun DraggableGridCell(
                                         perAppIconSizeDp = perAppIconSizeDp,
                                         globalIconShape = globalIconShape,
                                         globalIconBgColor = globalIconBgColor,
-                                        globalIconBgIntensity = globalIconBgIntensity
+                                        globalIconBgIntensity = globalIconBgIntensity,
+                                        hideBadge = cell.appInfo.customization?.hideSourceBadge == true
                                     )
                                 }
                             }

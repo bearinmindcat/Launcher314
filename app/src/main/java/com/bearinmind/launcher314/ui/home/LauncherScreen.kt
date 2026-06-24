@@ -577,7 +577,8 @@ private fun OverlayAppContent(
                     perAppIconSizeDp = perAppIconSizeDp,
                     globalIconShape = globalIconShape,
                     globalIconBgColor = globalIconBgColor,
-                    globalIconBgIntensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)
+                    globalIconBgIntensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context),
+                    hideBadge = appInfo.customization?.hideSourceBadge == true
                 )
             }
         }
