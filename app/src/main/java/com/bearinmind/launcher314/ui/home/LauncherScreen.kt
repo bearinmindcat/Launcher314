@@ -557,7 +557,7 @@ private fun OverlayAppContent(
             }
         } else {
             Box(
-                modifier = Modifier.size(perAppIconSizeDp),
+                modifier = Modifier.size(perAppIconSizeDp).graphicsLayer { clip = false },
                 contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
@@ -568,6 +568,16 @@ private fun OverlayAppContent(
                     modifier = Modifier
                         .size(perAppIconSizeDp)
                         .then(if (!isBgColorIcon && clipShape != null) Modifier.clip(clipShape) else Modifier)
+                )
+                // Source badge — same shared component as the home cell, so it stays
+                // attached to the icon while dragging and matches (no flash on drop).
+                SourceBadge(
+                    context = context,
+                    shortcutPackageName = appInfo.packageName,
+                    perAppIconSizeDp = perAppIconSizeDp,
+                    globalIconShape = globalIconShape,
+                    globalIconBgColor = globalIconBgColor,
+                    globalIconBgIntensity = com.bearinmind.launcher314.data.getGlobalIconBgIntensity(context)
                 )
             }
         }
