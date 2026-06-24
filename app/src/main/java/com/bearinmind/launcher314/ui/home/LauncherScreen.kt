@@ -361,6 +361,25 @@ private fun reflowFolderCells(
 }
 
 /**
+ * Default OPEN-folder grid size. One fewer column/row than the home grid so the
+ * folder's icons default to ~home/drawer size instead of shrinking to fit a full
+ * home-sized grid inside the smaller popup. Resizing overrides this (icons reflow).
+ */
+private fun folderDefaultCols(gridColumns: Int): Int = (gridColumns - 1).coerceAtLeast(2)
+
+/**
+ * Default OPEN-folder rows: one fewer than home, but grown so EVERY app still gets
+ * a cell — the folder grid is fixed (non-scrolling) and [reflowFolderCells] drops
+ * apps that have no cell, so we must never default to fewer cells than apps.
+ */
+private fun folderDefaultRows(folder: HomeFolder, gridColumns: Int, gridRows: Int): Int {
+    val cols = folderDefaultCols(gridColumns)
+    val appCount = folder.appPackageNames.count { it.isNotEmpty() }
+    val rowsForApps = if (appCount > 0) (appCount + cols - 1) / cols else 1
+    return maxOf((gridRows - 1).coerceAtLeast(2), rowsForApps)
+}
+
+/**
  * Overlay content for a dragged app — renders icon + label matching DraggableGridCell layout exactly.
  * Extracted to a separate composable to keep LauncherScreen method under JVM 64KB limit.
  */
@@ -6984,8 +7003,8 @@ fun LauncherScreen(
         )
         // Effective grid dims used by the folder render loop. The Resize
         // session updates the overrides live; the loop reads these.
-        val folderGridColumns = resizeColumnsOverride ?: gridColumns
-        val folderGridRows = resizeRowsOverride ?: gridRows
+        val folderGridColumns = resizeColumnsOverride ?: folderDefaultCols(gridColumns)
+        val folderGridRows = resizeRowsOverride ?: folderDefaultRows(folder, gridColumns, gridRows)
         val minPopupWpx = with(folderDensity) { 200.dp.toPx() }
         val minPopupHpx = with(folderDensity) { 200.dp.toPx() }
         val maxPopupWpx = screenWpx - 2f * with(folderDensity) { 16.dp.toPx() }
@@ -7334,8 +7353,8 @@ fun LauncherScreen(
                                     // drag handles begin from the visible state.
                                     if (resizeWidthOverride == null) resizeWidthOverride = popupWpx
                                     if (resizeHeightOverride == null) resizeHeightOverride = popupHpx
-                                    if (resizeColumnsOverride == null) resizeColumnsOverride = gridColumns
-                                    if (resizeRowsOverride == null) resizeRowsOverride = gridRows
+                                    if (resizeColumnsOverride == null) resizeColumnsOverride = folderGridColumns
+                                    if (resizeRowsOverride == null) resizeRowsOverride = folderGridRows
                                     isResizingFolder = true
                                 }
                             }
@@ -7840,8 +7859,8 @@ fun LauncherScreen(
             // remain active in parallel so pixel-size and grid can both
             // be tuned during the same Resize session.
             FolderResizePanel(
-                currentColumns = resizeColumnsOverride ?: gridColumns,
-                currentRows = resizeRowsOverride ?: gridRows,
+                currentColumns = folderGridColumns,
+                currentRows = folderGridRows,
                 progress = resizeUiProgress,
                 interactive = isResizingFolder,
                 // Popup in the TOP half → panel at the BOTTOM (opposite side),
@@ -7852,8 +7871,8 @@ fun LauncherScreen(
                 onReset = {
                     resizeWidthOverride = null
                     resizeHeightOverride = null
-                    resizeColumnsOverride = gridColumns
-                    resizeRowsOverride = gridRows
+                    resizeColumnsOverride = null
+                    resizeRowsOverride = null
                     val cleared = (appCustomizations.customizations[folder.id]
                         ?: AppCustomization()).copy(
                         folderPopupWidthPx = null,
