@@ -265,15 +265,18 @@ fun AppDrawerPreviewSection(
         withContext(Dispatchers.IO) {
             try {
                 val wallpaperManager = android.app.WallpaperManager.getInstance(context)
-                val loadedDrawable = try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        wallpaperManager.getDrawable(android.app.WallpaperManager.FLAG_SYSTEM)
-                    } else {
-                        wallpaperManager.drawable
-                    }
-                } catch (e: SecurityException) {
+                // Android 13+: reading the wallpaper BITMAP requires READ_MEDIA_IMAGES,
+                // which Google Play forbids for launchers — and (verified) the home-role
+                // does NOT grant access on current Android/Samsung; getDrawable would
+                // just return the default wallpaper. So on 13+ we don't read it at all
+                // and let the preview fall back to a gradient of the wallpaper's REAL
+                // colors (getWallpaperColors, permission-free). On <= 12 we still read
+                // the actual image via READ_EXTERNAL_STORAGE.
+                val loadedDrawable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     null
-                } ?: wallpaperManager.builtInDrawable
+                } else {
+                    try { wallpaperManager.drawable } catch (e: SecurityException) { null }
+                }
                 withContext(Dispatchers.Main) {
                     wallpaperDrawable = loadedDrawable
                 }
@@ -710,16 +713,30 @@ private fun RealAppDrawerPreview(
                 .clickable { onPlayClick() }
         ) {
             // Wallpaper layer (behind everything)
+            val wpPreviewCtx = androidx.compose.ui.platform.LocalContext.current
+            val wpPreviewColors = remember(wallpaperDrawable, wpPreviewCtx) {
+                if (wallpaperDrawable == null) getWallpaperPreviewColors(wpPreviewCtx) else emptyList()
+            }
             if (wallpaperDrawable != null) {
-                val painter = rememberDrawablePainter(drawable = wallpaperDrawable)
+                // REAL wallpaper — works on Android <=12 (READ_EXTERNAL_STORAGE) and on
+                // 13+ when this app is the default home (the home role grants wallpaper
+                // read access, no READ_MEDIA_IMAGES needed).
                 Image(
-                    painter = painter,
+                    painter = rememberDrawablePainter(drawable = wallpaperDrawable),
                     contentDescription = "Wallpaper",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
+            } else if (wpPreviewColors.isNotEmpty()) {
+                // Couldn't read the bitmap (13+ and not the home app) — gradient of the
+                // wallpaper's ACTUAL colors (WallpaperManager.getWallpaperColors, no perm).
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(androidx.compose.ui.graphics.Brush.verticalGradient(wpPreviewColors))
+                )
             } else {
-                // Fallback dark background if no wallpaper
+                // Fallback dark background if nothing is available
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1412,6 +1429,32 @@ fun getWallpaperPermission(): String {
     }
 }
 
+/**
+ * Wallpaper colors for the preview background — PERMISSION-FREE
+ * (WallpaperManager.getWallpaperColors, API 27+). On Android 13+ the launcher can
+ * no longer read the wallpaper BITMAP (READ_MEDIA_IMAGES is forbidden by Play's
+ * photo/video policy), so the preview paints a gradient of the wallpaper's actual
+ * colors instead of the user's image. Returns >= 2 colors for a gradient, or
+ * empty if unavailable (caller then uses the real drawable / dark fallback).
+ */
+fun getWallpaperPreviewColors(context: Context): List<androidx.compose.ui.graphics.Color> {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1) return emptyList()
+    return try {
+        val wm = android.app.WallpaperManager.getInstance(context)
+        val wc = wm.getWallpaperColors(android.app.WallpaperManager.FLAG_SYSTEM) ?: return emptyList()
+        val out = mutableListOf<androidx.compose.ui.graphics.Color>()
+        out.add(androidx.compose.ui.graphics.Color(wc.primaryColor.toArgb()))
+        wc.secondaryColor?.let { out.add(androidx.compose.ui.graphics.Color(it.toArgb())) }
+        wc.tertiaryColor?.let { out.add(androidx.compose.ui.graphics.Color(it.toArgb())) }
+        // Need >= 2 stops for a gradient — derive a darker second stop if needed.
+        if (out.size == 1) {
+            val c = out[0]
+            out.add(androidx.compose.ui.graphics.Color(c.red * 0.55f, c.green * 0.55f, c.blue * 0.55f, 1f))
+        }
+        out
+    } catch (_: Exception) { emptyList() }
+}
+
 // Home screen prefs imported from com.bearinmind.launcher314.data.HomeScreenPrefs
 
 // Data classes for home screen apps (matching LauncherScreen)
@@ -1561,15 +1604,15 @@ fun HomeScreenPreviewSection(
         kotlinx.coroutines.withContext(Dispatchers.IO) {
             try {
                 val wallpaperManager = android.app.WallpaperManager.getInstance(context)
-                val loadedDrawable = try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        wallpaperManager.getDrawable(android.app.WallpaperManager.FLAG_SYSTEM)
-                    } else {
-                        wallpaperManager.drawable
-                    }
-                } catch (e: SecurityException) {
+                // Android 13+: can't read the wallpaper bitmap without READ_MEDIA_IMAGES
+                // (Play-forbidden; home-role doesn't grant it) — null -> color gradient.
+                // <= 12 reads the real image via READ_EXTERNAL_STORAGE. See the other
+                // preview's fuller note.
+                val loadedDrawable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     null
-                } ?: wallpaperManager.builtInDrawable
+                } else {
+                    try { wallpaperManager.drawable } catch (e: SecurityException) { null }
+                }
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                     wallpaperDrawable = loadedDrawable
                 }
@@ -2063,15 +2106,27 @@ private fun HomeScreenPreview(
                 .clickable { onPlayClick() }
         ) {
             // Wallpaper background
+            val wpPreviewCtx2 = androidx.compose.ui.platform.LocalContext.current
+            val wpPreviewColors2 = remember(wallpaperDrawable, wpPreviewCtx2) {
+                if (wallpaperDrawable == null) getWallpaperPreviewColors(wpPreviewCtx2) else emptyList()
+            }
             if (wallpaperDrawable != null) {
-                val painter = rememberDrawablePainter(drawable = wallpaperDrawable)
+                // REAL wallpaper (works on <=12, and on 13+ when this app is the home).
                 Image(
-                    painter = painter,
+                    painter = rememberDrawablePainter(drawable = wallpaperDrawable),
                     contentDescription = "Wallpaper",
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(8.dp)),
                     contentScale = ContentScale.Crop
+                )
+            } else if (wpPreviewColors2.isNotEmpty()) {
+                // Bitmap not readable (13+ non-home) — gradient of the wallpaper's colors.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(androidx.compose.ui.graphics.Brush.verticalGradient(wpPreviewColors2))
                 )
             } else {
                 // Fallback dark background (matches actual launcher)

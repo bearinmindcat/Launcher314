@@ -18,10 +18,13 @@
     <!-- Permission to expand notification shade -->
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
 
-    <!-- Permission to read wallpaper -->
+    <!-- Legacy wallpaper read for Android <= 12 only. READ_MEDIA_IMAGES was
+         removed: Google Play's photo/video permissions policy forbids it for a
+         launcher (only occasional media access, handled via the system photo
+         picker). On Android 13+ the wallpaper preview falls back to the built-in
+         wallpaper drawable — see ScreenPreview's guarded getDrawable(). -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <!-- Permission to set the actual Android system wallpaper via WallpaperManager -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
