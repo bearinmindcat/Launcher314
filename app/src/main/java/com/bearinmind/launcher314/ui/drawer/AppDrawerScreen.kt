@@ -419,9 +419,10 @@ fun AppDrawerScreen(
     var escapePendingHomeJob by remember { mutableStateOf<Job?>(null) }
     var escapeInDropZone by remember { mutableStateOf(false) }
 
-    // Sort state
-    var currentSortOption by remember { mutableStateOf(SortOption.NAME) }
-    var isSortAscending by remember { mutableStateOf(true) }
+    // Sort state — initialized from saved prefs so the user's choice persists across
+    // open/close and returning from the dock (issue #4). Defaults to Name / ascending.
+    var currentSortOption by remember { mutableStateOf(com.bearinmind.launcher314.data.getDrawerSortOption(context)) }
+    var isSortAscending by remember { mutableStateOf(com.bearinmind.launcher314.data.getDrawerSortAscending(context)) }
 
     // Screen dimensions for animation calculations
     val configuration = LocalConfiguration.current
@@ -680,9 +681,9 @@ fun AppDrawerScreen(
             drawerGridRows = drawerGridRows,
             isPagedMode = isPagedMode,
             currentSortOption = currentSortOption,
-            onSortOptionChanged = { currentSortOption = it },
+            onSortOptionChanged = { currentSortOption = it; com.bearinmind.launcher314.data.setDrawerSortOption(context, it) },
             isSortAscending = isSortAscending,
-            onSortDirectionChanged = { isSortAscending = it },
+            onSortDirectionChanged = { isSortAscending = it; com.bearinmind.launcher314.data.setDrawerSortAscending(context, it) },
             onFolderClick = { clickedFolder ->
                 // Always use the latest folder from state (UI item may be stale after recent adds)
                 val latestFolder = folders.find { it.id == clickedFolder.id } ?: clickedFolder

@@ -290,6 +290,32 @@ fun setGlobalIconShape(context: Context, shape: String?) {
     }
 }
 
+// Drawer sort preference — persists the user's chosen sort option + direction so
+// it survives closing/reopening the drawer and returning from the dock (issue #4).
+private const val KEY_DRAWER_SORT_OPTION = "drawer_sort_option"
+private const val KEY_DRAWER_SORT_ASCENDING = "drawer_sort_ascending"
+
+fun getDrawerSortOption(context: Context): SortOption {
+    val name = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getString(KEY_DRAWER_SORT_OPTION, null)
+    return SortOption.values().firstOrNull { it.name == name } ?: SortOption.NAME
+}
+
+fun setDrawerSortOption(context: Context, option: SortOption) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putString(KEY_DRAWER_SORT_OPTION, option.name).apply()
+}
+
+fun getDrawerSortAscending(context: Context): Boolean {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(KEY_DRAWER_SORT_ASCENDING, true)
+}
+
+fun setDrawerSortAscending(context: Context, ascending: Boolean) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_DRAWER_SORT_ASCENDING, ascending).apply()
+}
+
 fun getGlobalIconBgColor(context: Context): Int? {
     val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return if (prefs.contains(KEY_GLOBAL_ICON_BG_COLOR)) prefs.getInt(KEY_GLOBAL_ICON_BG_COLOR, 0) else null
