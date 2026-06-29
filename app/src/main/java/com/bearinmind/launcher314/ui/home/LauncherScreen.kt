@@ -736,6 +736,15 @@ private fun OverlayFolderContent(
 }
 
 /**
+ * Resolve a widget's rounded-corner radius in dp: per-widget override wins,
+ * otherwise the global toggle + percent. Shared by the live cell and the drag
+ * overlay so they always match (and to keep LauncherScreen off the 64KB ceiling).
+ */
+private fun widgetCornerRadiusDp(perWidgetPercent: Int?, globalEnabled: Boolean, globalPercent: Int): Float =
+    perWidgetPercent?.let { it / 100f * WIDGET_MAX_CORNER_RADIUS_DP }
+        ?: if (globalEnabled) globalPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP else 0f
+
+/**
  * LauncherScreen - A home screen with drag and drop app placement
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -3692,11 +3701,8 @@ fun LauncherScreen(
                                             val effectivePaddingDp = (effectivePaddingPercent / 100f * WIDGET_MAX_PADDING_DP).dp
                                             // Per-widget corner override wins regardless of the global
                                             // toggle; null falls back to the global enabled+radius.
-                                            val effectiveCornerRadiusDp = widget.cornerRadiusPercent
-                                                ?.let { it / 100f * WIDGET_MAX_CORNER_RADIUS_DP }
-                                                ?: if (widgetRoundedCornersEnabled) {
-                                                    widgetCornerRadiusPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP
-                                                } else 0f
+                                            val effectiveCornerRadiusDp = widgetCornerRadiusDp(
+                                                widget.cornerRadiusPercent, widgetRoundedCornersEnabled, widgetCornerRadiusPercent)
 
                                             Box(
                                                 modifier = Modifier
@@ -6149,6 +6155,11 @@ fun LauncherScreen(
                 placedWidgets.count { it.stackId == draggedFromPlaced.stackId }
             } else 0
 
+            // Keep the dragged widget's rounded corners on the bitmap overlay — the
+            // drawToBitmap snapshot is square, so clip it the same way the live cell does.
+            val dragCornerDp = widgetCornerRadiusDp(
+                draggedFromPlaced?.cornerRadiusPercent, widgetRoundedCornersEnabled, widgetCornerRadiusPercent)
+
             Box(
                 modifier = Modifier
                     .size(
@@ -6173,6 +6184,13 @@ fun LauncherScreen(
                             alpha = 0.8f
                         }
                         compositingStrategy = CompositingStrategy.Offscreen
+                        // Preserve the widget's rounded corners on the drag overlay
+                        // (the drawToBitmap snapshot is square). Reuse this layer's
+                        // clip instead of a separate modifier to stay off the 64KB limit.
+                        if (!isDraggedStack && dragCornerDp > 0f) {
+                            clip = true
+                            shape = RoundedCornerShape(dragCornerDp.dp)
+                        }
                     }
                     .drawWithContent {
                         drawContent()

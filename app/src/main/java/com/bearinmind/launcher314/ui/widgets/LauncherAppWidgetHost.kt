@@ -71,16 +71,15 @@ class LauncherAppWidgetHost(
      * global setting. Multiplies with the system fontScale to preserve accessibility.
      */
     private fun createScaledContext(context: Context, appWidgetId: Int): Context {
-        val perWidget = WidgetManager.loadPlacedWidgets(context)
-            .find { it.appWidgetId == appWidgetId }
-            ?.fontScalePercent
-        val scalePercent = perWidget ?: getWidgetFontScalePercent(context)
-        if (scalePercent == 100) return context
-
-        val multiplier = scalePercent / 100f
-        val config = Configuration(context.resources.configuration)
-        config.fontScale = config.fontScale * multiplier
-        return context.createConfigurationContext(config)
+        // IMPORTANT: do NOT wrap the widget's context in createConfigurationContext to
+        // apply a font scale. A config-context is not a proper UI context, and using it
+        // for the AppWidgetHostView makes many providers (Samsung clock/weather and other
+        // Material-You widgets) fail to render with "Can't show content" — verified via
+        // logcat: a non-100% widget font scale -> WRAPPING -> the provider's RemoteViews
+        // are delivered but never display. Widget rendering correctness wins over the
+        // per-widget font-scale feature, so always use the launcher's real (themed,
+        // display-associated) context.
+        return context
     }
 
     companion object {

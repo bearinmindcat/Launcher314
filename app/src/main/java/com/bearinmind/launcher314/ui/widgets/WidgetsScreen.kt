@@ -601,11 +601,6 @@ private fun WidgetAppSection(
     onWidgetSelected: (WidgetInfo) -> Unit = {},
     cornerRadiusPx: Float = 0f
 ) {
-    val rotationAngle by animateFloatAsState(
-        targetValue = if (isExpanded) -90f else 0f,
-        label = "triangle_rotation"
-    )
-
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -644,25 +639,13 @@ private fun WidgetAppSection(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Triangle indicator (matching CollapsibleSection)
-            androidx.compose.foundation.Canvas(
-                modifier = Modifier
-                    .size(12.dp)
-                    .rotate(rotationAngle)
-            ) {
-                val path = Path().apply {
-                    // Triangle pointing down (will rotate to point right when expanded)
-                    moveTo(size.width / 2, size.height * 0.8f)
-                    lineTo(size.width * 0.15f, size.height * 0.2f)
-                    lineTo(size.width * 0.85f, size.height * 0.2f)
-                    close()
-                }
-                drawPath(
-                    path = path,
-                    color = Color.Gray,
-                    style = Fill
-                )
-            }
+            // Widget count (Samsung-style) shown where the expand/collapse triangle
+            // used to be. The row is still tappable to expand the widget previews.
+            Text(
+                text = appGroup.widgets.size.toString(),
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.5f)
+            )
         }
 
         // Widgets grid (shown when expanded)

@@ -79,9 +79,23 @@ object WidgetManager {
      * Initialize the widget manager with context.
      * Should be called when the launcher activity starts.
      */
+    // The Activity context the host was built with (so we can rebuild it if the
+    // Activity is recreated — e.g. fold/unfold on a foldable).
+    private var hostActivityContext: Context? = null
+
     fun init(context: Context) {
-        if (appWidgetHost == null) {
-            appWidgetHost = LauncherAppWidgetHost(context.applicationContext, LauncherAppWidgetHost.HOST_ID)
+        // Launcher3/Lawnchair build the AppWidgetHost with the ACTIVITY (UI) context,
+        // NOT applicationContext. Some providers (e.g. Samsung clock) won't deliver
+        // RemoteViews to a host backed by applicationContext, leaving widgets stuck on
+        // "Can't show content". Rebuild the host if the Activity changed (config change /
+        // foldable recreation) so it never holds a destroyed context.
+        if (appWidgetHost == null || hostActivityContext !== context) {
+            try { appWidgetHost?.stopListening() } catch (_: Exception) {}
+            appWidgetHost = LauncherAppWidgetHost(context, LauncherAppWidgetHost.HOST_ID)
+            hostActivityContext = context
+            widgetViews.clear()
+        }
+        if (appWidgetManager == null) {
             appWidgetManager = AppWidgetManager.getInstance(context.applicationContext)
         }
     }
@@ -240,7 +254,25 @@ object WidgetManager {
     fun updateWidgetViewSize(appWidgetId: Int, widthDp: Int, heightDp: Int) {
         val view = widgetViews[appWidgetId] ?: return
         try {
-            view.updateAppWidgetSize(Bundle(), widthDp, heightDp, widthDp, heightDp)
+            val opts = Bundle().apply {
+                putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, widthDp)
+                putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, heightDp)
+                putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, widthDp)
+                putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, heightDp)
+                // Android 12+ responsive widgets (Samsung clock/weather, Google, etc.)
+                // choose their layout from OPTION_APPWIDGET_SIZES. Without it they fall
+                // back to their SMALLEST layout and render squished. Provide the actual
+                // size so they pick the right RemoteViews (Launcher3 does the same).
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    putParcelableArrayList(
+                        AppWidgetManager.OPTION_APPWIDGET_SIZES,
+                        arrayListOf(android.util.SizeF(widthDp.toFloat(), heightDp.toFloat()))
+                    )
+                }
+            }
+            view.updateAppWidgetSize(opts, widthDp, heightDp, widthDp, heightDp)
+            // Notify the provider of the new size so it re-pushes RemoteViews.
+            appWidgetManager?.updateAppWidgetOptions(appWidgetId, opts)
         } catch (e: Exception) {
             android.util.Log.e("WidgetManager", "Failed to update widget size for id=$appWidgetId", e)
         }
