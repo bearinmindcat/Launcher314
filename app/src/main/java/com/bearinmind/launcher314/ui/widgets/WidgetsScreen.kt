@@ -762,22 +762,32 @@ private fun WidgetPreviewCard(
                                 // Center the scaled child in the cell.
                                 child.translationX = (width - vw * s) / 2f
                                 child.translationY = (height - vh * s) / 2f
-                                // Honor the "Rounded corners" setting on LIVE previews too
-                                // (static images are pre-rounded via roundBitmapCorners).
-                                // The outline clips in the child's pre-scale space, so
-                                // divide by s to land at the same visual radius.
-                                if (cornerRadiusPx > 0f && s > 0f) {
+                                // Honor "Rounded corners" + the Corner Roundness % on LIVE
+                                // previews. The radius is read from the container's tag —
+                                // AndroidView's update pass refreshes it when the slider
+                                // moves (a value captured in the factory would go stale).
+                                // Map % the same way the home screen does (100% = half the
+                                // short side = pill), applied in the child's pre-scale
+                                // space so the miniature is an exact scaled-down replica.
+                                val radiusSetting = (tag as? Float) ?: 0f
+                                if (radiusSetting > 0f) {
+                                    val maxPx = WIDGET_MAX_CORNER_RADIUS_DP * d
+                                    val frac = (radiusSetting / maxPx).coerceIn(0f, 1f)
+                                    val r = frac * (minOf(vw, vh) / 2f)
                                     child.outlineProvider = object : android.view.ViewOutlineProvider() {
                                         override fun getOutline(v: android.view.View, outline: android.graphics.Outline) {
-                                            outline.setRoundRect(0, 0, v.width, v.height, cornerRadiusPx / s)
+                                            outline.setRoundRect(0, 0, v.width, v.height, r)
                                         }
                                     }
                                     child.clipToOutline = true
+                                } else {
+                                    child.clipToOutline = false
                                 }
                             }
                         }
                         container.clipChildren = true
                         container.clipToPadding = true
+                        container.tag = cornerRadiusPx
                         try {
                             val rv = android.widget.RemoteViews(previewPkg, previewLayoutId)
                             container.addView(rv.apply(c, container))
@@ -791,6 +801,14 @@ private fun WidgetPreviewCard(
                             }
                         }
                         container
+                    },
+                    update = { v ->
+                        // Re-apply the corner setting when the roundness slider or the
+                        // rounded-corners toggle changes (onLayout reads it from the tag).
+                        if (v.tag != cornerRadiusPx) {
+                            v.tag = cornerRadiusPx
+                            v.requestLayout()
+                        }
                     },
                     modifier = Modifier
                         .fillMaxSize()

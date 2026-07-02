@@ -2028,14 +2028,18 @@ private fun HomeScreenPreview(
     val gridCells = remember(homeScreenApps, allApps, homeFolders, placedWidgets, totalCells, gridColumns) {
         val cells = MutableList<HomePreviewCell?>(totalCells) { null }
 
-        // Place widgets first (they span multiple cells)
-        // For stacked widgets, only show the currently selected one
+        // Place widgets first (they span multiple cells).
+        // FIRST PAGE ONLY — the preview shows home page 0, so widgets placed on
+        // other pages must not leak in (they'd overlap page-0 content).
+        // For stacked widgets, only show the currently selected one.
         val visibleWidgets = placedWidgets.filter { w ->
-            if (w.stackId == null) true
-            else {
-                val currentPage = savedStackPages[w.stackId] ?: 0
-                w.stackOrder == currentPage
-            }
+            w.page == 0 && (
+                if (w.stackId == null) true
+                else {
+                    val currentPage = savedStackPages[w.stackId] ?: 0
+                    w.stackOrder == currentPage
+                }
+            )
         }
         visibleWidgets.forEach { widget ->
             val originPos = widget.startRow * gridColumns + widget.startColumn
@@ -2503,13 +2507,16 @@ private fun HomeScreenPreview(
 
                         // Use bitmaps from the parent (persists across icon size changes)
                         val widgetContext = LocalContext.current
-                        // For stacked widgets, only show the currently selected one
+                        // FIRST PAGE ONLY (preview shows home page 0); for stacked
+                        // widgets, only show the currently selected one.
                         val previewVisibleWidgets = placedWidgets.filter { w ->
-                            if (w.stackId == null) true
-                            else {
-                                val currentPage = savedStackPages[w.stackId] ?: 0
-                                w.stackOrder == currentPage
-                            }
+                            w.page == 0 && (
+                                if (w.stackId == null) true
+                                else {
+                                    val currentPage = savedStackPages[w.stackId] ?: 0
+                                    w.stackOrder == currentPage
+                                }
+                            )
                         }
 
                         previewVisibleWidgets.forEach { widget ->

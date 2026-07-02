@@ -318,6 +318,21 @@ object WidgetManager {
     }
 
     /**
+     * Drop every cached host view. MUST be called from Activity.onDestroy():
+     * the cached views were created with the ACTIVITY context, and this map is
+     * a process-wide singleton — after an activity recreation (fold/unfold,
+     * theme change, rotation) the stale views pin the dead Activity, its View
+     * tree and its whole Compose composition in memory. Each recreation leaked
+     * another full activity ("Activities: 2" in dumpsys meminfo), and the
+     * growing GC pressure made the drawer progressively laggy over 30-60 min.
+     * The new composition recreates views lazily via getOrCreateWidgetView();
+     * the (app-context) host keeps listening, so widgets re-fill immediately.
+     */
+    fun clearViewCache() {
+        widgetViews.clear()
+    }
+
+    /**
      * Re-bind every cached host view to its current provider info. Called
      * by `LauncherAppWidgetHost.onProvidersChanged` when *any* provider
      * package on the device is added / updated / removed. Matches what

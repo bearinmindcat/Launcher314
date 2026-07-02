@@ -510,6 +510,10 @@ class MainActivity : ComponentActivity() {
         // RemoteViews per widget while a host is not listening, so any
         // intermediate frames are silently dropped.
         WidgetManager.stopListening()
+        // Drop the widget-view cache — the views hold THIS activity's context, and
+        // the cache is a singleton; keeping them across a recreation leaks the dead
+        // activity + composition (progressive drawer lag). See clearViewCache().
+        WidgetManager.clearViewCache()
     }
 
     override fun onNewIntent(intent: Intent) {

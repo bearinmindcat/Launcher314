@@ -138,6 +138,42 @@ fun WidgetCustomizeDialog(
                             RoundedCornerShape(12.dp)
                         )
                 ) {
+                    // Reset — same affordance as the app customize dialog: restores
+                    // every option to the current GLOBAL widget defaults. Save then
+                    // stores them as "follow global" (null overrides on the widget).
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp)
+                            .background(
+                                Color(0xFFFF6B6B).copy(alpha = 0.15f),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                fontScale = globalFontScalePercent.toFloat()
+                                spacing = globalPaddingPercent.toFloat()
+                                cornerPercent = globalCornerRadiusPercent.toFloat()
+                                roundedEnabled = globalCornerRadiusPercent > 0
+                                slideshowEnabled = false
+                                slideshowInterval = 5f
+                            }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_reset_icon),
+                            contentDescription = "Reset to default",
+                            modifier = Modifier.size(16.dp),
+                            tint = Color.White.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Reset",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 9.sp
+                        )
+                    }
                     // Corners track the dialog's own slider + on/off toggle (live
                     // preview). Same mapping as the real widget clip: percent of the
                     // shorter side, 100% = full pill (Compose percent shapes: 50 = pill).
@@ -156,8 +192,10 @@ fun WidgetCustomizeDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 8.dp)
-                            .height(80.dp + markerHalf * 2)
+                            // Symmetric insets so the sample widget shrinks on BOTH
+                            // sides (the Reset button occupies only the left inset).
+                            .padding(start = 64.dp, end = 64.dp, top = 8.dp, bottom = 8.dp)
+                            .height(64.dp + markerHalf * 2)
                     ) {
                         val markerColor = Color.White.copy(alpha = 0.5f)
                         val markerFontSize = 10.sp
