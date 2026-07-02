@@ -96,6 +96,9 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
         // strip) doesn't block the launcher's main thread and visibly stutter
         // scrolling / drag gestures. The shared AsyncTask thread pool is
         // sized for short bursts and is the same pool Launcher3 uses.
+        // Match Launcher3's BaseLauncherAppWidgetHostView: hand off RemoteViews
+        // inflation to a background executor so a heavy widget update doesn't
+        // block the launcher's main thread and stutter scrolling/drags.
         @Suppress("DEPRECATION")
         setExecutor(android.os.AsyncTask.THREAD_POOL_EXECUTOR)
     }

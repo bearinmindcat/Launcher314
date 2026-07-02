@@ -83,7 +83,10 @@ class LauncherAppWidgetHost(
     }
 
     companion object {
-        // Unique host ID for this launcher
-        const val HOST_ID = 314
+        // Use the standard Launcher3 host ID (1024) that AOSP Launcher3, Lawnchair,
+        // and Samsung's own One UI Home all use. Some OEM providers (Samsung clock)
+        // only deliver real RemoteViews to the standard launcher host ID and send
+        // "Can't show content" to non-standard IDs (we previously used 314).
+        const val HOST_ID = 1024
     }
 }

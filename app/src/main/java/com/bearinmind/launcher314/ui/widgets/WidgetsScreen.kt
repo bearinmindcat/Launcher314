@@ -38,6 +38,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
@@ -719,7 +720,68 @@ private fun WidgetPreviewCard(
                 .height(previewHeight),
             contentAlignment = Alignment.Center
         ) {
-            if (displayPreview != null) {
+            // Launcher3/Lawnchair-style preview precedence:
+            //   1. previewLayout (API 31+) — inflate the provider's RemoteViews preview
+            //      so the cell shows what the widget ACTUALLY looks like (scalable,
+            //      theme-aware), instead of a static placeholder image.
+            //   2. previewImage / app icon — fallback for older widgets / devices.
+            val previewLayoutId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                widget.providerInfo.previewLayout else 0
+            val previewPkg = widget.providerInfo.provider.packageName
+
+            if (previewLayoutId != 0) {
+                // Render the provider's RemoteViews preview and scale it to fit — like
+                // Launcher3's WidgetCell. We DON'T guess the natural size (that caused
+                // cut-off / overlap); instead a self-scaling FrameLayout measures the
+                // preview's REAL size (UNSPECIFIED) and uniformly scales + centers it to
+                // fit the cell, clipping any residual. This shows the whole widget, fitted.
+                androidx.compose.ui.viewinterop.AndroidView(
+                    factory = { c ->
+                        val container = object : android.widget.FrameLayout(c) {
+                            override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+                                super.onLayout(changed, l, t, r, b)
+                                val child = getChildAt(0) ?: return
+                                // Measure the child at its true, unconstrained size.
+                                child.measure(
+                                    android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
+                                    android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED)
+                                )
+                                val vw = child.measuredWidth
+                                val vh = child.measuredHeight
+                                if (vw <= 0 || vh <= 0) return
+                                child.layout(0, 0, vw, vh)
+                                val s = minOf(width.toFloat() / vw, height.toFloat() / vh).coerceAtMost(1f)
+                                child.pivotX = 0f
+                                child.pivotY = 0f
+                                child.scaleX = s
+                                child.scaleY = s
+                                // Center the scaled child in the cell.
+                                child.translationX = (width - vw * s) / 2f
+                                child.translationY = (height - vh * s) / 2f
+                            }
+                        }
+                        container.clipChildren = true
+                        container.clipToPadding = true
+                        try {
+                            val rv = android.widget.RemoteViews(previewPkg, previewLayoutId)
+                            container.addView(rv.apply(c, container))
+                        } catch (_: Throwable) {
+                            // Preview inflation failed — fall back to the static image.
+                            widget.previewImage?.let { bmp ->
+                                container.addView(android.widget.ImageView(c).apply {
+                                    setImageBitmap(bmp)
+                                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                                })
+                            }
+                        }
+                        container
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(4.dp)
+                        .clip(androidx.compose.ui.graphics.RectangleShape)
+                )
+            } else if (displayPreview != null) {
                 Image(
                     bitmap = displayPreview.asImageBitmap(),
                     contentDescription = widget.label,
@@ -781,6 +843,22 @@ private fun loadWidgetsGroupedByApp(context: Context): List<AppWidgetGroup> {
 
     appWidgetManager.installedProviders.forEach { providerInfo ->
         try {
+            // Launcher3-style filtering: only list widgets meant for the HOME screen.
+            // installedProviders returns EVERY provider, including keyguard/lock-screen-
+            // only and search-box widgets, plus variants the provider hides from the
+            // picker. Established launchers (Launcher3/Lawnchair) drop these — which is
+            // why our list was longer (e.g. Clock 9 vs Lawnchair's 5) AND why some of
+            // ours render "Can't show content" when placed (they were never meant for
+            // the home screen). Keep only widgets that declare the HOME_SCREEN category
+            // and aren't flagged hidden-from-picker.
+            if ((providerInfo.widgetCategory and AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN) == 0) {
+                return@forEach
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                (providerInfo.widgetFeatures and AppWidgetProviderInfo.WIDGET_FEATURE_HIDE_FROM_PICKER) != 0) {
+                return@forEach
+            }
+
             val packageName = providerInfo.provider.packageName
             val appInfo = packageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
             val appName = packageManager.getApplicationLabel(appInfo).toString()

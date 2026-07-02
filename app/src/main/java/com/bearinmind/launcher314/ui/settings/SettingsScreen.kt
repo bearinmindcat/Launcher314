@@ -451,6 +451,10 @@ fun SettingsScreen(
                 // Double-tap to lock screen toggle
                 var doubleTapLockEnabled by remember { mutableStateOf(getDoubleTapLockEnabled(context)) }
                 var isServiceEnabled by remember { mutableStateOf(AppDrawerAccessibilityService.isAccessibilityServiceEnabled(context)) }
+                // Google Play Accessibility policy: a prominent disclosure must be shown
+                // (and affirmatively accepted) BEFORE sending the user to enable the
+                // accessibility service.
+                var showAccessibilityDisclosure by remember { mutableStateOf(false) }
 
                 // Bumped whenever the "Double-tap to lock screen" toggle, the
                 // accessibility-service state, or the lifecycle ON_RESUME fires
@@ -530,7 +534,9 @@ fun SettingsScreen(
                     checked = doubleTapLockEnabled && isServiceEnabled,
                     onCheckedChange = {
                         if (!isServiceEnabled) {
-                            AppDrawerAccessibilityService.openAccessibilitySettings(context)
+                            // Show the prominent disclosure first (Play policy); only
+                            // open accessibility settings after the user accepts.
+                            showAccessibilityDisclosure = true
                         } else {
                             doubleTapLockEnabled = !doubleTapLockEnabled
                             setDoubleTapLockEnabled(context, doubleTapLockEnabled)
@@ -538,6 +544,34 @@ fun SettingsScreen(
                         }
                     }
                 )
+
+                if (showAccessibilityDisclosure) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showAccessibilityDisclosure = false },
+                        title = { androidx.compose.material3.Text("Accessibility permission") },
+                        text = {
+                            androidx.compose.material3.Text(
+                                "To lock your screen with the double-tap gesture, Launcher314 uses " +
+                                "Android's Accessibility Service. Android requires an accessibility " +
+                                "service to perform the screen-lock action.\n\n" +
+                                "This service is used ONLY to lock the screen. Launcher314 does not " +
+                                "read, collect, store, or share your screen content or any personal " +
+                                "data through it. You can turn it off anytime in Accessibility settings."
+                            )
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                showAccessibilityDisclosure = false
+                                AppDrawerAccessibilityService.openAccessibilitySettings(context)
+                            }) { androidx.compose.material3.Text("Continue") }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                showAccessibilityDisclosure = false
+                            }) { androidx.compose.material3.Text("Cancel") }
+                        }
+                    )
+                }
 
                 // Swipe down for notifications/quick settings
                 var swipeDownEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.getSwipeDownNotifications(context)) }

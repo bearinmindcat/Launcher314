@@ -78,24 +78,18 @@ object WidgetManager {
     /**
      * Initialize the widget manager with context.
      * Should be called when the launcher activity starts.
+     *
+     * The host is created ONCE with the application context and never rebuilt — so the
+     * cached host views (and the RemoteViews already applied to them) survive Activity
+     * recreations (config change / foldable fold-unfold). Rebuilding the host and
+     * clearing the views on every recreation made already-rendered widgets flip back to
+     * "Can't show content" until their provider happened to push again. The host view
+     * still gets the Activity (UI) context for correct rendering — it's passed into
+     * host.createView(), not taken from the host's own context.
      */
-    // The Activity context the host was built with (so we can rebuild it if the
-    // Activity is recreated — e.g. fold/unfold on a foldable).
-    private var hostActivityContext: Context? = null
-
     fun init(context: Context) {
-        // Launcher3/Lawnchair build the AppWidgetHost with the ACTIVITY (UI) context,
-        // NOT applicationContext. Some providers (e.g. Samsung clock) won't deliver
-        // RemoteViews to a host backed by applicationContext, leaving widgets stuck on
-        // "Can't show content". Rebuild the host if the Activity changed (config change /
-        // foldable recreation) so it never holds a destroyed context.
-        if (appWidgetHost == null || hostActivityContext !== context) {
-            try { appWidgetHost?.stopListening() } catch (_: Exception) {}
-            appWidgetHost = LauncherAppWidgetHost(context, LauncherAppWidgetHost.HOST_ID)
-            hostActivityContext = context
-            widgetViews.clear()
-        }
-        if (appWidgetManager == null) {
+        if (appWidgetHost == null) {
+            appWidgetHost = LauncherAppWidgetHost(context.applicationContext, LauncherAppWidgetHost.HOST_ID)
             appWidgetManager = AppWidgetManager.getInstance(context.applicationContext)
         }
     }
@@ -169,10 +163,31 @@ object WidgetManager {
     fun bindWidget(context: Context, appWidgetId: Int, providerInfo: AppWidgetProviderInfo): Boolean {
         val manager = appWidgetManager ?: return false
 
-        // Try to bind the widget
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            manager.bindAppWidgetIdIfAllowed(appWidgetId, providerInfo.provider)
-        } else {
+        // Pass an initial options bundle (with size) at BIND time — exactly like
+        // Launcher3/Lawnchair use the 3-arg bindAppWidgetIdIfAllowed. Glance widgets
+        // (Samsung clock/weather) compose their layout AT BIND from OPTION_APPWIDGET_SIZES;
+        // binding without options means Glance's first composition has no size and renders
+        // "Can't show content" — and it never recovers (this is why the dual-analog clock
+        // works when Lawnchair places it but failed for us). Seeding the size at bind lets
+        // Glance compose a real layout immediately.
+        val d = context.resources.displayMetrics.density
+        val wdp = (providerInfo.minWidth / d).toInt().coerceAtLeast(40)
+        val hdp = (providerInfo.minHeight / d).toInt().coerceAtLeast(40)
+        val options = Bundle().apply {
+            putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, wdp)
+            putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, hdp)
+            putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, wdp)
+            putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, hdp)
+            if (Build.VERSION.SDK_INT >= 31) {
+                putParcelableArrayList(
+                    AppWidgetManager.OPTION_APPWIDGET_SIZES,
+                    arrayListOf(android.util.SizeF(wdp.toFloat(), hdp.toFloat()))
+                )
+            }
+        }
+        return try {
+            manager.bindAppWidgetIdIfAllowed(appWidgetId, providerInfo.provider, options)
+        } catch (e: Exception) {
             @Suppress("DEPRECATION")
             manager.bindAppWidgetIdIfAllowed(appWidgetId, providerInfo.provider)
         }
@@ -223,6 +238,23 @@ object WidgetManager {
             val view = host.createView(context, appWidgetId, providerInfo) as? LauncherAppWidgetHostView
             if (view != null) {
                 widgetViews[appWidgetId] = view
+                // Glance widgets (Samsung clock/weather, Google, etc.) render
+                // "Can't show content" until the host has published
+                // OPTION_APPWIDGET_SIZES — they compose against the sizes the
+                // launcher reports, and an empty list = no layout = error state.
+                // We previously only reported size in onGloballyPositioned (after
+                // layout), so Glance's FIRST composition saw no sizes. Seed the
+                // options from the provider's min size right now so Glance composes
+                // a real layout immediately; onGloballyPositioned later refines it
+                // to the actual cell size.
+                try {
+                    val d = context.resources.displayMetrics.density
+                    updateWidgetViewSize(
+                        appWidgetId,
+                        (providerInfo.minWidth / d).toInt().coerceAtLeast(40),
+                        (providerInfo.minHeight / d).toInt().coerceAtLeast(40)
+                    )
+                } catch (_: Exception) {}
             }
             view
         } catch (e: Exception) {
@@ -253,26 +285,26 @@ object WidgetManager {
      */
     fun updateWidgetViewSize(appWidgetId: Int, widthDp: Int, heightDp: Int) {
         val view = widgetViews[appWidgetId] ?: return
+        val w = widthDp.coerceAtLeast(1)
+        val h = heightDp.coerceAtLeast(1)
         try {
-            val opts = Bundle().apply {
-                putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, widthDp)
-                putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, heightDp)
-                putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, widthDp)
-                putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, heightDp)
-                // Android 12+ responsive widgets (Samsung clock/weather, Google, etc.)
-                // choose their layout from OPTION_APPWIDGET_SIZES. Without it they fall
-                // back to their SMALLEST layout and render squished. Provide the actual
-                // size so they pick the right RemoteViews (Launcher3 does the same).
-                if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    putParcelableArrayList(
-                        AppWidgetManager.OPTION_APPWIDGET_SIZES,
-                        arrayListOf(android.util.SizeF(widthDp.toFloat(), heightDp.toFloat()))
-                    )
-                }
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                // The Launcher3/Lawnchair path on Android 12+: ONE call that sets
+                // min/max AND a non-empty OPTION_APPWIDGET_SIZES atomically and
+                // notifies the provider once. The legacy 4-arg overload on 12+
+                // internally pushes options with an EMPTY sizes list first — Glance
+                // widgets (Samsung clock/weather) compose "Can't show content" from
+                // that empty push and often stay stuck even after a corrected bundle
+                // follows (a race we lose). The modern overload never emits the
+                // empty state at all.
+                view.updateAppWidgetSize(
+                    Bundle(),
+                    listOf(android.util.SizeF(w.toFloat(), h.toFloat()))
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                view.updateAppWidgetSize(Bundle(), w, h, w, h)
             }
-            view.updateAppWidgetSize(opts, widthDp, heightDp, widthDp, heightDp)
-            // Notify the provider of the new size so it re-pushes RemoteViews.
-            appWidgetManager?.updateAppWidgetOptions(appWidgetId, opts)
         } catch (e: Exception) {
             android.util.Log.e("WidgetManager", "Failed to update widget size for id=$appWidgetId", e)
         }
