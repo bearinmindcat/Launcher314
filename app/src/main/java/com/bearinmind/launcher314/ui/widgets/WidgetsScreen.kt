@@ -741,14 +741,18 @@ private fun WidgetPreviewCard(
                             override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
                                 super.onLayout(changed, l, t, r, b)
                                 val child = getChildAt(0) ?: return
-                                // Measure the child at its true, unconstrained size.
+                                // Launcher3's WidgetCell approach: lay the preview out at
+                                // the widget's ACTUAL home-screen size (spans x ~73dp cell)
+                                // with EXACT specs — match_parent roots collapse or balloon
+                                // under UNSPECIFIED measure, which made previews look off —
+                                // then uniformly scale the rendered result to fit this cell.
+                                val d = c.resources.displayMetrics.density
+                                val vw = (widget.cellWidth.coerceAtLeast(1) * 73 * d).toInt()
+                                val vh = (widget.cellHeight.coerceAtLeast(1) * 73 * d).toInt()
                                 child.measure(
-                                    android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
-                                    android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED)
+                                    android.view.View.MeasureSpec.makeMeasureSpec(vw, android.view.View.MeasureSpec.EXACTLY),
+                                    android.view.View.MeasureSpec.makeMeasureSpec(vh, android.view.View.MeasureSpec.EXACTLY)
                                 )
-                                val vw = child.measuredWidth
-                                val vh = child.measuredHeight
-                                if (vw <= 0 || vh <= 0) return
                                 child.layout(0, 0, vw, vh)
                                 val s = minOf(width.toFloat() / vw, height.toFloat() / vh).coerceAtMost(1f)
                                 child.pivotX = 0f
@@ -758,6 +762,18 @@ private fun WidgetPreviewCard(
                                 // Center the scaled child in the cell.
                                 child.translationX = (width - vw * s) / 2f
                                 child.translationY = (height - vh * s) / 2f
+                                // Honor the "Rounded corners" setting on LIVE previews too
+                                // (static images are pre-rounded via roundBitmapCorners).
+                                // The outline clips in the child's pre-scale space, so
+                                // divide by s to land at the same visual radius.
+                                if (cornerRadiusPx > 0f && s > 0f) {
+                                    child.outlineProvider = object : android.view.ViewOutlineProvider() {
+                                        override fun getOutline(v: android.view.View, outline: android.graphics.Outline) {
+                                            outline.setRoundRect(0, 0, v.width, v.height, cornerRadiusPx / s)
+                                        }
+                                    }
+                                    child.clipToOutline = true
+                                }
                             }
                         }
                         container.clipChildren = true
