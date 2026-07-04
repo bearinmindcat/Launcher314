@@ -45,7 +45,10 @@ data class HorizontalSliderConfig(
     val snapTickValues: List<Int> = tickValues,
     val label: String,
     val showMinorTicks: Boolean = false,
-    val labelSuffix: String = ""
+    val labelSuffix: String = "",
+    // Optional TEXT labels under the ticks (e.g. Left / Center / Right),
+    // indexed against labeledTickValues; falls back to the numeric value.
+    val tickTextLabels: List<String>? = null
 )
 
 /**
@@ -388,7 +391,8 @@ fun ThumbDragHorizontalSlider(
                 .padding(top = 4.dp)
         ) {
             val trackWidth = maxWidth
-            val labelWidth = (if (config.labelSuffix.isNotEmpty()) 28.dp else 20.dp)
+            val labelWidth = if (config.tickTextLabels != null) 56.dp
+                else (if (config.labelSuffix.isNotEmpty()) 28.dp else 20.dp)
             config.labeledTickValues.forEachIndexed { index, value ->
                 val fraction = if (config.labeledTickValues.size > 1) {
                     (value - config.minValue) / (config.maxValue - config.minValue)
@@ -406,7 +410,8 @@ fun ThumbDragHorizontalSlider(
                     val isSelected = kotlin.math.abs(currentValue - value) <
                         (config.maxValue - config.minValue) / (config.labeledTickValues.size * 2)
                     Text(
-                        text = "$value${config.labelSuffix}",
+                        text = config.tickTextLabels?.getOrNull(index)
+                            ?: "$value${config.labelSuffix}",
                         fontSize = (if (config.labelSuffix.isNotEmpty()) 9.sp else 10.sp),
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                         color = if (enabled) {
@@ -836,6 +841,15 @@ object SliderConfigs {
         maxValue = 7f,
         tickValues = listOf(3, 4, 5, 6, 7),
         label = "App Grid Columns"
+    )
+
+    // Drawer tab chip alignment: 0 = Left, 1 = Center, 2 = Right
+    val tabAlignment = HorizontalSliderConfig(
+        minValue = 0f,
+        maxValue = 2f,
+        tickValues = listOf(0, 1, 2),
+        label = "Tab Alignment",
+        tickTextLabels = listOf("Left", "Center", "Right")
     )
 
     val gridRows = HorizontalSliderConfig(

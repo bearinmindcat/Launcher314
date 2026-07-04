@@ -916,25 +916,16 @@ internal fun FolderContentScreen(
         }
     }
 
-    // Delete confirmation
+    // Delete confirmation — shared style with the drawer-tab delete popup.
     if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete Folder?") },
-            text = { Text("Apps inside this folder (${folder.name}) will be moved back to the drawer.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDeleteFolder()
-                    showDeleteConfirm = false
-                }) {
-                    Text("Delete")
-                }
+        ConfirmDeleteDialog(
+            title = "Delete Folder?",
+            message = "Apps inside this folder (${folder.name}) will be moved back to the drawer.",
+            onConfirm = {
+                onDeleteFolder()
+                showDeleteConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { showDeleteConfirm = false }
         )
     }
 }

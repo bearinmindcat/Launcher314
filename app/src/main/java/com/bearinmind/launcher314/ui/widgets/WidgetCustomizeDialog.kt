@@ -11,6 +11,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -149,6 +150,11 @@ fun WidgetCustomizeDialog(
                                 Color(0xFFFF6B6B).copy(alpha = 0.15f),
                                 RoundedCornerShape(8.dp)
                             )
+                            .border(
+                                1.dp,
+                                Color(0xFFFF6B6B).copy(alpha = 0.5f),
+                                RoundedCornerShape(8.dp)
+                            )
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
                                 fontScale = globalFontScalePercent.toFloat()
@@ -274,7 +280,8 @@ fun WidgetCustomizeDialog(
                 // dialog's Shape / Tint / Size / Label / Exp row.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                    // Equal spacing between/around the section cards.
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     val iconSize = Modifier.size(24.dp)
                     val selectedBg = Color.White.copy(alpha = 0.1f)

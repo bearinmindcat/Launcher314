@@ -792,6 +792,9 @@ fun MainScreen(
                             onHideAppsClick = {
                                 navController.navigate("hide_apps")
                             },
+                            onManageTabsClick = {
+                                navController.navigate("manage_tabs")
+                            },
                             onPickAppForGesture = { gestureId ->
                                 navController.navigate("app_picker/${gestureId.name}")
                             }
@@ -799,6 +802,11 @@ fun MainScreen(
             }
             composable("fonts") {
                 FontsScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable("manage_tabs") {
+                com.bearinmind.launcher314.ui.drawer.ManageDrawerTabsScreen(
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -911,6 +919,9 @@ fun MainScreen(
                         onHideAppsClick = {
                             navController.navigate("hide_apps")
                         },
+                        onManageTabsClick = {
+                            navController.navigate("manage_tabs")
+                        },
                         onPickAppForGesture = { gestureId ->
                             navController.navigate("app_picker/${gestureId.name}")
                         }
@@ -918,6 +929,11 @@ fun MainScreen(
                 }
                 composable("fonts") {
                     FontsScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable("manage_tabs") {
+                    com.bearinmind.launcher314.ui.drawer.ManageDrawerTabsScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }

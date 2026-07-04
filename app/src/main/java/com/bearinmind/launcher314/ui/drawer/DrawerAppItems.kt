@@ -501,23 +501,14 @@ internal fun FolderItem(
             }
 
         if (showDeleteConfirmDialog) {
-            AlertDialog(
-                onDismissRequest = { showDeleteConfirmDialog = false },
-                title = { Text("Delete Folder?") },
-                text = { Text("Apps inside this folder (${folder.name}) will be moved back to the drawer.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        onDelete()
-                        showDeleteConfirmDialog = false
-                    }) {
-                        Text("Delete")
-                    }
+            ConfirmDeleteDialog(
+                title = "Delete Folder?",
+                message = "Apps inside this folder (${folder.name}) will be moved back to the drawer.",
+                onConfirm = {
+                    onDelete()
+                    showDeleteConfirmDialog = false
                 },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                        Text("Cancel")
-                    }
-                }
+                onDismiss = { showDeleteConfirmDialog = false }
             )
         }
     }
@@ -1749,23 +1740,14 @@ internal fun SelectableAppItem(
 
         // Folder delete confirmation (extracted outside Popup so it persists after menu closes)
         folderToDeleteFromMenu?.let { folderToDelete ->
-            AlertDialog(
-                onDismissRequest = { folderToDeleteFromMenu = null },
-                title = { Text("Delete Folder?") },
-                text = { Text("Apps inside this folder (${folderToDelete.name}) will be moved back to the drawer.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        onDeleteFolder(folderToDelete)
-                        folderToDeleteFromMenu = null
-                    }) {
-                        Text("Delete")
-                    }
+            ConfirmDeleteDialog(
+                title = "Delete Folder?",
+                message = "Apps inside this folder (${folderToDelete.name}) will be moved back to the drawer.",
+                onConfirm = {
+                    onDeleteFolder(folderToDelete)
+                    folderToDeleteFromMenu = null
                 },
-                dismissButton = {
-                    TextButton(onClick = { folderToDeleteFromMenu = null }) {
-                        Text("Cancel")
-                    }
-                }
+                onDismiss = { folderToDeleteFromMenu = null }
             )
         }
 

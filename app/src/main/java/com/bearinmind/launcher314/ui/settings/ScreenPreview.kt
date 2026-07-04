@@ -191,7 +191,8 @@ fun AppDrawerPreviewSection(
     onSharedIconSizeChanged: (Float) -> Unit = {},
     iconShapeOverride: String? = null,
     iconBgColorOverride: Int? = null,
-    iconBgIntensityOverride: Int = 100
+    iconBgIntensityOverride: Int = 100,
+    onManageTabsClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -569,6 +570,84 @@ fun AppDrawerPreviewSection(
                 onTransparencyChangeFinished = {
                     setDrawerTransparency(context, drawerTransparency.roundToInt())
                 }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Drawer Tabs — manage button + enable checkbox, styled like the
+        // Font button / "Hide text" checkbox pair in Icon Personalization.
+        var drawerTabsEnabled by remember {
+            mutableStateOf(com.bearinmind.launcher314.ui.drawer.isDrawerTabsEnabled(context))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp)
+            ) {
+                Button(
+                    onClick = onManageTabsClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Manage Tab Settings")
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .width(72.dp)
+                    .height(48.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Checkbox(
+                    checked = drawerTabsEnabled,
+                    onCheckedChange = { checked ->
+                        drawerTabsEnabled = checked
+                        com.bearinmind.launcher314.ui.drawer.setDrawerTabsEnabled(context, checked)
+                    },
+                    modifier = Modifier.offset(x = 10.dp),
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.primary,
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Text(
+                text = "Drawer Tabs",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp, top = 4.dp),
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Enable",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .width(72.dp)
+                    .offset(x = 10.dp)
+                    .padding(top = 4.dp),
+                textAlign = TextAlign.Center
             )
         }
     }
@@ -2493,112 +2572,18 @@ private fun HomeScreenPreview(
                     // Creates the widget view at full screen size, draws it to a Bitmap,
                     // then displays the Bitmap as a scaled Image. This avoids the layout
                     // overflow issues of AndroidView + graphicsLayer.
-                    if (placedWidgets.isNotEmpty()) {
-                        // Pre-compute widget bitmaps using screen config (works even when preview is hidden)
-                        val widgetConfig = LocalConfiguration.current
-                        val widgetScreenWidthDp = widgetConfig.screenWidthDp.toFloat()
-                        val widgetScreenHeightDp = widgetConfig.screenHeightDp.toFloat()
-                        val widgetGridHPad = widgetScreenWidthDp * 0.044f
-                        val widgetGridVPad = widgetScreenWidthDp * 0.022f
-                        val widgetGridWidthDp = widgetScreenWidthDp - widgetGridHPad * 2
-                        val widgetGridHeightDp = widgetScreenHeightDp - 76f - widgetGridVPad * 2
-                        val widgetCellWDp = widgetGridWidthDp / gridColumns
-                        val widgetCellHDp = widgetGridHeightDp / gridRows
-
-                        // Use bitmaps from the parent (persists across icon size changes)
-                        val widgetContext = LocalContext.current
-                        // FIRST PAGE ONLY (preview shows home page 0); for stacked
-                        // widgets, only show the currently selected one.
-                        val previewVisibleWidgets = placedWidgets.filter { w ->
-                            w.page == 0 && (
-                                if (w.stackId == null) true
-                                else {
-                                    val currentPage = savedStackPages[w.stackId] ?: 0
-                                    w.stackOrder == currentPage
-                                }
-                            )
-                        }
-
-                        previewVisibleWidgets.forEach { widget ->
-                            LaunchedEffect(widget.appWidgetId) {
-                                if (widgetBitmaps.containsKey(widget.appWidgetId)) return@LaunchedEffect
-                                try {
-                                    val host = WidgetManager.getAppWidgetHost()
-                                    val mgr = android.appwidget.AppWidgetManager.getInstance(widgetContext)
-                                    val info = mgr.getAppWidgetInfo(widget.appWidgetId)
-                                    if (host != null && info != null) {
-                                        val widgetView = host.createView(widgetContext, widget.appWidgetId, info)
-                                        delay(500)
-                                        val metrics = widgetContext.resources.displayMetrics
-                                        // Compute full-screen pixel dimensions from screen config
-                                        val fullWidthPx = (widgetCellWDp * widget.columnSpan * metrics.density).toInt()
-                                        val fullHeightPx = (widgetCellHDp * widget.rowSpan * metrics.density).toInt()
-                                        if (fullWidthPx > 0 && fullHeightPx > 0) {
-                                            widgetView.measure(
-                                                android.view.View.MeasureSpec.makeMeasureSpec(fullWidthPx, android.view.View.MeasureSpec.EXACTLY),
-                                                android.view.View.MeasureSpec.makeMeasureSpec(fullHeightPx, android.view.View.MeasureSpec.EXACTLY)
-                                            )
-                                            widgetView.layout(0, 0, fullWidthPx, fullHeightPx)
-                                            val bmp = Bitmap.createBitmap(fullWidthPx, fullHeightPx, Bitmap.Config.ARGB_8888)
-                                            val canvas = Canvas(bmp)
-                                            widgetView.draw(canvas)
-                                            widgetBitmaps[widget.appWidgetId] = bmp
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }
-                        }
-
-                        // Render bitmaps at correct positions using BoxWithConstraints
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            val cellW = maxWidth / gridColumns
-                            val cellH = maxHeight / gridRows
-
-                            previewVisibleWidgets.forEach { widget ->
-                                key(widget.appWidgetId) {
-                                    val x = cellW * widget.startColumn
-                                    val y = cellH * widget.startRow
-                                    val w = cellW * widget.columnSpan
-                                    val h = cellH * widget.rowSpan
-
-                                    Box(
-                                        modifier = Modifier
-                                            .offset(x = x, y = y)
-                                            .width(w)
-                                            .height(h)
-                                            .clip(RoundedCornerShape(4.dp * scaleFactor))
-                                    ) {
-                                        val bmp = widgetBitmaps[widget.appWidgetId]
-                                        if (bmp != null && !bmp.isRecycled) {
-                                            Image(
-                                                bitmap = bmp.asImageBitmap(),
-                                                contentDescription = "Widget",
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.FillBounds
-                                            )
-                                        } else {
-                                            // Placeholder while bitmap loads
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(Color.White.copy(alpha = 0.12f))
-                                                    .border(0.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(4.dp * scaleFactor)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = "Widget",
-                                                    color = Color.White.copy(alpha = 0.5f),
-                                                    fontSize = baseFontSize
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // Extracted to a separate composable so HomeScreenPreview stays
+                    // under ART's JIT method-size limit (otherwise it runs interpreted
+                    // and stalls the main thread ~1.5s on every recompose).
+                    HomePreviewWidgetOverlay(
+                        placedWidgets = placedWidgets,
+                        gridColumns = gridColumns,
+                        gridRows = gridRows,
+                        savedStackPages = savedStackPages,
+                        widgetBitmaps = widgetBitmaps,
+                        scaleFactor = scaleFactor,
+                        baseFontSize = baseFontSize
+                    )
                 } // end grid area Box
 
                     // Page indicator dots (like the actual launcher, using scrollbar personalization)
@@ -2779,5 +2764,128 @@ private fun HomeScreenPreview(
                 }
             }
         } // end Preview Box
+    }
+}
+
+/**
+ * Widget snapshot overlay for the home-screen preview. Renders each placed
+ * widget (page 0 only) as a bitmap drawn from a real AppWidgetHostView, scaled
+ * into the preview grid. Extracted from HomeScreenPreview so that composable
+ * stays under ART's JIT method-size limit — a too-large composable is refused
+ * by the JIT and runs interpreted, stalling the main thread on recompose.
+ */
+@Composable
+private fun HomePreviewWidgetOverlay(
+    placedWidgets: List<PlacedWidget>,
+    gridColumns: Int,
+    gridRows: Int,
+    savedStackPages: Map<String, Int>,
+    widgetBitmaps: MutableMap<Int, android.graphics.Bitmap>,
+    scaleFactor: Float,
+    baseFontSize: androidx.compose.ui.unit.TextUnit
+) {
+    if (placedWidgets.isEmpty()) return
+
+    // Pre-compute widget bitmaps using screen config (works even when preview is hidden)
+    val widgetConfig = LocalConfiguration.current
+    val widgetScreenWidthDp = widgetConfig.screenWidthDp.toFloat()
+    val widgetScreenHeightDp = widgetConfig.screenHeightDp.toFloat()
+    val widgetGridHPad = widgetScreenWidthDp * 0.044f
+    val widgetGridVPad = widgetScreenWidthDp * 0.022f
+    val widgetGridWidthDp = widgetScreenWidthDp - widgetGridHPad * 2
+    val widgetGridHeightDp = widgetScreenHeightDp - 76f - widgetGridVPad * 2
+    val widgetCellWDp = widgetGridWidthDp / gridColumns
+    val widgetCellHDp = widgetGridHeightDp / gridRows
+
+    val widgetContext = LocalContext.current
+    // FIRST PAGE ONLY (preview shows home page 0); for stacked widgets, only
+    // show the currently selected one.
+    val previewVisibleWidgets = placedWidgets.filter { w ->
+        w.page == 0 && (
+            if (w.stackId == null) true
+            else {
+                val currentPage = savedStackPages[w.stackId] ?: 0
+                w.stackOrder == currentPage
+            }
+        )
+    }
+
+    previewVisibleWidgets.forEach { widget ->
+        LaunchedEffect(widget.appWidgetId) {
+            if (widgetBitmaps.containsKey(widget.appWidgetId)) return@LaunchedEffect
+            try {
+                val host = WidgetManager.getAppWidgetHost()
+                val mgr = android.appwidget.AppWidgetManager.getInstance(widgetContext)
+                val info = mgr.getAppWidgetInfo(widget.appWidgetId)
+                if (host != null && info != null) {
+                    val widgetView = host.createView(widgetContext, widget.appWidgetId, info)
+                    delay(500)
+                    val metrics = widgetContext.resources.displayMetrics
+                    val fullWidthPx = (widgetCellWDp * widget.columnSpan * metrics.density).toInt()
+                    val fullHeightPx = (widgetCellHDp * widget.rowSpan * metrics.density).toInt()
+                    if (fullWidthPx > 0 && fullHeightPx > 0) {
+                        widgetView.measure(
+                            android.view.View.MeasureSpec.makeMeasureSpec(fullWidthPx, android.view.View.MeasureSpec.EXACTLY),
+                            android.view.View.MeasureSpec.makeMeasureSpec(fullHeightPx, android.view.View.MeasureSpec.EXACTLY)
+                        )
+                        widgetView.layout(0, 0, fullWidthPx, fullHeightPx)
+                        val bmp = Bitmap.createBitmap(fullWidthPx, fullHeightPx, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(bmp)
+                        widgetView.draw(canvas)
+                        widgetBitmaps[widget.appWidgetId] = bmp
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // Render bitmaps at correct positions using BoxWithConstraints
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val cellW = maxWidth / gridColumns
+        val cellH = maxHeight / gridRows
+
+        previewVisibleWidgets.forEach { widget ->
+            key(widget.appWidgetId) {
+                val x = cellW * widget.startColumn
+                val y = cellH * widget.startRow
+                val w = cellW * widget.columnSpan
+                val h = cellH * widget.rowSpan
+
+                Box(
+                    modifier = Modifier
+                        .offset(x = x, y = y)
+                        .width(w)
+                        .height(h)
+                        .clip(RoundedCornerShape(4.dp * scaleFactor))
+                ) {
+                    val bmp = widgetBitmaps[widget.appWidgetId]
+                    if (bmp != null && !bmp.isRecycled) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Widget",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.FillBounds
+                        )
+                    } else {
+                        // Placeholder while bitmap loads
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(0.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(4.dp * scaleFactor)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Widget",
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = baseFontSize
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

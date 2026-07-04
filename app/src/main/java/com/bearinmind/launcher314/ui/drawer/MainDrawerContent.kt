@@ -8,8 +8,10 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -115,7 +117,14 @@ internal data class DrawerExtraCallbacks(
         listOf(com.bearinmind.launcher314.helpers.ProfileType.PERSONAL),
     val selectedProfile: com.bearinmind.launcher314.helpers.ProfileType =
         com.bearinmind.launcher314.helpers.ProfileType.PERSONAL,
-    val onSelectedProfileChange: (com.bearinmind.launcher314.helpers.ProfileType) -> Unit = {}
+    val onSelectedProfileChange: (com.bearinmind.launcher314.helpers.ProfileType) -> Unit = {},
+    // Drawer tabs (user categories) — bundled for the same DEX-register reason.
+    val tabsEnabled: Boolean = true,
+    val swipeTabsEnabled: Boolean = false,
+    val drawerTabs: List<DrawerTab> = emptyList(),
+    val selectedTabId: String? = null,
+    val onTabSelected: (String?) -> Unit = {},
+    val onTabsChanged: (List<DrawerTab>) -> Unit = {}
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -785,6 +794,19 @@ internal fun MainDrawerContent(
             }
         }
 
+        // Drawer tabs (user categories) — Neo-style chip row. Hidden while
+        // searching, since search spans everything just like profiles do.
+        // Gated by the Settings → Drawer Tabs "Enable" checkbox.
+        if (searchQuery.isBlank() && extraCallbacks.tabsEnabled) {
+            DrawerTabRow(
+                tabs = extraCallbacks.drawerTabs,
+                selectedTabId = extraCallbacks.selectedTabId,
+                allApps = allApps,
+                onTabSelected = extraCallbacks.onTabSelected,
+                onTabsChanged = extraCallbacks.onTabsChanged
+            )
+        }
+
         var drawerGridRootPos by remember { mutableStateOf(Offset.Zero) }
 
         // Shared wrapper Box for drag overlay to float above both modes
@@ -793,6 +815,40 @@ internal fun MainDrawerContent(
             .weight(1f)
             .zIndex(if (drawerDraggedItem != null) 1000f else 0f)
             .onGloballyPositioned { drawerWrapperRootPos = it.positionInRoot() }
+            .then(
+                // Swipe between tabs (Neo/Nova style). Scroll mode only — paged
+                // mode's HorizontalPager owns horizontal swipes. As a PARENT
+                // gesture it only claims drags no child consumed (the vertical
+                // grid scroll and item long-press drags win first), so it can't
+                // steal escape-drag or list flings.
+                if (extraCallbacks.swipeTabsEnabled && extraCallbacks.tabsEnabled &&
+                    !isPagedMode && searchQuery.isBlank()
+                ) {
+                    Modifier.pointerInput(extraCallbacks.drawerTabs, extraCallbacks.selectedTabId) {
+                        var totalDx = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { totalDx = 0f },
+                            onDragEnd = {
+                                if (kotlin.math.abs(totalDx) > 64.dp.toPx()) {
+                                    val order = listOf<String?>(null) +
+                                        extraCallbacks.drawerTabs.map { it.id }
+                                    val cur = order.indexOf(extraCallbacks.selectedTabId)
+                                        .coerceAtLeast(0)
+                                    val next = if (totalDx < 0) {
+                                        (cur + 1).coerceAtMost(order.size - 1)
+                                    } else {
+                                        (cur - 1).coerceAtLeast(0)
+                                    }
+                                    if (next != cur) extraCallbacks.onTabSelected(order[next])
+                                }
+                            }
+                        ) { change, dragAmount ->
+                            totalDx += dragAmount
+                            change.consume()
+                        }
+                    }
+                } else Modifier
+            )
         ) {
         // Loading or App grid
         if (isLoading) {

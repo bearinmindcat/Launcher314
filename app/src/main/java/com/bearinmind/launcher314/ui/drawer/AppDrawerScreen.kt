@@ -424,6 +424,27 @@ fun AppDrawerScreen(
     var currentSortOption by remember { mutableStateOf(com.bearinmind.launcher314.data.getDrawerSortOption(context)) }
     var isSortAscending by remember { mutableStateOf(com.bearinmind.launcher314.data.getDrawerSortAscending(context)) }
 
+    // Drawer tabs (user categories) — persisted; selection restored across sessions.
+    // Re-read fresh whenever this composition starts (navigating to Settings and
+    // back disposes/recreates the drawer, so edits made there are picked up).
+    val drawerTabsEnabled = remember { isDrawerTabsEnabled(context) }
+    val hideTabbedFromAll = remember { isHideTabbedAppsFromAll(context) }
+    val swipeTabsEnabled = remember { isSwipeTabsEnabled(context) }
+    var drawerTabs by remember { mutableStateOf(loadDrawerTabs(context)) }
+    var selectedDrawerTabId by remember {
+        // Never restore a LOCKED tab as the startup selection — that would show
+        // its contents without authentication. Fall back to "All".
+        val persisted = getSelectedDrawerTabId(context)
+        val persistedLocked = persisted != null &&
+            loadDrawerTabs(context).firstOrNull { it.id == persisted }?.locked == true
+        mutableStateOf(if (persistedLocked) null else persisted)
+    }
+    // Locked tabs the user has authenticated for in THIS drawer session.
+    // Intentionally not persisted — recreating the drawer re-locks them.
+    var unlockedTabIds by remember { mutableStateOf(setOf<String>()) }
+    // A locked tab pending password entry (its unlock dialog is showing).
+    var tabPendingUnlock by remember { mutableStateOf<com.bearinmind.launcher314.ui.drawer.DrawerTab?>(null) }
+
     // Screen dimensions for animation calculations
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
@@ -509,10 +530,29 @@ fun AppDrawerScreen(
             val profileFiltered = if (searchQuery.isBlank() && hasWorkApps) {
                 availableApps.filter { it.profileType == selectedProfile }
             } else availableApps
+            // Apply drawer-tab filter (user categories) — like profiles, search
+            // spans all tabs, so it only applies when not searching.
+            val tabFiltered = if (searchQuery.isBlank() && drawerTabsEnabled) {
+                if (selectedDrawerTabId != null) {
+                    val tabPkgs = drawerTabs.firstOrNull { it.id == selectedDrawerTabId }
+                        ?.packages?.toSet()
+                    if (tabPkgs != null) profileFiltered.filter { it.packageName in tabPkgs }
+                    else profileFiltered
+                } else {
+                    // "All" tab with the global "Hide added apps from all" mode on:
+                    // drop every app that belongs to any tab. Search still finds them.
+                    if (!hideTabbedFromAll) profileFiltered
+                    else {
+                        val hiddenByTabs = drawerTabs.flatMap { it.packages }.toSet()
+                        if (hiddenByTabs.isEmpty()) profileFiltered
+                        else profileFiltered.filter { it.packageName !in hiddenByTabs }
+                    }
+                }
+            } else profileFiltered
             val searched = if (searchQuery.isBlank()) {
-                profileFiltered
+                tabFiltered
             } else {
-                profileFiltered.filter { app ->
+                tabFiltered.filter { app ->
                     app.name.contains(searchQuery, ignoreCase = true)
                 }
             }
@@ -662,6 +702,7 @@ fun AppDrawerScreen(
             // tab so each profile view only shows its own apps. Also hidden
             // during search (search uses a flat app list).
             folders = if (isSearching ||
+                    (drawerTabsEnabled && selectedDrawerTabId != null) ||
                     selectedProfile != com.bearinmind.launcher314.helpers.ProfileType.PERSONAL)
                 emptyList()
                 else displayFolders.map { folder ->
@@ -762,7 +803,30 @@ fun AppDrawerScreen(
                 onCustomizeApp = { app -> customizingDrawerApp = app },
                 availableProfiles = availableProfiles,
                 selectedProfile = selectedProfile,
-                onSelectedProfileChange = { selectedProfile = it }
+                onSelectedProfileChange = { selectedProfile = it },
+                tabsEnabled = drawerTabsEnabled,
+                swipeTabsEnabled = swipeTabsEnabled,
+                drawerTabs = drawerTabs,
+                selectedTabId = selectedDrawerTabId,
+                onTabSelected = { id ->
+                    // Central lock gate — chips AND swipe-between-tabs land here.
+                    val target = if (id != null) drawerTabs.firstOrNull { it.id == id } else null
+                    if (target?.locked == true && id !in unlockedTabIds) {
+                        tabPendingUnlock = target
+                    } else {
+                        selectedDrawerTabId = id
+                        setSelectedDrawerTabId(context, id)
+                    }
+                },
+                onTabsChanged = { updated ->
+                    drawerTabs = updated
+                    saveDrawerTabs(context, updated)
+                    // If the selected tab was deleted, fall back to "All".
+                    if (selectedDrawerTabId != null && updated.none { it.id == selectedDrawerTabId }) {
+                        selectedDrawerTabId = null
+                        setSelectedDrawerTabId(context, null)
+                    }
+                }
             ),
             escapeHoverState = EscapeHoverState(
                 folderId = if (escapeHoveredFolderId != null && folderEscapedApp != null) escapeHoveredFolderId else null,
@@ -772,6 +836,20 @@ fun AppDrawerScreen(
                 isInDropZone = escapeInDropZone
             )
         )
+
+        // Password prompt for opening a locked tab (chips + swipe both route here).
+        tabPendingUnlock?.let { tab ->
+            com.bearinmind.launcher314.ui.drawer.UnlockTabDialog(
+                tab = tab,
+                onSuccess = {
+                    unlockedTabIds = unlockedTabIds + tab.id
+                    selectedDrawerTabId = tab.id
+                    setSelectedDrawerTabId(context, tab.id)
+                    tabPendingUnlock = null
+                },
+                onDismiss = { tabPendingUnlock = null }
+            )
+        }
 
         // Folder content overlay — Lawnchair / Neo Launcher style: a bounded
         // rounded card opens near the tapped folder icon, wallpaper + drawer
