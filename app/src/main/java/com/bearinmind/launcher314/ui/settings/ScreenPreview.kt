@@ -914,6 +914,18 @@ private fun RealAppDrawerPreview(
                 // Search bar at top (normal mode)
                 if (!isReverseSearchBar) previewSearchBar()
 
+                // Drawer tab chips (mirrors the real drawer's tab row) — shown
+                // whenever tabs are enabled, honoring counts / hide-(+) / alignment.
+                if (com.bearinmind.launcher314.ui.drawer.isDrawerTabsEnabled(drawerPreviewContext)) {
+                    PreviewDrawerTabChips(
+                        tabs = com.bearinmind.launcher314.ui.drawer.loadDrawerTabs(drawerPreviewContext),
+                        showCounts = com.bearinmind.launcher314.ui.drawer.isShowTabCounts(drawerPreviewContext),
+                        hidePlus = com.bearinmind.launcher314.ui.drawer.isHidePlusChip(drawerPreviewContext),
+                        alignment = com.bearinmind.launcher314.ui.drawer.getTabAlignment(drawerPreviewContext),
+                        scaleFactor = scaleFactor
+                    )
+                }
+
                 // App grid with scrollbar
                 if (items.isEmpty()) {
                     Box(
@@ -2955,5 +2967,69 @@ private fun HomePreviewWidgetOverlay(
                 }
             }
         }
+    }
+}
+
+/**
+ * Miniature drawer-tab chip row for the app drawer preview. Mirrors the real
+ * DrawerTabRow: [All][tab...][+], respecting show-counts, hide-(+), and the
+ * Left/Center/Right alignment setting, scaled down to preview size.
+ */
+@Composable
+private fun PreviewDrawerTabChips(
+    tabs: List<com.bearinmind.launcher314.ui.drawer.DrawerTab>,
+    showCounts: Boolean,
+    hidePlus: Boolean,
+    alignment: Int,
+    scaleFactor: Float
+) {
+    // Exact styling of DrawerTabRow's real TabChip, scaled down: pill shape,
+    // 1dp onSurface@40% OUTLINE, transparent fill (selected = onSurface@12%),
+    // onSurface 13sp label, 14x6 chip padding; row = 16h/2v padding, 8dp gap.
+    val outline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f)
+    val fillSelected = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    val labelColor = MaterialTheme.colorScheme.onSurface
+    val chipShape = RoundedCornerShape(50)
+    val chipFont = 13.sp * scaleFactor
+    val chipHPad = 14.dp * scaleFactor
+    val chipVPad = 6.dp * scaleFactor
+    val spacing = 8.dp * scaleFactor
+    val arrangement = when (alignment) {
+        1 -> Arrangement.spacedBy(spacing, Alignment.CenterHorizontally)
+        2 -> Arrangement.spacedBy(spacing, Alignment.End)
+        else -> Arrangement.spacedBy(spacing)
+    }
+
+    @Composable
+    fun chip(label: String, selected: Boolean) {
+        Box(
+            modifier = Modifier
+                .clip(chipShape)
+                .background(if (selected) fillSelected else Color.Transparent, chipShape)
+                .border(1.dp * scaleFactor, outline, chipShape)
+                .padding(horizontal = chipHPad, vertical = chipVPad)
+        ) {
+            Text(
+                text = label,
+                fontSize = chipFont,
+                color = labelColor,
+                maxLines = 1
+            )
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp * scaleFactor, vertical = 2.dp * scaleFactor),
+        horizontalArrangement = arrangement,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        chip("All", selected = true)
+        // Cap at 3 tabs so the mini row can't overflow the preview width.
+        tabs.take(3).forEach { t ->
+            chip(if (showCounts) "${t.name} (${t.packages.size})" else t.name, selected = false)
+        }
+        if (!hidePlus) chip("+", selected = false)
     }
 }

@@ -1,6 +1,9 @@
 package com.bearinmind.launcher314.ui.components
 
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
@@ -140,7 +143,8 @@ fun AnimatedPopup(
             animateIn = true
         } else if (showPopup) {
             animateIn = false
-            delay(160)
+            // Keep the window alive just long enough for the 110ms close anim.
+            delay(120)
             showPopup = false
         }
     }
@@ -193,14 +197,27 @@ private fun AnimatedPopupContent(
 
     val show = visible && appeared
 
+    // Lawnchair / Launcher3-style open & close: the menu POPS OUT of the icon
+    // with a fast spring that slightly overshoots (transform origin is already
+    // at the arrow tip, so it grows from the anchor), and shrinks back INTO
+    // the icon on close with a quick accelerate-out. Much snappier than the
+    // old flat 150ms tween from 0.9x.
     val scale by animateFloatAsState(
-        targetValue = if (show) 1f else 0.9f,
-        animationSpec = tween(150),
+        targetValue = if (show) 1f else 0.5f,
+        animationSpec = if (show) {
+            spring(dampingRatio = 0.8f, stiffness = 1100f)
+        } else {
+            tween(110, easing = FastOutLinearInEasing)
+        },
         label = "popupScale"
     )
     val alpha by animateFloatAsState(
         targetValue = if (show) 1f else 0f,
-        animationSpec = tween(150),
+        animationSpec = if (show) {
+            tween(90, easing = LinearOutSlowInEasing)
+        } else {
+            tween(110, easing = FastOutLinearInEasing)
+        },
         label = "popupAlpha"
     )
 
