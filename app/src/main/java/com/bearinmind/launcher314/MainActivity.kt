@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.Lifecycle
 import com.bearinmind.launcher314.helpers.applyTransparentNavigation
 import com.bearinmind.launcher314.data.getHomeGridSize
 import com.bearinmind.launcher314.data.getHomeGridRows
@@ -683,6 +685,32 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Navigate only when the current destination is fully RESUMED, using
+ * launchSingleTop so a route can't be pushed twice. This kills the blank/black
+ * screen from rapid taps: a second tap that lands while the NavHost is still
+ * mid-transition (source not yet RESUMED) is ignored instead of racing the
+ * transition into an empty state or stacking duplicate heavy destinations.
+ */
+private fun NavController.navigateSafely(route: String) {
+    if (currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) {
+        navigate(route) { launchSingleTop = true }
+    }
+}
+
+/**
+ * Pop only if there is somewhere to pop back TO. A raw popBackStack() on the
+ * root destination pops the root itself, leaving the NavHost with an empty
+ * back stack — which renders as a permanent black screen with the activity
+ * still alive. Rapid double-taps on a back arrow (or queued back presses)
+ * trigger exactly that: pop #1 goes back a screen, pop #2 lands on the root
+ * and evicts it. Guarding on previousBackStackEntry makes the extra taps
+ * no-ops instead.
+ */
+private fun NavController.popBackStackSafely(): Boolean {
+    return if (previousBackStackEntry != null) popBackStack() else false
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -717,13 +745,13 @@ fun MainScreen(
                 // Combined launcher + drawer with swipe gesture
                 LauncherWithDrawer(
                     onSettingsClick = {
-                        navController.navigate("settings")
+                        navController.navigateSafely("settings")
                     },
                     onWidgetsClick = {
                         // Check permission before navigating to widgets
                         activity?.checkWidgetPermissionAndNavigate {
-                            navController.navigate("widgets")
-                        } ?: navController.navigate("widgets")
+                            navController.navigateSafely("widgets")
+                        } ?: navController.navigateSafely("widgets")
                     },
                     openDrawerOnStart = openDrawerOnStart,
                     widgetRefreshTrigger = activity?.widgetAddedTrigger?.intValue ?: 0,
@@ -738,11 +766,11 @@ fun MainScreen(
                 val gridRows = getHomeGridRows(context)
                 WidgetsScreen(
                     onBack = {
-                        navController.popBackStack()
+                        navController.popBackStackSafely()
                     },
                     onWidgetSelected = { widget ->
                         activity?.onWidgetSelectedFromPicker(widget)
-                        navController.popBackStack() // Go back to launcher after selection
+                        navController.popBackStackSafely() // Go back to launcher after selection
                     },
                     gridColumns = gridColumns,
                     gridRows = gridRows,
@@ -765,7 +793,7 @@ fun MainScreen(
                         }
                         SettingsScreen(
                             onBack = {
-                                navController.popBackStack()
+                                navController.popBackStackSafely()
                             },
                             onClearData = { },
                             onExportData = { },
@@ -784,47 +812,47 @@ fun MainScreen(
                                 android.util.Log.d("MainActivity", "popBackStack result: $popped")
                             },
                             onFontsClick = {
-                                navController.navigate("fonts")
+                                navController.navigateSafely("fonts")
                             },
                             onIconPacksClick = {
-                                navController.navigate("icon_packs")
+                                navController.navigateSafely("icon_packs")
                             },
                             onHideAppsClick = {
-                                navController.navigate("hide_apps")
+                                navController.navigateSafely("hide_apps")
                             },
                             onManageTabsClick = {
-                                navController.navigate("manage_tabs")
+                                navController.navigateSafely("manage_tabs")
                             },
                             onPickAppForGesture = { gestureId ->
-                                navController.navigate("app_picker/${gestureId.name}")
+                                navController.navigateSafely("app_picker/${gestureId.name}")
                             }
                         )
             }
             composable("fonts") {
                 FontsScreen(
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStackSafely() }
                 )
             }
             composable("manage_tabs") {
                 com.bearinmind.launcher314.ui.drawer.ManageDrawerTabsScreen(
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStackSafely() }
                 )
             }
             composable("icon_packs") {
                 IconPacksScreen(
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStackSafely() }
                 )
             }
             composable("hide_apps") {
                 HideAppsScreen(
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStackSafely() }
                 )
             }
             composable("app_picker/{gestureId}") { backStack ->
                 val gestureId = backStack.arguments?.getString("gestureId") ?: return@composable
                 com.bearinmind.launcher314.ui.settings.AppPickerScreen(
                     gestureId = gestureId,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStackSafely() }
                 )
             }
         }
@@ -836,16 +864,16 @@ fun MainScreen(
                 composable("launcher") {
                     LauncherScreen(
                         onOpenAppDrawer = {
-                            navController.navigate("app_drawer")
+                            navController.navigateSafely("app_drawer")
                         },
                         onOpenSettings = {
-                            navController.navigate("settings")
+                            navController.navigateSafely("settings")
                         },
                         onOpenWidgets = {
                             // Check permission before navigating to widgets
                             activity?.checkWidgetPermissionAndNavigate {
-                                navController.navigate("widgets")
-                            } ?: navController.navigate("widgets")
+                                navController.navigateSafely("widgets")
+                            } ?: navController.navigateSafely("widgets")
                         }
                     )
                 }
@@ -855,11 +883,11 @@ fun MainScreen(
                     val gridRows = getHomeGridRows(context)
                     WidgetsScreen(
                         onBack = {
-                            navController.popBackStack()
+                            navController.popBackStackSafely()
                         },
                         onWidgetSelected = { widget ->
                             activity?.onWidgetSelectedFromPicker(widget)
-                            navController.popBackStack()
+                            navController.popBackStackSafely()
                         },
                         gridColumns = gridColumns,
                         gridRows = gridRows,
@@ -876,7 +904,7 @@ fun MainScreen(
                 composable("app_drawer") {
                     AppDrawerScreen(
                         onSettingsClick = {
-                            navController.navigate("settings")
+                            navController.navigateSafely("settings")
                         }
                     )
                 }
@@ -889,7 +917,7 @@ fun MainScreen(
                     }
                     SettingsScreen(
                         onBack = {
-                            navController.popBackStack()
+                            navController.popBackStackSafely()
                         },
                         onClearData = { },
                         onExportData = { },
@@ -911,47 +939,47 @@ fun MainScreen(
                             context.startActivity(intent)
                         },
                         onFontsClick = {
-                            navController.navigate("fonts")
+                            navController.navigateSafely("fonts")
                         },
                         onIconPacksClick = {
-                            navController.navigate("icon_packs")
+                            navController.navigateSafely("icon_packs")
                         },
                         onHideAppsClick = {
-                            navController.navigate("hide_apps")
+                            navController.navigateSafely("hide_apps")
                         },
                         onManageTabsClick = {
-                            navController.navigate("manage_tabs")
+                            navController.navigateSafely("manage_tabs")
                         },
                         onPickAppForGesture = { gestureId ->
-                            navController.navigate("app_picker/${gestureId.name}")
+                            navController.navigateSafely("app_picker/${gestureId.name}")
                         }
                     )
                 }
                 composable("fonts") {
                     FontsScreen(
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStackSafely() }
                     )
                 }
                 composable("manage_tabs") {
                     com.bearinmind.launcher314.ui.drawer.ManageDrawerTabsScreen(
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStackSafely() }
                     )
                 }
                 composable("icon_packs") {
                     IconPacksScreen(
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStackSafely() }
                     )
                 }
                 composable("hide_apps") {
                     HideAppsScreen(
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStackSafely() }
                     )
                 }
                 composable("app_picker/{gestureId}") { backStack ->
                     val gestureId = backStack.arguments?.getString("gestureId") ?: return@composable
                     com.bearinmind.launcher314.ui.settings.AppPickerScreen(
                         gestureId = gestureId,
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStackSafely() }
                     )
                 }
             }

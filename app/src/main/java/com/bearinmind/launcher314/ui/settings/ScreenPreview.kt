@@ -2306,231 +2306,34 @@ private fun HomeScreenPreview(
                                 ) {
                                     when (cell) {
                                         is HomePreviewCell.App -> {
-                                            val cust = appCustomizations.customizations[cell.app.packageName]
-                                            val displayName = cust?.customLabel ?: cell.app.name
-                                            val hideLabel = cust?.hideLabel == true
-                                            val customIconFile = cust?.customIconPath?.let { File(it) }?.takeIf { it.exists() }
-                                            val perAppShape = getIconShape(cust?.iconShapeExp ?: cust?.iconShape)
-                                            val cellClipShape = perAppShape ?: getIconShape(iconShapeOverride)
-                                            val perAppTintFilter = cust?.iconTintColor?.let { tintColor ->
-                                                if (cust.iconTintBackgroundOnly) null
-                                                else {
-                                                    val intensity = (cust.iconTintIntensity ?: 100) / 100f
-                                                    ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(cust.iconTintBlendMode))
-                                                }
-                                            }
-                                            val gridPreviewContext = LocalContext.current
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .wrapContentHeight(unbounded = true)
-                                                    .graphicsLayer { clip = false }
-                                                    .padding(markerHalfSize)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    when {
-                                                        customIconFile != null -> {
-                                                            AsyncImage(
-                                                                model = customIconFile,
-                                                                contentDescription = displayName,
-                                                                modifier = Modifier
-                                                                    .requiredSize(baseIconSize)
-                                                                    .clip(cellClipShape ?: RoundedCornerShape(4.dp)),
-                                                                contentScale = if (cellClipShape != null) ContentScale.Crop else ContentScale.Fit,
-                                                                colorFilter = perAppTintFilter
-                                                            )
-                                                        }
-                                                        cellClipShape != null -> {
-                                                            // Use same cached shaped bitmaps as the drawer/home screen
-                                                            val cellShapeName = cust?.iconShapeExp ?: cust?.iconShape ?: iconShapeOverride
-                                                            val cellShapedPath = if (cellShapeName != null) {
-                                                                remember(cell.app.packageName, cellShapeName, iconBgColorOverride, iconBgIntensityOverride) {
-                                                                    try {
-                                                                        if (iconBgColorOverride != null) {
-                                                                            getOrGenerateBgColorShapedIcon(gridPreviewContext, cell.app.packageName, cellShapeName, iconBgColorOverride)
-                                                                        } else {
-                                                                            getOrGenerateGlobalShapedIcon(gridPreviewContext, cell.app.packageName, cellShapeName)
-                                                                        }
-                                                                    } catch (e: Exception) { null }
-                                                                }
-                                                            } else null
-                                                            AsyncImage(
-                                                                model = File(cellShapedPath ?: cell.app.iconPath),
-                                                                contentDescription = displayName,
-                                                                modifier = Modifier
-                                                                    .requiredSize(baseIconSize)
-                                                                    .clip(cellClipShape),
-                                                                contentScale = ContentScale.Fit,
-                                                                colorFilter = perAppTintFilter
-                                                            )
-                                                        }
-                                                        else -> {
-                                                            AsyncImage(
-                                                                model = File(cell.app.iconPath),
-                                                                contentDescription = displayName,
-                                                                modifier = Modifier.requiredSize(baseIconSize),
-                                                                contentScale = ContentScale.Fit,
-                                                                colorFilter = perAppTintFilter
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                if (!hideLabel) {
-                                                    Spacer(modifier = Modifier.height(iconTextSpacer))
-                                                    Text(
-                                                        text = displayName,
-                                                        fontSize = baseFontSize,
-                                                        fontFamily = labelFontFamily,
-                                                        color = previewLabelColor,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        textAlign = TextAlign.Center,
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                        style = LocalTextStyle.current.copy(
-                                                            shadow = Shadow(
-                                                                color = Color.Black,
-                                                                offset = Offset(1f, 1f),
-                                                                blurRadius = 2f
-                                                            )
-                                                        )
-                                                    )
-                                                }
-                                            }
+                                            HomePreviewAppCell(
+                                                cell = cell,
+                                                appCustomizations = appCustomizations,
+                                                iconShapeOverride = iconShapeOverride,
+                                                iconBgColorOverride = iconBgColorOverride,
+                                                iconBgIntensityOverride = iconBgIntensityOverride,
+                                                baseIconSize = baseIconSize,
+                                                markerHalfSize = markerHalfSize,
+                                                iconTextSpacer = iconTextSpacer,
+                                                baseFontSize = baseFontSize,
+                                                previewLabelColor = previewLabelColor,
+                                                labelFontFamily = labelFontFamily
+                                            )
                                         }
                                         is HomePreviewCell.Folder -> {
-                                            // Folder: 2x2 mini-icon grid in a dark rounded box + name
-                                            val folderCust = appCustomizations.customizations["folder_${cell.folder.id}"]
-                                            val folderCustomLabel = folderCust?.customLabel
-                                            val folderHideLabel = folderCust?.hideLabel ?: false
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .wrapContentHeight(unbounded = true)
-                                                    .graphicsLayer { clip = false }
-                                                    .padding(markerHalfSize)
-                                            ) {
-                                                val folderBoxSize = baseIconSize
-                                                val folderCornerRadius = baseIconSize * 0.29f
-                                                // Per-folder shape override > global shape > default
-                                                val effectiveFolderShapeName = folderCust?.iconShapeExp ?: iconShapeOverride
-                                                val previewFolderShape = if (effectiveFolderShapeName != null) getIconShape(effectiveFolderShapeName) ?: RoundedCornerShape(folderCornerRadius) else RoundedCornerShape(folderCornerRadius)
-                                                // Per-folder outline color > global bg color > default
-                                                val folderBorderColor = if (folderCust?.iconTintColor != null) {
-                                                    val intensity = (folderCust.iconTintIntensity ?: 100) / 100f
-                                                    Color(folderCust.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
-                                                } else if (iconBgColorOverride != null) {
-                                                    Color(iconBgColorOverride).copy(alpha = (iconBgIntensityOverride / 100f).coerceIn(0f, 1f))
-                                                } else Color.White.copy(alpha = 0.3f)
-                                                Box(
-                                                    modifier = Modifier
-                                                        .requiredSize(folderBoxSize)
-                                                        .clip(previewFolderShape)
-                                                        .background(Color(0xFF1A1A1A))
-                                                        .border(
-                                                            width = 0.5.dp,
-                                                            color = folderBorderColor,
-                                                            shape = previewFolderShape
-                                                        ),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    val folderPreviewCtx = LocalContext.current
-                                                    if (cell.previewApps.isNotEmpty()) {
-                                                        val fPad = folderBoxSize * 0.12f
-                                                        val fSpacing = folderBoxSize * 0.05f
-                                                        val miniIcon = (folderBoxSize - fPad * 2 - fSpacing) / 2
-                                                        val miniClip = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(miniIcon * 0.2f) else RoundedCornerShape(miniIcon * 0.2f)
-                                                        Column(
-                                                            modifier = Modifier.padding(fPad),
-                                                            verticalArrangement = Arrangement.spacedBy(fSpacing)
-                                                        ) {
-                                                            Row(horizontalArrangement = Arrangement.spacedBy(fSpacing)) {
-                                                                cell.previewApps.getOrNull(0)?.let { a ->
-                                                                    val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
-                                                                        if (iconShapeOverride != null) {
-                                                                            try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
-                                                                                  else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
-                                                                            } catch (_: Exception) { a.iconPath }
-                                                                        } else a.iconPath
-                                                                    }
-                                                                    AsyncImage(
-                                                                        model = File(p),
-                                                                        contentDescription = null,
-                                                                        contentScale = ContentScale.Fit,
-                                                                        modifier = Modifier.size(miniIcon).clip(miniClip)
-                                                                    )
-                                                                } ?: Spacer(Modifier.size(miniIcon))
-                                                                cell.previewApps.getOrNull(1)?.let { a ->
-                                                                    val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
-                                                                        if (iconShapeOverride != null) {
-                                                                            try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
-                                                                                  else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
-                                                                            } catch (_: Exception) { a.iconPath }
-                                                                        } else a.iconPath
-                                                                    }
-                                                                    AsyncImage(
-                                                                        model = File(p),
-                                                                        contentDescription = null,
-                                                                        contentScale = ContentScale.Fit,
-                                                                        modifier = Modifier.size(miniIcon).clip(miniClip)
-                                                                    )
-                                                                } ?: Spacer(Modifier.size(miniIcon))
-                                                            }
-                                                            Row(horizontalArrangement = Arrangement.spacedBy(fSpacing)) {
-                                                                cell.previewApps.getOrNull(2)?.let { a ->
-                                                                    val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
-                                                                        if (iconShapeOverride != null) {
-                                                                            try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
-                                                                                  else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
-                                                                            } catch (_: Exception) { a.iconPath }
-                                                                        } else a.iconPath
-                                                                    }
-                                                                    AsyncImage(
-                                                                        model = File(p),
-                                                                        contentDescription = null,
-                                                                        contentScale = ContentScale.Fit,
-                                                                        modifier = Modifier.size(miniIcon).clip(miniClip)
-                                                                    )
-                                                                } ?: Spacer(Modifier.size(miniIcon))
-                                                                cell.previewApps.getOrNull(3)?.let { a ->
-                                                                    val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
-                                                                        if (iconShapeOverride != null) {
-                                                                            try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
-                                                                                  else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
-                                                                            } catch (_: Exception) { a.iconPath }
-                                                                        } else a.iconPath
-                                                                    }
-                                                                    AsyncImage(
-                                                                        model = File(p),
-                                                                        contentDescription = null,
-                                                                        contentScale = ContentScale.Fit,
-                                                                        modifier = Modifier.size(miniIcon).clip(miniClip)
-                                                                    )
-                                                                } ?: Spacer(Modifier.size(miniIcon))
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                Spacer(modifier = Modifier.height(iconTextSpacer))
-                                                if (!folderHideLabel) Text(
-                                                    text = folderCustomLabel ?: cell.folder.name,
-                                                    fontSize = baseFontSize,
-                                                    fontFamily = labelFontFamily,
-                                                    color = previewLabelColor,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    textAlign = TextAlign.Center,
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    style = LocalTextStyle.current.copy(
-                                                        shadow = Shadow(
-                                                            color = Color.Black,
-                                                            offset = Offset(1f, 1f),
-                                                            blurRadius = 2f
-                                                        )
-                                                    )
-                                                )
-                                            }
+                                            HomePreviewFolderCell(
+                                                cell = cell,
+                                                appCustomizations = appCustomizations,
+                                                iconShapeOverride = iconShapeOverride,
+                                                iconBgColorOverride = iconBgColorOverride,
+                                                iconBgIntensityOverride = iconBgIntensityOverride,
+                                                baseIconSize = baseIconSize,
+                                                markerHalfSize = markerHalfSize,
+                                                iconTextSpacer = iconTextSpacer,
+                                                baseFontSize = baseFontSize,
+                                                previewLabelColor = previewLabelColor,
+                                                labelFontFamily = labelFontFamily
+                                            )
                                         }
                                         is HomePreviewCell.WidgetOrigin,
                                         is HomePreviewCell.WidgetSpan -> {
@@ -2764,6 +2567,271 @@ private fun HomeScreenPreview(
                 }
             }
         } // end Preview Box
+    }
+}
+
+/**
+ * One app cell in the home-screen preview grid (icon + optional label, with
+ * per-app custom icon / shape / tint). Extracted from HomeScreenPreview to keep
+ * that composable under ART's JIT method-size limit.
+ */
+@Composable
+private fun HomePreviewAppCell(
+    cell: HomePreviewCell.App,
+    appCustomizations: AppCustomizations,
+    iconShapeOverride: String?,
+    iconBgColorOverride: Int?,
+    iconBgIntensityOverride: Int,
+    baseIconSize: androidx.compose.ui.unit.Dp,
+    markerHalfSize: androidx.compose.ui.unit.Dp,
+    iconTextSpacer: androidx.compose.ui.unit.Dp,
+    baseFontSize: androidx.compose.ui.unit.TextUnit,
+    previewLabelColor: Color,
+    labelFontFamily: FontFamily?
+) {
+    val cust = appCustomizations.customizations[cell.app.packageName]
+    val displayName = cust?.customLabel ?: cell.app.name
+    val hideLabel = cust?.hideLabel == true
+    val customIconFile = cust?.customIconPath?.let { File(it) }?.takeIf { it.exists() }
+    val perAppShape = getIconShape(cust?.iconShapeExp ?: cust?.iconShape)
+    val cellClipShape = perAppShape ?: getIconShape(iconShapeOverride)
+    val perAppTintFilter = cust?.iconTintColor?.let { tintColor ->
+        if (cust.iconTintBackgroundOnly) null
+        else {
+            val intensity = (cust.iconTintIntensity ?: 100) / 100f
+            ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(cust.iconTintBlendMode))
+        }
+    }
+    val gridPreviewContext = LocalContext.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .wrapContentHeight(unbounded = true)
+            .graphicsLayer { clip = false }
+            .padding(markerHalfSize)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            when {
+                customIconFile != null -> {
+                    AsyncImage(
+                        model = customIconFile,
+                        contentDescription = displayName,
+                        modifier = Modifier
+                            .requiredSize(baseIconSize)
+                            .clip(cellClipShape ?: RoundedCornerShape(4.dp)),
+                        contentScale = if (cellClipShape != null) ContentScale.Crop else ContentScale.Fit,
+                        colorFilter = perAppTintFilter
+                    )
+                }
+                cellClipShape != null -> {
+                    // Use same cached shaped bitmaps as the drawer/home screen
+                    val cellShapeName = cust?.iconShapeExp ?: cust?.iconShape ?: iconShapeOverride
+                    val cellShapedPath = if (cellShapeName != null) {
+                        remember(cell.app.packageName, cellShapeName, iconBgColorOverride, iconBgIntensityOverride) {
+                            try {
+                                if (iconBgColorOverride != null) {
+                                    getOrGenerateBgColorShapedIcon(gridPreviewContext, cell.app.packageName, cellShapeName, iconBgColorOverride)
+                                } else {
+                                    getOrGenerateGlobalShapedIcon(gridPreviewContext, cell.app.packageName, cellShapeName)
+                                }
+                            } catch (e: Exception) { null }
+                        }
+                    } else null
+                    AsyncImage(
+                        model = File(cellShapedPath ?: cell.app.iconPath),
+                        contentDescription = displayName,
+                        modifier = Modifier
+                            .requiredSize(baseIconSize)
+                            .clip(cellClipShape),
+                        contentScale = ContentScale.Fit,
+                        colorFilter = perAppTintFilter
+                    )
+                }
+                else -> {
+                    AsyncImage(
+                        model = File(cell.app.iconPath),
+                        contentDescription = displayName,
+                        modifier = Modifier.requiredSize(baseIconSize),
+                        contentScale = ContentScale.Fit,
+                        colorFilter = perAppTintFilter
+                    )
+                }
+            }
+        }
+        if (!hideLabel) {
+            Spacer(modifier = Modifier.height(iconTextSpacer))
+            Text(
+                text = displayName,
+                fontSize = baseFontSize,
+                fontFamily = labelFontFamily,
+                color = previewLabelColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+                style = LocalTextStyle.current.copy(
+                    shadow = Shadow(
+                        color = Color.Black,
+                        offset = Offset(1f, 1f),
+                        blurRadius = 2f
+                    )
+                )
+            )
+        }
+    }
+}
+
+/**
+ * One folder cell in the home-screen preview grid (2x2 mini-icon grid in a dark
+ * rounded box + optional label). Extracted from HomeScreenPreview to keep that
+ * composable under ART's JIT method-size limit.
+ */
+@Composable
+private fun HomePreviewFolderCell(
+    cell: HomePreviewCell.Folder,
+    appCustomizations: AppCustomizations,
+    iconShapeOverride: String?,
+    iconBgColorOverride: Int?,
+    iconBgIntensityOverride: Int,
+    baseIconSize: androidx.compose.ui.unit.Dp,
+    markerHalfSize: androidx.compose.ui.unit.Dp,
+    iconTextSpacer: androidx.compose.ui.unit.Dp,
+    baseFontSize: androidx.compose.ui.unit.TextUnit,
+    previewLabelColor: Color,
+    labelFontFamily: FontFamily?
+) {
+    // Folder: 2x2 mini-icon grid in a dark rounded box + name
+    val folderCust = appCustomizations.customizations["folder_${cell.folder.id}"]
+    val folderCustomLabel = folderCust?.customLabel
+    val folderHideLabel = folderCust?.hideLabel ?: false
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .wrapContentHeight(unbounded = true)
+            .graphicsLayer { clip = false }
+            .padding(markerHalfSize)
+    ) {
+        val folderBoxSize = baseIconSize
+        val folderCornerRadius = baseIconSize * 0.29f
+        // Per-folder shape override > global shape > default
+        val effectiveFolderShapeName = folderCust?.iconShapeExp ?: iconShapeOverride
+        val previewFolderShape = if (effectiveFolderShapeName != null) getIconShape(effectiveFolderShapeName) ?: RoundedCornerShape(folderCornerRadius) else RoundedCornerShape(folderCornerRadius)
+        // Per-folder outline color > global bg color > default
+        val folderBorderColor = if (folderCust?.iconTintColor != null) {
+            val intensity = (folderCust.iconTintIntensity ?: 100) / 100f
+            Color(folderCust.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
+        } else if (iconBgColorOverride != null) {
+            Color(iconBgColorOverride).copy(alpha = (iconBgIntensityOverride / 100f).coerceIn(0f, 1f))
+        } else Color.White.copy(alpha = 0.3f)
+        Box(
+            modifier = Modifier
+                .requiredSize(folderBoxSize)
+                .clip(previewFolderShape)
+                .background(Color(0xFF1A1A1A))
+                .border(
+                    width = 0.5.dp,
+                    color = folderBorderColor,
+                    shape = previewFolderShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            val folderPreviewCtx = LocalContext.current
+            if (cell.previewApps.isNotEmpty()) {
+                val fPad = folderBoxSize * 0.12f
+                val fSpacing = folderBoxSize * 0.05f
+                val miniIcon = (folderBoxSize - fPad * 2 - fSpacing) / 2
+                val miniClip = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(miniIcon * 0.2f) else RoundedCornerShape(miniIcon * 0.2f)
+                Column(
+                    modifier = Modifier.padding(fPad),
+                    verticalArrangement = Arrangement.spacedBy(fSpacing)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(fSpacing)) {
+                        cell.previewApps.getOrNull(0)?.let { a ->
+                            val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                if (iconShapeOverride != null) {
+                                    try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                          else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
+                                    } catch (_: Exception) { a.iconPath }
+                                } else a.iconPath
+                            }
+                            AsyncImage(
+                                model = File(p),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(miniIcon).clip(miniClip)
+                            )
+                        } ?: Spacer(Modifier.size(miniIcon))
+                        cell.previewApps.getOrNull(1)?.let { a ->
+                            val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                if (iconShapeOverride != null) {
+                                    try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                          else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
+                                    } catch (_: Exception) { a.iconPath }
+                                } else a.iconPath
+                            }
+                            AsyncImage(
+                                model = File(p),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(miniIcon).clip(miniClip)
+                            )
+                        } ?: Spacer(Modifier.size(miniIcon))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(fSpacing)) {
+                        cell.previewApps.getOrNull(2)?.let { a ->
+                            val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                if (iconShapeOverride != null) {
+                                    try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                          else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
+                                    } catch (_: Exception) { a.iconPath }
+                                } else a.iconPath
+                            }
+                            AsyncImage(
+                                model = File(p),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(miniIcon).clip(miniClip)
+                            )
+                        } ?: Spacer(Modifier.size(miniIcon))
+                        cell.previewApps.getOrNull(3)?.let { a ->
+                            val p = remember(a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride) {
+                                if (iconShapeOverride != null) {
+                                    try { if (iconBgColorOverride != null) getOrGenerateBgColorShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride, iconBgColorOverride, iconBgIntensityOverride)
+                                          else getOrGenerateGlobalShapedIcon(folderPreviewCtx, a.packageName, iconShapeOverride)
+                                    } catch (_: Exception) { a.iconPath }
+                                } else a.iconPath
+                            }
+                            AsyncImage(
+                                model = File(p),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(miniIcon).clip(miniClip)
+                            )
+                        } ?: Spacer(Modifier.size(miniIcon))
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(iconTextSpacer))
+        if (!folderHideLabel) Text(
+            text = folderCustomLabel ?: cell.folder.name,
+            fontSize = baseFontSize,
+            fontFamily = labelFontFamily,
+            color = previewLabelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+            style = LocalTextStyle.current.copy(
+                shadow = Shadow(
+                    color = Color.Black,
+                    offset = Offset(1f, 1f),
+                    blurRadius = 2f
+                )
+            )
+        )
     }
 }
 
