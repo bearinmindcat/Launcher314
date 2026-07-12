@@ -316,6 +316,33 @@ fun setDrawerSortAscending(context: Context, ascending: Boolean) {
         .edit().putBoolean(KEY_DRAWER_SORT_ASCENDING, ascending).apply()
 }
 
+// Fuzzy type-to-find search. Opt-in — default OFF keeps the classic
+// substring ("contains") search the drawer has always used.
+private const val KEY_DRAWER_FUZZY_SEARCH = "drawer_fuzzy_search_enabled"
+
+fun isFuzzySearchEnabled(context: Context): Boolean {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(KEY_DRAWER_FUZZY_SEARCH, false)
+}
+
+fun setFuzzySearchEnabled(context: Context, enabled: Boolean) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_DRAWER_FUZZY_SEARCH, enabled).apply()
+}
+
+// Type-to-find search leniency (0 = strict, 100 = loose). Default 50.
+private const val KEY_DRAWER_SEARCH_FUZZINESS = "drawer_search_fuzziness"
+
+fun getDrawerSearchFuzziness(context: Context): Int {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getInt(KEY_DRAWER_SEARCH_FUZZINESS, 50).coerceIn(0, 100)
+}
+
+fun setDrawerSearchFuzziness(context: Context, value: Int) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putInt(KEY_DRAWER_SEARCH_FUZZINESS, value.coerceIn(0, 100)).apply()
+}
+
 fun getGlobalIconBgColor(context: Context): Int? {
     val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return if (prefs.contains(KEY_GLOBAL_ICON_BG_COLOR)) prefs.getInt(KEY_GLOBAL_ICON_BG_COLOR, 0) else null

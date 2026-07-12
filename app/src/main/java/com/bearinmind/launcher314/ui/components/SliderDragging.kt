@@ -836,6 +836,19 @@ object SliderConfigs {
         labelSuffix = "%"
     )
 
+    // Type-to-find search leniency: 0 = strict (only tight, near-perfect
+    // matches), 100 = loose (allow scattered matches + typo tolerance).
+    val searchFuzziness = HorizontalSliderConfig(
+        minValue = 0f,
+        maxValue = 100f,
+        tickValues = (0..100 step 5).toList(),
+        labeledTickValues = listOf(0, 25, 50, 75, 100),
+        snapTickValues = (0..100 step 5).toList(),
+        showMinorTicks = true,
+        label = "Search Fuzziness",
+        labelSuffix = "%"
+    )
+
     val gridColumns = HorizontalSliderConfig(
         minValue = 3f,
         maxValue = 7f,

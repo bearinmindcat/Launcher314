@@ -203,6 +203,8 @@ fun AppDrawerPreviewSection(
     // var isLinked by remember { mutableStateOf(getSizeLinked(context)) }
     val isLinked = false // Link button hidden — keep variable for minimal code changes
     var drawerTransparency by remember { mutableFloatStateOf(getDrawerTransparency(context).toFloat()) }
+    var searchFuzziness by remember { mutableFloatStateOf(com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context).toFloat()) }
+    var fuzzySearchEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)) }
     var drawerGridRows by remember { mutableFloatStateOf(getDrawerGridRows(context).toFloat()) }
     var isPagedMode by remember { mutableStateOf(getDrawerPagedMode(context)) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
@@ -237,6 +239,8 @@ fun AppDrawerPreviewSection(
                 currentGridSize = getGridSize(context).toFloat()
                 currentIconSizePercent = getDrawerIconSizePercent(context).toFloat()
                 drawerTransparency = getDrawerTransparency(context).toFloat()
+                searchFuzziness = com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context).toFloat()
+                fuzzySearchEnabled = com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)
                 drawerGridRows = getDrawerGridRows(context).toFloat()
                 isPagedMode = getDrawerPagedMode(context)
                 selectedFontFamily = FontManager.getSelectedFontFamily(context)
@@ -571,6 +575,70 @@ fun AppDrawerPreviewSection(
                     setDrawerTransparency(context, drawerTransparency.roundToInt())
                 }
             )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Fuzzy search — opt-in. OFF keeps the classic substring search. When ON,
+        // the drawer uses the word-initials / subsequence matcher and the
+        // fuzziness slider below becomes active. Styled like the Manage Tabs row.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp)
+            ) {
+                Text(
+                    text = "Fuzzy app search",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 15.sp
+                )
+                Text(
+                    text = "Find apps by initials, e.g. \"yt\" → YouTube",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    fontSize = 12.sp
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .width(72.dp)
+                    .height(48.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Checkbox(
+                    checked = fuzzySearchEnabled,
+                    onCheckedChange = { checked ->
+                        fuzzySearchEnabled = checked
+                        com.bearinmind.launcher314.data.setFuzzySearchEnabled(context, checked)
+                    }
+                )
+            }
+        }
+
+        // Fuzziness slider — only meaningful when fuzzy search is on.
+        if (fuzzySearchEnabled) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 76.dp)
+            ) {
+                ThumbDragHorizontalSlider(
+                    currentValue = searchFuzziness,
+                    config = SliderConfigs.searchFuzziness,
+                    onValueChange = { newValue ->
+                        searchFuzziness = newValue
+                        com.bearinmind.launcher314.data.setDrawerSearchFuzziness(context, newValue.roundToInt())
+                    },
+                    onValueChangeFinished = {
+                        com.bearinmind.launcher314.data.setDrawerSearchFuzziness(context, searchFuzziness.roundToInt())
+                    }
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))

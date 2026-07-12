@@ -223,6 +223,8 @@ fun AppDrawerScreen(
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
     var globalTextColor by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
     var globalTextColorIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
+    var searchFuzziness by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context)) }
+    var fuzzySearchEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)) }
     // Re-read on every composition entry
     globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
     globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
@@ -281,6 +283,8 @@ fun AppDrawerScreen(
                 globalIconBgColor = getGlobalIconBgColor(context)
                 globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
                 globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
+                searchFuzziness = com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context)
+                fuzzySearchEnabled = com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)
                 // NOTE: no app-list re-query here. Installs / uninstalls / profile
                 // changes already trigger a refresh via the package-change
                 // BroadcastReceiver + LauncherApps.Callback below, so forcing a
@@ -569,22 +573,29 @@ fun AppDrawerScreen(
                     }
                 }
             } else profileFiltered
-            val searched = if (searchQuery.isBlank()) {
-                tabFiltered
+            // Choose the search set. Fuzzy matcher only when the user opted in;
+            // otherwise the classic case-insensitive substring search the drawer
+            // has always used. Fuzzy sorts by relevance; classic keeps the
+            // user's manual sort.
+            val searched = when {
+                searchQuery.isBlank() -> tabFiltered
+                fuzzySearchEnabled ->
+                    com.bearinmind.launcher314.helpers.DrawerSearchMatcher.searchApps(tabFiltered, searchQuery, searchFuzziness)
+                else -> tabFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
+            }
+            if (searchQuery.isNotBlank() && fuzzySearchEnabled) {
+                // Fuzzy results are already relevance-ranked — keep that order.
+                searched
             } else {
-                tabFiltered.filter { app ->
-                    app.name.contains(searchQuery, ignoreCase = true)
+                // No query, or classic search: honor the user's sort option.
+                when (currentSortOption) {
+                    SortOption.NAME -> if (isSortAscending) searched.sortedBy { it.name.lowercase() } else searched.sortedByDescending { it.name.lowercase() }
+                    SortOption.INSTALLED -> if (isSortAscending) searched.sortedBy { it.installTime } else searched.sortedByDescending { it.installTime }
+                    SortOption.UPDATED -> if (isSortAscending) searched.sortedBy { it.lastUpdateTime } else searched.sortedByDescending { it.lastUpdateTime }
+                    SortOption.SIZE -> if (isSortAscending) searched.sortedBy { it.sizeBytes } else searched.sortedByDescending { it.sizeBytes }
+                    SortOption.MANUAL -> if (isSortAscending) searched.sortedBy { it.name.lowercase() } else searched.sortedByDescending { it.name.lowercase() }
                 }
             }
-            // Apply sorting with direction
-            val sorted = when (currentSortOption) {
-                SortOption.NAME -> if (isSortAscending) searched.sortedBy { it.name.lowercase() } else searched.sortedByDescending { it.name.lowercase() }
-                SortOption.INSTALLED -> if (isSortAscending) searched.sortedBy { it.installTime } else searched.sortedByDescending { it.installTime }
-                SortOption.UPDATED -> if (isSortAscending) searched.sortedBy { it.lastUpdateTime } else searched.sortedByDescending { it.lastUpdateTime }
-                SortOption.SIZE -> if (isSortAscending) searched.sortedBy { it.sizeBytes } else searched.sortedByDescending { it.sizeBytes }
-                SortOption.MANUAL -> if (isSortAscending) searched.sortedBy { it.name.lowercase() } else searched.sortedByDescending { it.name.lowercase() }
-            }
-            sorted
         }
     }
 
