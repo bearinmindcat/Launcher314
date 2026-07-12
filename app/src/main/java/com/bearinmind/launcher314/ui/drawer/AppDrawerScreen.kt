@@ -202,8 +202,14 @@ fun AppDrawerScreen(
     val onDragToHomeDrop = homeDragCallbacks.onDragToHomeDrop
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    // Seed from the cross-open cache so re-opening the drawer paints instantly
+    // instead of showing a spinner while every package is re-enumerated.
+    var allApps by remember {
+        mutableStateOf(com.bearinmind.launcher314.data.DrawerAppCache.memoryApps() ?: emptyList())
+    }
+    var isLoading by remember {
+        mutableStateOf(com.bearinmind.launcher314.data.DrawerAppCache.memoryApps().isNullOrEmpty())
+    }
     var searchQuery by remember { mutableStateOf("") }
 
     // Grid size and icon size from settings
@@ -275,8 +281,11 @@ fun AppDrawerScreen(
                 globalIconBgColor = getGlobalIconBgColor(context)
                 globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
                 globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
-                // Refresh app list (picks up uninstalls, new installs, etc.)
-                appRefreshTrigger++
+                // NOTE: no app-list re-query here. Installs / uninstalls / profile
+                // changes already trigger a refresh via the package-change
+                // BroadcastReceiver + LauncherApps.Callback below, so forcing a
+                // full enumeration on every resume was redundant work that spiked
+                // CPU right as the drawer opened (scroll jank on slow devices).
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -452,14 +461,15 @@ fun AppDrawerScreen(
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
 
     // Folders state
-    var folders by remember { mutableStateOf<List<AppFolder>>(emptyList()) }
-
-    // Load folders from storage
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            folders = loadDrawerData(context).folders
-        }
-    }
+    // Load folders SYNCHRONOUSLY for the initial value (same as drawerTabs
+    // above; loadDrawerData is a tiny JSON read). If folders start empty and
+    // populate a frame later, apps that live inside folders flash into the grid
+    // on open and then vanish once `appsInFolders` fills in — shifting every
+    // other icon. That reshuffle read as the drawer "re-sorting" on every open,
+    // and became visible once the app-list cache removed the loading spinner
+    // that used to mask the folder-load window. The drawer composition is
+    // recreated on each open, so this re-reads fresh from disk every time.
+    var folders by remember { mutableStateOf(loadDrawerData(context).folders) }
 
     // Save folders when changed
     fun saveFolders(newFolders: List<AppFolder>) {
@@ -469,10 +479,20 @@ fun AppDrawerScreen(
         saveDrawerData(context, DrawerData(folders = newFolders))
     }
 
-    // Load/refresh app list whenever trigger changes (initial load, resume, package changes)
+    // Load/refresh app list whenever trigger changes (initial load, package changes).
     LaunchedEffect(appRefreshTrigger) {
         withContext(Dispatchers.IO) {
+            // Cold start with nothing in memory: drop the spinner ASAP by
+            // painting the on-disk cache first, then refresh with live truth.
+            if (allApps.isEmpty()) {
+                val disk = com.bearinmind.launcher314.data.DrawerAppCache.diskApps(context)
+                if (disk != null) withContext(Dispatchers.Main) {
+                    allApps = disk
+                    isLoading = false
+                }
+            }
             val apps = getInstalledApps(context)
+            com.bearinmind.launcher314.data.DrawerAppCache.update(context, apps)
             withContext(Dispatchers.Main) {
                 allApps = apps
                 isLoading = false

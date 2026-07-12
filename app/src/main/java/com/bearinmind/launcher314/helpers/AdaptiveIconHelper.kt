@@ -79,6 +79,32 @@ fun getOrGenerateGlobalShapedIcon(context: Context, packageName: String, shapeNa
     return generateShapedIcon(context, packageName, shapeName, file)
 }
 
+/**
+ * Cheap cache-HIT check: returns the shaped-icon path if it already exists on
+ * disk, else null — WITHOUT generating (generation allocates a bitmap + canvas
+ * and can decode/extract-color, expensive on the main thread). Lets a grid item
+ * show an already-shaped icon instantly and offload only the miss to a
+ * background thread. Covers both the global-shape and bg-color-shape variants.
+ */
+fun peekShapedIconCache(context: Context, packageName: String, shapeName: String?, bgColor: Int?): String? {
+    if (shapeName == null) return null
+    return try {
+        if (bgColor != null) {
+            val prefs = context.applicationContext
+                .getSharedPreferences("app_drawer_settings", Context.MODE_PRIVATE)
+            val intensity = prefs.getInt("global_icon_bg_intensity", 100)
+            val colorHex = Integer.toHexString(bgColor)
+            val f = File(getBgColorShapedDir(context), "${packageName}_${shapeName}_${colorHex}_${intensity}.png")
+            if (f.exists()) f.absolutePath else null
+        } else {
+            val f = File(getGlobalShapedDir(context), "$packageName.png")
+            if (f.exists()) f.absolutePath else null
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
 fun getShapedExpDir(context: Context): File {
     val dir = File(context.filesDir, "shaped_exp_icons")
     if (!dir.exists()) dir.mkdirs()

@@ -8102,9 +8102,21 @@ fun LauncherScreen(
                                 // their original page index).
                                 val pageToRemove = pagerState.currentPage
                                 val targetAfter = (pageToRemove - 1).coerceAtLeast(0)
+                                // Cosmetic scroll-away, on its OWN job. If the user
+                                // swipes during it the scroll is cancelled — but the
+                                // removal below runs in a SEPARATE coroutine so it
+                                // still completes. Previously the scroll + removal
+                                // shared one coroutine, so a swipe that cancelled
+                                // animateScrollToPage aborted the whole thing before
+                                // totalPages was decremented — the "removed" page
+                                // stayed swipeable and popped back (Issue: phantom
+                                // re-added screen).
+                                dropScope.launch {
+                                    try { pagerState.animateScrollToPage(targetAfter) }
+                                    catch (_: kotlinx.coroutines.CancellationException) {}
+                                }
                                 dropScope.launch {
                                     try {
-                                        pagerState.animateScrollToPage(targetAfter)
                                         delay(350) // Let dot fade-out animation complete (300ms + margin)
 
                                         // 1) Strip every widget that lived on the

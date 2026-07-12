@@ -1443,6 +1443,27 @@ fun DraggableGridCell(
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
+                            val folderCustomIcon = com.bearinmind.launcher314.data.folderCustomIconPath(folderCustomization)
+                            if (folderCustomIcon != null) {
+                                // Issue #57 — a single chosen image fills the folder,
+                                // clipped to its shape, replacing the 2x2 grid.
+                                AsyncImage(
+                                    model = File(folderCustomIcon),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    colorFilter = folderInvalidTint,
+                                    modifier = Modifier.matchParentSize().clip(effectiveFolderClip)
+                                )
+                                if (folderOverlayAlpha > 0f) {
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .clip(effectiveFolderClip)
+                                            .graphicsLayer { alpha = folderOverlayAlpha }
+                                            .background(Color.Black)
+                                    )
+                                }
+                            } else {
                             // Background layer — no clip, uses shape parameter
                             Box(modifier = Modifier.matchParentSize().background(Color(0xFF1A1A1A), effectiveFolderClip))
                             // Content layer — inset by border width and clipped so icons stay inside outline
@@ -1646,6 +1667,7 @@ fun DraggableGridCell(
                                     .matchParentSize()
                                     .border(1.dp, folderBorderColor, effectiveFolderClip)
                             )
+                            } // end else (default 2x2 grid)
                             }
 
                             Spacer(modifier = Modifier.height(iconTextSpacer))
@@ -2469,6 +2491,26 @@ fun DockSlot(
                         },
                     contentAlignment = Alignment.Center
                 ) {
+                val dockFolderCustomIcon = com.bearinmind.launcher314.data.folderCustomIconPath(folderCustomization)
+                if (dockFolderCustomIcon != null) {
+                    // Issue #57 — chosen image fills the dock folder, clipped to shape.
+                    AsyncImage(
+                        model = File(dockFolderCustomIcon),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        colorFilter = folderInvalidTint,
+                        modifier = Modifier.matchParentSize().clip(effectiveFolderClip)
+                    )
+                    if (dockOverlayAlpha > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(effectiveFolderClip)
+                                .graphicsLayer { alpha = dockOverlayAlpha }
+                                .background(Color.Black)
+                        )
+                    }
+                } else {
                 // Background + border
                 Box(modifier = Modifier.matchParentSize().background(Color(0xFF1A1A1A), effectiveFolderClip))
                 // Clipped content layer
@@ -2601,6 +2643,7 @@ fun DockSlot(
                         )
                     }
                 } // end clipped content Box
+                } // end else (default 2x2 grid)
                 // Border overlay on top
                 Box(modifier = Modifier.matchParentSize().border(1.dp, dockFolderBorderColor, effectiveFolderClip))
                 } // end outer scale Box

@@ -369,6 +369,17 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
+        // Warm the drawer app-list cache from disk on a background thread so the
+        // first drawer open after a cold start (e.g. the process was killed
+        // while a fullscreen video ran) paints instantly instead of spinning.
+        Thread {
+            com.bearinmind.launcher314.data.DrawerAppCache.warm(applicationContext)
+        }.start()
+
+        // Drive the launcher window at the panel's max refresh rate (else some
+        // devices leave it at 60Hz while system UI runs 120).
+        requestHighRefreshRate()
+
         // Handle pin shortcut request (Android 8.0+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             handlePinShortcutRequest(intent)
@@ -435,6 +446,43 @@ class MainActivity : ComponentActivity() {
         // animation-deferred updates flush at the right moment. No-op
         // on older platforms.
         WidgetManager.setActivityResumed(true)
+        // Re-request the high refresh rate here too so it survives a fold /
+        // unfold (which swaps the display + its supported modes).
+        requestHighRefreshRate()
+    }
+
+    /**
+     * Ask the compositor for the panel's highest refresh rate. The launcher
+     * window is transparent + renderEffect-heavy, so without an explicit hint
+     * some devices (e.g. OnePlus 6) leave it at the panel default (60Hz) while
+     * the rest of the system runs 120. We only ever request a HIGHER rate at
+     * the CURRENT resolution — never a resolution change — so it's safe on
+     * foldables, where onResume re-applies it for the active display.
+     */
+    private fun requestHighRefreshRate() {
+        try {
+            val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                display
+            } else {
+                @Suppress("DEPRECATION") windowManager.defaultDisplay
+            } ?: return
+            val current = display.mode
+            val best = display.supportedModes
+                .filter {
+                    it.physicalWidth == current.physicalWidth &&
+                        it.physicalHeight == current.physicalHeight
+                }
+                .maxByOrNull { it.refreshRate } ?: return
+            // Only act if a genuinely higher rate exists at this resolution.
+            if (best.refreshRate > current.refreshRate + 1f) {
+                val lp = window.attributes
+                lp.preferredDisplayModeId = best.modeId
+                @Suppress("DEPRECATION")
+                lp.preferredRefreshRate = best.refreshRate
+                window.attributes = lp
+            }
+        } catch (_: Exception) {
+        }
     }
 
     override fun onPause() {

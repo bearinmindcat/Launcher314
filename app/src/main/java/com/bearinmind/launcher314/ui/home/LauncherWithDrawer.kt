@@ -67,6 +67,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.MotionDurationScale
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -161,19 +162,39 @@ fun LauncherWithDrawer(
         // velocity, repeatedly dipping the drawer back over home and blocking
         // interaction (the "delay after scrolling then closing"). Critical damping
         // settles straight to closed, so home frees as soon as it lands.
-        swipeUpY.animateTo(
-            targetValue = target,
-            animationSpec = if (opening)
-                spring(dampingRatio = 0.82f, stiffness = 650f)
-            else
-                // Faster critically-damped close (700 -> 1200). Even with the blocker
-                // dropped during close, the drawer CONTENT still covers the bottom
-                // (dock / swipe-up-to-reopen zone) until it slides off; a quicker
-                // settle clears that area in ~0.17s instead of ~0.25s+ so home feels
-                // immediately live. Still dampingRatio = 1 = no overshoot/bounce.
-                spring(dampingRatio = 1f, stiffness = 1200f),
-            initialVelocity = velocityPxPerSec
-        )
+        val spec = if (opening)
+            spring<Float>(dampingRatio = 0.82f, stiffness = 650f)
+        else
+            // Faster critically-damped close (700 -> 1200). Even with the blocker
+            // dropped during close, the drawer CONTENT still covers the bottom
+            // (dock / swipe-up-to-reopen zone) until it slides off; a quicker
+            // settle clears that area in ~0.17s instead of ~0.25s+ so home feels
+            // immediately live. Still dampingRatio = 1 = no overshoot/bounce.
+            spring<Float>(dampingRatio = 1f, stiffness = 1200f)
+
+        // If the user has system animations turned OFF (Developer options /
+        // accessibility → ANIMATOR_DURATION_SCALE = 0), Compose collapses every
+        // animation to a single frame, so the drawer would TELEPORT open/closed
+        // and the blur/fade ramps (keyed to swipe progress) would never play —
+        // the reported "swipe behaves poorly with animations disabled". The
+        // finger-drag itself is 1:1 (dragShift) and unaffected; only this
+        // release-settle needs a real clock, so force a normal motion scale for
+        // just this animation when the system scale is 0.
+        val animationsOff = try {
+            android.provider.Settings.Global.getFloat(
+                context.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) == 0f
+        } catch (_: Exception) { false }
+
+        if (animationsOff) {
+            withContext(object : MotionDurationScale { override val scaleFactor = 1f }) {
+                swipeUpY.animateTo(target, spec, initialVelocity = velocityPxPerSec)
+            }
+        } else {
+            swipeUpY.animateTo(target, spec, initialVelocity = velocityPxPerSec)
+        }
     }
 
     // #1 — Material You drawer tint (1:1 with Lawnchair): the all-apps scrim color

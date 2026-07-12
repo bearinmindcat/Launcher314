@@ -23,7 +23,17 @@ import com.bearinmind.launcher314.helpers.FontManager
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Clear
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Palette
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.bearinmind.launcher314.data.getCustomIconsDir
+import com.bearinmind.launcher314.data.saveBitmapToFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -102,7 +112,55 @@ fun FolderCustomizeDialog(
     ) }
     var showFontScreen by remember { mutableStateOf(false) }
 
-    var expandedSection by remember { mutableStateOf(0) } // 0=none, 1=shape, 2=tint, 3=size, 4=label
+    // Issue #57 — a chosen image replaces the 2x2 contents preview. Null = grid.
+    var customIconPath by remember { mutableStateOf(currentCustomization?.customIconPath) }
+    // Busts Coil's cache when the same folder_<id>.png path is overwritten.
+    var customIconVersion by remember { mutableStateOf(0) }
+
+    // Gallery picker: crop to square, 192x192, save to folder_<id>.png.
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val exifStream = context.contentResolver.openInputStream(uri)
+                val rotation = if (exifStream != null) {
+                    val exif = ExifInterface(exifStream)
+                    when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                        else -> 0f
+                    }.also { exifStream.close() }
+                } else 0f
+
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val original = BitmapFactory.decodeStream(inputStream)
+                inputStream?.close()
+                if (original != null) {
+                    val rotated = if (rotation != 0f) {
+                        val matrix = Matrix().apply { postRotate(rotation) }
+                        Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+                    } else original
+                    val size = minOf(rotated.width, rotated.height)
+                    val x = (rotated.width - size) / 2
+                    val y = (rotated.height - size) / 2
+                    val cropped = Bitmap.createBitmap(rotated, x, y, size, size)
+                    val scaled = Bitmap.createScaledBitmap(cropped, 192, 192, true)
+                    val outFile = File(getCustomIconsDir(context), "folder_$folderId.png")
+                    saveBitmapToFile(scaled, outFile)
+                    customIconPath = outFile.absolutePath
+                    customIconVersion++
+                    if (cropped !== rotated) cropped.recycle()
+                    if (rotated !== original) rotated.recycle()
+                    scaled.recycle()
+                    original.recycle()
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    var expandedSection by remember { mutableStateOf(0) } // 0=none, 1=shape, 2=tint, 3=size, 4=label, 5=icon
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -136,6 +194,20 @@ fun FolderCustomizeDialog(
                         Color(globalIconBgColor).copy(alpha = (globalIconBgIntensity / 100f).coerceIn(0f, 1f))
                     } else Color.White.copy(alpha = 0.3f)
                     val resolvedFolderClip = folderClipShape ?: RoundedCornerShape(12.dp)
+                    val previewCustomIcon = customIconPath?.let { File(it) }?.takeIf { it.exists() }
+                    if (previewCustomIcon != null) {
+                        // Custom icon replaces the whole folder — a single image
+                        // clipped to the folder shape (no dark box / grid).
+                        AsyncImage(
+                            model = coil.request.ImageRequest.Builder(context)
+                                .data(previewCustomIcon)
+                                .setParameter("v", customIconVersion)
+                                .build(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(folderBoxSize).clip(resolvedFolderClip)
+                        )
+                    } else
                     Box(
                         modifier = Modifier.size(folderBoxSize),
                         contentAlignment = Alignment.Center
@@ -283,6 +355,24 @@ fun FolderCustomizeDialog(
                         Icon(painterResource(id = R.drawable.ic_label), contentDescription = "Label", modifier = iconSize, tint = labelColor)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("Label", color = labelColor, fontSize = 11.sp)
+                    }
+
+                    // Icon button (Issue #57) — set a single image for the folder
+                    val iconSectionColor = when {
+                        customIconPath != null -> Color.White
+                        expandedSection == 5 -> MaterialTheme.colorScheme.primary
+                        else -> Color.White.copy(alpha = 0.4f)
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(selectedShape).clickable { expandedSection = if (expandedSection == 5) 0 else 5 }
+                            .then(if (expandedSection == 5) Modifier.background(selectedBg, selectedShape) else Modifier)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Outlined.Image, contentDescription = "Icon", modifier = iconSize, tint = iconSectionColor)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Icon", color = iconSectionColor, fontSize = 11.sp)
                     }
                 }
 
@@ -493,6 +583,44 @@ fun FolderCustomizeDialog(
                                 )
                             }
                         }
+                        5 -> {
+                            // Icon (Issue #57) — pick / clear a single folder image
+                            Column(
+                                modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp)).padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Show a single image for this folder instead of a preview of its apps.",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Button(
+                                    onClick = {
+                                        imagePickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(if (customIconPath != null) "Change image" else "Choose image", fontSize = 13.sp)
+                                }
+                                if (customIconPath != null) {
+                                    OutlinedButton(
+                                        onClick = { customIconPath = null; customIconVersion++ },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF9A9A))
+                                    ) {
+                                        Icon(Icons.Outlined.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Remove custom icon", fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
                         else -> Spacer(modifier = Modifier.fillMaxWidth())
                     }
                 }
@@ -533,6 +661,7 @@ fun FolderCustomizeDialog(
                                 iconTintBlendMode = if (selectedTintColor != null) "SrcAtop" else null,
                                 iconTintIntensity = if (selectedTintColor != null) intensityInt.takeIf { it != 100 } else null,
                                 iconShapeExp = selectedShapeExp,
+                                customIconPath = customIconPath,
                                 iconSizePercent = sizeInt.takeIf { it != globalIconSizePercent },
                                 iconTextSizePercent = selectedTextSizePercent.roundToInt().takeIf { it != globalIconTextSizePercent },
                                 labelFontId = selectedFontId,

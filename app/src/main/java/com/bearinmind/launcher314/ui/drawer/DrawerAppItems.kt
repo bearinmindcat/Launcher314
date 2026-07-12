@@ -306,6 +306,16 @@ internal fun FolderItem(
                     .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, iconClipShape ?: RoundedCornerShape((iconSize * 0.29f).dp)),
                 contentAlignment = Alignment.Center
             ) {
+                val folderCustomIcon = com.bearinmind.launcher314.data.folderCustomIconPath(drawerFolderCust)
+                if (folderCustomIcon != null) {
+                    // Issue #57 — chosen image fills the folder (box already clips).
+                    AsyncImage(
+                        model = File(folderCustomIcon),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
                 if (previewApps.isNotEmpty() || (draggedIconPath != null && dragIconProgress > 0f)) {
                     val boxSize = maxWidth
                     val padding = boxSize * 0.12f
@@ -406,6 +416,7 @@ internal fun FolderItem(
                         }
                     }
                 }
+                } // end else (default 2x2 grid)
 
                 // Dark overlay (press + flash)
                 if (overlayAlpha > 0f) {
@@ -524,15 +535,28 @@ internal fun FolderPreviewIcon(
     globalIconShapeName: String? = null
 ) {
     val context = LocalContext.current
-    val shapedIconPath = if (globalIconShapeName != null) {
-        try {
-            if (iconBgColor != null) {
-                getOrGenerateBgColorShapedIcon(context, app.packageName, globalIconShapeName, iconBgColor)
-            } else {
-                getOrGenerateGlobalShapedIcon(context, app.packageName, globalIconShapeName)
+    // Cache hit used instantly (memoized); miss generated off the main thread.
+    val cachedShaped = remember(app.packageName, globalIconShapeName, iconBgColor) {
+        com.bearinmind.launcher314.helpers.peekShapedIconCache(
+            context, app.packageName, globalIconShapeName, iconBgColor
+        )
+    }
+    val shapedIconPath by produceState(
+        initialValue = cachedShaped,
+        app.packageName, globalIconShapeName, iconBgColor
+    ) {
+        if (value == null && globalIconShapeName != null) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    if (iconBgColor != null) {
+                        getOrGenerateBgColorShapedIcon(context, app.packageName, globalIconShapeName, iconBgColor)
+                    } else {
+                        getOrGenerateGlobalShapedIcon(context, app.packageName, globalIconShapeName)
+                    }
+                } catch (_: Exception) { null }
             }
-        } catch (_: Exception) { null }
-    } else null
+        }
+    }
     val displayIconPath = shapedIconPath ?: app.iconPath
     val isShapedIcon = shapedIconPath != null
 
@@ -1209,16 +1233,32 @@ internal fun SelectableAppItem(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Icon with selection circle overlay
-            // When bg color is set, use pre-generated icon with user color as bg layer
-            val drawerShapedIconPath = if (globalIconShapeName != null) {
-                try {
-                    if (iconBgColor != null) {
-                        getOrGenerateBgColorShapedIcon(drawerItemContext, app.packageName, globalIconShapeName, iconBgColor)
-                    } else {
-                        getOrGenerateGlobalShapedIcon(drawerItemContext, app.packageName, globalIconShapeName)
+            // Shaped-icon resolution: a cache HIT is used immediately (cheap,
+            // memoized once per pkg/shape/bg — no per-frame disk stat), while a
+            // MISS is generated on a background thread (bitmap + canvas work is
+            // too heavy for the UI thread during scroll). Falls back to the raw
+            // icon until the shaped one is ready.
+            val drawerCachedShaped = remember(app.packageName, globalIconShapeName, iconBgColor) {
+                com.bearinmind.launcher314.helpers.peekShapedIconCache(
+                    drawerItemContext, app.packageName, globalIconShapeName, iconBgColor
+                )
+            }
+            val drawerShapedIconPath by produceState(
+                initialValue = drawerCachedShaped,
+                app.packageName, globalIconShapeName, iconBgColor
+            ) {
+                if (value == null && globalIconShapeName != null) {
+                    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        try {
+                            if (iconBgColor != null) {
+                                getOrGenerateBgColorShapedIcon(drawerItemContext, app.packageName, globalIconShapeName, iconBgColor)
+                            } else {
+                                getOrGenerateGlobalShapedIcon(drawerItemContext, app.packageName, globalIconShapeName)
+                            }
+                        } catch (_: Exception) { null }
                     }
-                } catch (_: Exception) { null }
-            } else null
+                }
+            }
             val drawerIsShapedIcon = drawerShapedIconPath != null
             val drawerDisplayIconPath = drawerShapedIconPath ?: app.iconPath
 

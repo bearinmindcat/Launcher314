@@ -1213,6 +1213,16 @@ private fun ScaledPreviewFolderItem(
                     ),
                 contentAlignment = Alignment.Center
             ) {
+                val folderPreviewIcon = com.bearinmind.launcher314.data.folderCustomIconPath(folderCustomization)
+                if (folderPreviewIcon != null) {
+                    // Issue #57 — custom folder image in the drawer preview.
+                    AsyncImage(
+                        model = File(folderPreviewIcon),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
                 if (appIcons.isNotEmpty()) {
                     val miniClip = if (iconShapeOverride != null) getIconShape(iconShapeOverride) ?: RoundedCornerShape(2.dp) else RoundedCornerShape(2.dp)
                     // Helper to resolve shaped icon path
@@ -1253,6 +1263,7 @@ private fun ScaledPreviewFolderItem(
                         }
                     }
                 }
+                } // end else (default 2x2 grid)
             }
 
             Spacer(modifier = Modifier.height(1.dp))
@@ -2750,6 +2761,16 @@ private fun HomePreviewFolderCell(
             contentAlignment = Alignment.Center
         ) {
             val folderPreviewCtx = LocalContext.current
+            val folderPreviewIcon = com.bearinmind.launcher314.data.folderCustomIconPath(folderCust)
+            if (folderPreviewIcon != null) {
+                // Issue #57 — custom folder image in the home preview.
+                AsyncImage(
+                    model = File(folderPreviewIcon),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else
             if (cell.previewApps.isNotEmpty()) {
                 val fPad = folderBoxSize * 0.12f
                 val fSpacing = folderBoxSize * 0.05f

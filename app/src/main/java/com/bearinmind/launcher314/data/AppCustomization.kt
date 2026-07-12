@@ -130,3 +130,13 @@ fun getCustomIconsDir(context: Context): File {
     if (!dir.exists()) dir.mkdirs()
     return dir
 }
+
+/**
+ * Issue #57 — a folder can show a single chosen image instead of the default
+ * 2x2 preview of its contents. Returns the custom icon path when set AND the
+ * file still exists, else null (so every render site can branch the same way).
+ */
+fun folderCustomIconPath(customization: AppCustomization?): String? {
+    val p = customization?.customIconPath ?: return null
+    return if (File(p).exists()) p else null
+}
