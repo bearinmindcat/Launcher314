@@ -856,6 +856,20 @@ object SliderConfigs {
         label = "App Grid Columns"
     )
 
+    val suggestedColumns = HorizontalSliderConfig(
+        minValue = 3f,
+        maxValue = 7f,
+        tickValues = listOf(3, 4, 5, 6, 7),
+        label = "Suggested Columns"
+    )
+
+    val suggestedRows = HorizontalSliderConfig(
+        minValue = 1f,
+        maxValue = 4f,
+        tickValues = listOf(1, 2, 3, 4),
+        label = "Suggested Rows"
+    )
+
     // Drawer tab chip alignment: 0 = Left, 1 = Center, 2 = Right
     val tabAlignment = HorizontalSliderConfig(
         minValue = 0f,

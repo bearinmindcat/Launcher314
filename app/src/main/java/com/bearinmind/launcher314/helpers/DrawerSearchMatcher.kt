@@ -207,7 +207,14 @@ object DrawerSearchMatcher {
      *   Controls the max "spread" (word-boundary jumps) a real match may have
      *   and whether the QWERTY typo fallback runs.
      */
-    fun searchApps(apps: List<AppInfo>, rawQuery: String, fuzziness: Int = 50): List<AppInfo> {
+    fun searchApps(
+        apps: List<AppInfo>,
+        rawQuery: String,
+        fuzziness: Int = 50,
+        // Issue #64: last-opened timestamps keyed by lastOpenedKey(pkg, userSerial).
+        // When non-empty, ties in match quality break toward more-recently-used.
+        lastOpened: Map<String, Long> = emptyMap(),
+    ): List<AppInfo> {
         val q = WHITESPACE.replace(rawQuery.lowercase(Locale.ROOT), "")
         if (q.isEmpty()) return emptyList()
 
@@ -241,7 +248,14 @@ object DrawerSearchMatcher {
         return scored
             .filter { it.second >= floor }
             .sortedWith(
+                // Match quality dominates (a great name match beats a
+                // recently-used weaker match), then recency breaks ties within a
+                // tier, then alphabetical. Never-opened apps default to 0L and
+                // fall to the bottom of their tie — still findable.
                 compareByDescending<Pair<AppInfo, Int>> { it.second }
+                    .thenByDescending {
+                        lastOpened[com.bearinmind.launcher314.data.lastOpenedKey(it.first.packageName, it.first.userSerial)] ?: 0L
+                    }
                     .thenComparator { a, b -> collator.compare(a.first.name, b.first.name) }
             )
             .map { it.first }

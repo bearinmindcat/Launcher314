@@ -225,6 +225,15 @@ fun AppDrawerScreen(
     var globalTextColorIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
     var searchFuzziness by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context)) }
     var fuzzySearchEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)) }
+    var recentFirstSearch by remember { mutableStateOf(com.bearinmind.launcher314.data.isRecentFirstSearchEnabled(context)) }
+    // Last-opened timestamps for the "recently used first" search order (#64).
+    // Re-read on resume (below) so a just-launched app ranks up on next open.
+    var lastOpenedMap by remember { mutableStateOf(com.bearinmind.launcher314.data.getLastOpenedMap(context)) }
+    // Suggested apps card (frecency-ranked) state.
+    var suggestedAppsEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.isSuggestedAppsEnabled(context)) }
+    var suggestedColumns by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getSuggestedAppsColumns(context)) }
+    var suggestedRows by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getSuggestedAppsRows(context)) }
+    var launchCountMap by remember { mutableStateOf(com.bearinmind.launcher314.data.getLaunchCountMap(context)) }
     // Re-read on every composition entry
     globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
     globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
@@ -285,6 +294,12 @@ fun AppDrawerScreen(
                 globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
                 searchFuzziness = com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context)
                 fuzzySearchEnabled = com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)
+                recentFirstSearch = com.bearinmind.launcher314.data.isRecentFirstSearchEnabled(context)
+                lastOpenedMap = com.bearinmind.launcher314.data.getLastOpenedMap(context)
+                suggestedAppsEnabled = com.bearinmind.launcher314.data.isSuggestedAppsEnabled(context)
+                suggestedColumns = com.bearinmind.launcher314.data.getSuggestedAppsColumns(context)
+                suggestedRows = com.bearinmind.launcher314.data.getSuggestedAppsRows(context)
+                launchCountMap = com.bearinmind.launcher314.data.getLaunchCountMap(context)
                 // NOTE: no app-list re-query here. Installs / uninstalls / profile
                 // changes already trigger a refresh via the package-change
                 // BroadcastReceiver + LauncherApps.Callback below, so forcing a
@@ -308,6 +323,12 @@ fun AppDrawerScreen(
                 val packageName = intent.data?.schemeSpecificPart
                 if (packageName != null) {
                     clearCachedIconsForPackage(ctx, packageName)
+                    // On a real uninstall (not an update), drop the app's usage so
+                    // it doesn't linger in recency/frecency ranking.
+                    if (intent.action == Intent.ACTION_PACKAGE_REMOVED &&
+                        !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
+                        com.bearinmind.launcher314.data.forgetAppUsage(ctx, packageName)
+                    }
                 }
                 appRefreshTrigger++
             }
@@ -580,15 +601,25 @@ fun AppDrawerScreen(
             val searched = when {
                 searchQuery.isBlank() -> tabFiltered
                 fuzzySearchEnabled ->
-                    com.bearinmind.launcher314.helpers.DrawerSearchMatcher.searchApps(tabFiltered, searchQuery, searchFuzziness)
+                    com.bearinmind.launcher314.helpers.DrawerSearchMatcher.searchApps(
+                        tabFiltered, searchQuery, searchFuzziness,
+                        // Recency only feeds the tiebreak when the option is on.
+                        if (recentFirstSearch) lastOpenedMap else emptyMap()
+                    )
                 else -> tabFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
             }
-            if (searchQuery.isNotBlank() && fuzzySearchEnabled) {
-                // Fuzzy results are already relevance-ranked — keep that order.
-                searched
-            } else {
-                // No query, or classic search: honor the user's sort option.
-                when (currentSortOption) {
+            when {
+                // Fuzzy results are already relevance-ranked (recency tiebreak baked in).
+                searchQuery.isNotBlank() && fuzzySearchEnabled -> searched
+                // Classic search + "recently used first" (#64): most-recently-opened
+                // matches first, alphabetical as the tiebreak.
+                searchQuery.isNotBlank() && recentFirstSearch -> searched.sortedWith(
+                    compareByDescending<AppInfo> {
+                        lastOpenedMap[com.bearinmind.launcher314.data.lastOpenedKey(it.packageName, it.userSerial)] ?: 0L
+                    }.thenBy { it.name.lowercase() }
+                )
+                // No query, or classic search without recency: honor the sort option.
+                else -> when (currentSortOption) {
                     SortOption.NAME -> if (isSortAscending) searched.sortedBy { it.name.lowercase() } else searched.sortedByDescending { it.name.lowercase() }
                     SortOption.INSTALLED -> if (isSortAscending) searched.sortedBy { it.installTime } else searched.sortedByDescending { it.installTime }
                     SortOption.UPDATED -> if (isSortAscending) searched.sortedBy { it.lastUpdateTime } else searched.sortedByDescending { it.lastUpdateTime }
@@ -596,6 +627,32 @@ fun AppDrawerScreen(
                     SortOption.MANUAL -> if (isSortAscending) searched.sortedBy { it.name.lowercase() } else searched.sortedByDescending { it.name.lowercase() }
                 }
             }
+        }
+    }
+
+    // Suggested apps (frecency-ranked) for the top-of-drawer card. Personal,
+    // non-hidden apps only; capped at columns × rows; empty when disabled.
+    val suggestedApps by remember {
+        derivedStateOf {
+            if (!suggestedAppsEnabled) return@derivedStateOf emptyList<AppInfo>()
+            val now = System.currentTimeMillis()
+            val limit = (suggestedColumns * suggestedRows).coerceAtLeast(1)
+            allApps.asSequence()
+                .filter {
+                    it.profileType == com.bearinmind.launcher314.helpers.ProfileType.PERSONAL &&
+                        it.packageName !in hiddenApps
+                }
+                .map { app ->
+                    val key = com.bearinmind.launcher314.data.lastOpenedKey(app.packageName, app.userSerial)
+                    app to com.bearinmind.launcher314.data.frecencyScore(
+                        launchCountMap[key] ?: 0, lastOpenedMap[key] ?: 0L, now
+                    )
+                }
+                .filter { it.second > 0.0 }
+                .sortedByDescending { it.second }
+                .take(limit)
+                .map { it.first }
+                .toList()
         }
     }
 
@@ -857,7 +914,9 @@ fun AppDrawerScreen(
                         selectedDrawerTabId = null
                         setSelectedDrawerTabId(context, null)
                     }
-                }
+                },
+                suggestedApps = suggestedApps,
+                suggestedColumns = suggestedColumns
             ),
             escapeHoverState = EscapeHoverState(
                 folderId = if (escapeHoveredFolderId != null && folderEscapedApp != null) escapeHoveredFolderId else null,

@@ -330,6 +330,54 @@ fun setFuzzySearchEnabled(context: Context, enabled: Boolean) {
         .edit().putBoolean(KEY_DRAWER_FUZZY_SEARCH, enabled).apply()
 }
 
+// "Suggested apps" card at the top of the drawer (frecency-ranked). Opt-in.
+private const val KEY_SUGGESTED_APPS_ENABLED = "drawer_suggested_apps_enabled"
+private const val KEY_SUGGESTED_APPS_COLUMNS = "drawer_suggested_apps_columns"
+private const val KEY_SUGGESTED_APPS_ROWS = "drawer_suggested_apps_rows"
+
+fun isSuggestedAppsEnabled(context: Context): Boolean {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(KEY_SUGGESTED_APPS_ENABLED, false)
+}
+
+fun setSuggestedAppsEnabled(context: Context, enabled: Boolean) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_SUGGESTED_APPS_ENABLED, enabled).apply()
+}
+
+fun getSuggestedAppsColumns(context: Context): Int {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getInt(KEY_SUGGESTED_APPS_COLUMNS, 4).coerceIn(3, 7)
+}
+
+fun setSuggestedAppsColumns(context: Context, cols: Int) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putInt(KEY_SUGGESTED_APPS_COLUMNS, cols.coerceIn(3, 7)).apply()
+}
+
+fun getSuggestedAppsRows(context: Context): Int {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getInt(KEY_SUGGESTED_APPS_ROWS, 2).coerceIn(1, 4)
+}
+
+fun setSuggestedAppsRows(context: Context, rows: Int) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putInt(KEY_SUGGESTED_APPS_ROWS, rows.coerceIn(1, 4)).apply()
+}
+
+// Issue #64 — while searching, order results by most-recently-opened. Opt-in.
+private const val KEY_DRAWER_RECENT_FIRST = "drawer_search_recent_first"
+
+fun isRecentFirstSearchEnabled(context: Context): Boolean {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(KEY_DRAWER_RECENT_FIRST, false)
+}
+
+fun setRecentFirstSearchEnabled(context: Context, enabled: Boolean) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_DRAWER_RECENT_FIRST, enabled).apply()
+}
+
 // Type-to-find search leniency (0 = strict, 100 = loose). Default 50.
 private const val KEY_DRAWER_SEARCH_FUZZINESS = "drawer_search_fuzziness"
 

@@ -1,6 +1,7 @@
 package com.bearinmind.launcher314
 
 import com.bearinmind.launcher314.data.AppInfo
+import com.bearinmind.launcher314.data.lastOpenedKey
 import com.bearinmind.launcher314.helpers.DrawerSearchMatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -98,5 +99,29 @@ class DrawerSearchMatcherTest {
     @Test fun searchApps_whitespaceInQueryIsStripped() {
         val res = DrawerSearchMatcher.searchApps(listOf(app("Google Maps")), "g m")
         assertTrue(res.any { it.name == "Google Maps" })
+    }
+
+    // ---- Recency ranking (issue #64) ----
+
+    @Test fun recency_breaksTiesWithinSameScore() {
+        val notes = app("Notes")     // "note" is a streak match -> MAX_VALUE
+        val notepad = app("Notepad") // "note" is a streak match -> MAX_VALUE (ties Notes)
+        val opened = mapOf(lastOpenedKey(notes.packageName, notes.userSerial) to 9_999_999_999L)
+        val res = DrawerSearchMatcher.searchApps(listOf(notepad, notes), "note", lastOpened = opened)
+        assertEquals("Notes", res.first().name) // recently-opened wins the tie
+    }
+
+    @Test fun recency_matchQualityStillWins() {
+        val gmail = app("Gmail")          // "gm" streak -> MAX_VALUE
+        val gameMgr = app("Game Manager") // "gm" -> G streak, M word-boundary -> MAX_VALUE-1
+        val opened = mapOf(lastOpenedKey(gameMgr.packageName, gameMgr.userSerial) to 9_999_999_999L)
+        val res = DrawerSearchMatcher.searchApps(listOf(gameMgr, gmail), "gm", lastOpened = opened)
+        assertEquals("Gmail", res.first().name) // better match beats recency across tiers
+    }
+
+    @Test fun recency_ignoredWhenMapEmpty() {
+        // No recency data -> falls back to alphabetical tiebreak on equal scores.
+        val res = DrawerSearchMatcher.searchApps(listOf(app("Notepad"), app("Notes")), "note")
+        assertEquals("Notepad", res.first().name) // "Notepad" < "Notes" alphabetically
     }
 }

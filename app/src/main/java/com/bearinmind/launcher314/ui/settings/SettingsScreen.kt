@@ -111,7 +111,7 @@ fun SettingsScreen(
     onFontsClick: () -> Unit = {},
     onIconPacksClick: () -> Unit = {},
     onHideAppsClick: () -> Unit = {},
-    onManageTabsClick: () -> Unit = {},
+    onEditDrawerSettingsClick: () -> Unit = {},
     onPickAppForGesture: (com.bearinmind.launcher314.data.GestureId) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -273,7 +273,7 @@ fun SettingsScreen(
                         iconShapeOverride = globalIconShape,
                         iconBgColorOverride = globalIconBgColor,
                         iconBgIntensityOverride = globalIconBgIntensity,
-                        onManageTabsClick = onManageTabsClick
+                        onEditDrawerSettingsClick = onEditDrawerSettingsClick
                     )
                 }
 

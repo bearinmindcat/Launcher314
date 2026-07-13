@@ -868,8 +868,8 @@ fun MainScreen(
                             onHideAppsClick = {
                                 navController.navigateSafely("hide_apps")
                             },
-                            onManageTabsClick = {
-                                navController.navigateSafely("manage_tabs")
+                            onEditDrawerSettingsClick = {
+                                navController.navigateSafely("edit_drawer_settings")
                             },
                             onPickAppForGesture = { gestureId ->
                                 navController.navigateSafely("app_picker/${gestureId.name}")
@@ -884,6 +884,12 @@ fun MainScreen(
             composable("manage_tabs") {
                 com.bearinmind.launcher314.ui.drawer.ManageDrawerTabsScreen(
                     onBack = { navController.popBackStackSafely() }
+                )
+            }
+            composable("edit_drawer_settings") {
+                com.bearinmind.launcher314.ui.settings.EditDrawerSettingsScreen(
+                    onBack = { navController.popBackStackSafely() },
+                    onManageTabsClick = { navController.navigateSafely("manage_tabs") }
                 )
             }
             composable("icon_packs") {
@@ -995,8 +1001,8 @@ fun MainScreen(
                         onHideAppsClick = {
                             navController.navigateSafely("hide_apps")
                         },
-                        onManageTabsClick = {
-                            navController.navigateSafely("manage_tabs")
+                        onEditDrawerSettingsClick = {
+                            navController.navigateSafely("edit_drawer_settings")
                         },
                         onPickAppForGesture = { gestureId ->
                             navController.navigateSafely("app_picker/${gestureId.name}")
@@ -1011,6 +1017,12 @@ fun MainScreen(
                 composable("manage_tabs") {
                     com.bearinmind.launcher314.ui.drawer.ManageDrawerTabsScreen(
                         onBack = { navController.popBackStackSafely() }
+                    )
+                }
+                composable("edit_drawer_settings") {
+                    com.bearinmind.launcher314.ui.settings.EditDrawerSettingsScreen(
+                        onBack = { navController.popBackStackSafely() },
+                        onManageTabsClick = { navController.navigateSafely("manage_tabs") }
                     )
                 }
                 composable("icon_packs") {

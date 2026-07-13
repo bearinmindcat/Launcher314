@@ -124,7 +124,10 @@ internal data class DrawerExtraCallbacks(
     val drawerTabs: List<DrawerTab> = emptyList(),
     val selectedTabId: String? = null,
     val onTabSelected: (String?) -> Unit = {},
-    val onTabsChanged: (List<DrawerTab>) -> Unit = {}
+    val onTabsChanged: (List<DrawerTab>) -> Unit = {},
+    // "Suggested apps" card (frecency-ranked) — bundled for the DEX-register reason.
+    val suggestedApps: List<AppInfo> = emptyList(),
+    val suggestedColumns: Int = 4
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -804,6 +807,23 @@ internal fun MainDrawerContent(
                 allApps = allApps,
                 onTabSelected = extraCallbacks.onTabSelected,
                 onTabsChanged = extraCallbacks.onTabsChanged
+            )
+        }
+
+        // Suggested apps card (frecency-ranked) — One UI style: shown only while
+        // the search bar is focused and the query is still empty (typing replaces
+        // it with results). suggestedApps is pre-ranked/capped and non-empty only
+        // when the feature is enabled (personal profile).
+        if (isSearchFocused && searchQuery.isBlank() && extraCallbacks.suggestedApps.isNotEmpty()) {
+            SuggestedAppsCard(
+                apps = extraCallbacks.suggestedApps,
+                columns = extraCallbacks.suggestedColumns,
+                iconSize = iconSize,
+                labelFontSize = labelFontSize,
+                labelFontFamily = labelFontFamily,
+                globalIconShapeName = globalIconShapeName,
+                iconBgColor = iconBgColor,
+                onAppClick = onAppClick
             )
         }
 

@@ -100,6 +100,8 @@ fun saveBitmapToFile(bitmap: Bitmap, file: File) {
  * apps. `getLaunchIntentForPackage` silently fails for them.
  */
 fun launchApp(context: Context, packageName: String, userSerial: Long?) {
+    // Record recency for drawer-search "recently used first" ranking (issue #64).
+    recordAppOpened(context, packageName, userSerial)
     // Shortcuts are personal-only and have a custom launch path below.
     if (!packageName.startsWith("shortcut_") && userSerial != null) {
         if (com.bearinmind.launcher314.helpers.LauncherAppsHelper
@@ -113,6 +115,9 @@ fun launchApp(context: Context, packageName: String, userSerial: Long?) {
 }
 
 fun launchApp(context: Context, packageName: String) {
+    // Recency for search ranking (idempotent if already recorded by the 3-arg
+    // overload above — same key, essentially the same timestamp).
+    recordAppOpened(context, packageName, null)
     // Handle shortcuts (e.g., "Add to Home Screen" from Brave/Firefox/Chrome)
     if (packageName.startsWith("shortcut_")) {
         val metaFile = java.io.File(context.filesDir, "shortcut_icons/$packageName.meta")

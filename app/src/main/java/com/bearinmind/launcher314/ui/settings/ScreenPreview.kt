@@ -192,7 +192,7 @@ fun AppDrawerPreviewSection(
     iconShapeOverride: String? = null,
     iconBgColorOverride: Int? = null,
     iconBgIntensityOverride: Int = 100,
-    onManageTabsClick: () -> Unit = {}
+    onEditDrawerSettingsClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -203,8 +203,6 @@ fun AppDrawerPreviewSection(
     // var isLinked by remember { mutableStateOf(getSizeLinked(context)) }
     val isLinked = false // Link button hidden — keep variable for minimal code changes
     var drawerTransparency by remember { mutableFloatStateOf(getDrawerTransparency(context).toFloat()) }
-    var searchFuzziness by remember { mutableFloatStateOf(com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context).toFloat()) }
-    var fuzzySearchEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)) }
     var drawerGridRows by remember { mutableFloatStateOf(getDrawerGridRows(context).toFloat()) }
     var isPagedMode by remember { mutableStateOf(getDrawerPagedMode(context)) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
@@ -239,8 +237,6 @@ fun AppDrawerPreviewSection(
                 currentGridSize = getGridSize(context).toFloat()
                 currentIconSizePercent = getDrawerIconSizePercent(context).toFloat()
                 drawerTransparency = getDrawerTransparency(context).toFloat()
-                searchFuzziness = com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context).toFloat()
-                fuzzySearchEnabled = com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)
                 drawerGridRows = getDrawerGridRows(context).toFloat()
                 isPagedMode = getDrawerPagedMode(context)
                 selectedFontFamily = FontManager.getSelectedFontFamily(context)
@@ -579,142 +575,30 @@ fun AppDrawerPreviewSection(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Fuzzy search — opt-in. OFF keeps the classic substring search. When ON,
-        // the drawer uses the word-initials / subsequence matcher and the
-        // fuzziness slider below becomes active. Styled like the Manage Tabs row.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 16.dp)
-            ) {
-                Text(
-                    text = "Fuzzy app search",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 15.sp
-                )
-                Text(
-                    text = "Find apps by initials, e.g. \"yt\" → YouTube",
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    fontSize = 12.sp
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .width(72.dp)
-                    .height(48.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Checkbox(
-                    checked = fuzzySearchEnabled,
-                    onCheckedChange = { checked ->
-                        fuzzySearchEnabled = checked
-                        com.bearinmind.launcher314.data.setFuzzySearchEnabled(context, checked)
-                    }
-                )
-            }
-        }
-
-        // Fuzziness slider — only meaningful when fuzzy search is on.
-        if (fuzzySearchEnabled) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 76.dp)
-            ) {
-                ThumbDragHorizontalSlider(
-                    currentValue = searchFuzziness,
-                    config = SliderConfigs.searchFuzziness,
-                    onValueChange = { newValue ->
-                        searchFuzziness = newValue
-                        com.bearinmind.launcher314.data.setDrawerSearchFuzziness(context, newValue.roundToInt())
-                    },
-                    onValueChangeFinished = {
-                        com.bearinmind.launcher314.data.setDrawerSearchFuzziness(context, searchFuzziness.roundToInt())
-                    }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Drawer Tabs — manage button + enable checkbox, styled like the
-        // Font button / "Hide text" checkbox pair in Icon Personalization.
-        var drawerTabsEnabled by remember {
-            mutableStateOf(com.bearinmind.launcher314.ui.drawer.isDrawerTabsEnabled(context))
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 16.dp)
-            ) {
-                Button(
-                    onClick = onManageTabsClick,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Manage Tab Settings")
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .width(72.dp)
-                    .height(48.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Checkbox(
-                    checked = drawerTabsEnabled,
-                    onCheckedChange = { checked ->
-                        drawerTabsEnabled = checked
-                        com.bearinmind.launcher314.ui.drawer.setDrawerTabsEnabled(context, checked)
-                    },
-                    modifier = Modifier.offset(x = 10.dp),
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = MaterialTheme.colorScheme.primary,
-                        uncheckedColor = MaterialTheme.colorScheme.primary,
-                        checkmarkColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.Top
+        // Search behavior, suggested apps, and the tab manager live on their own
+        // "Edit Drawer Settings" screen to keep this section uncluttered. Styled
+        // like the "Hide apps from launcher" box — full-width outlined card.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onEditDrawerSettingsClick() }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Drawer Tabs",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 16.dp, top = 4.dp),
+                text = "Edit Drawer Settings",
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
             Text(
-                text = "Enable",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                modifier = Modifier
-                    .width(72.dp)
-                    .offset(x = 10.dp)
-                    .padding(top = 4.dp),
+                text = "Additional Customization for Drawer",
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center
             )
         }
