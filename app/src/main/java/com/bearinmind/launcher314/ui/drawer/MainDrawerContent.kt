@@ -1008,7 +1008,7 @@ internal fun MainDrawerContent(
 
                                 Box(
                                     modifier = Modifier
-                                        .animateItemPlacement(tween(300))
+                                        .then(if (searchQuery.isBlank()) Modifier.animateItemPlacement(tween(300)) else Modifier)
                                         .height(cellHeightDp)
                                         .onGloballyPositioned { coords ->
                                             if (cellKey != null) {
@@ -1222,7 +1222,7 @@ internal fun MainDrawerContent(
                         }
                         Box(
                             modifier = Modifier
-                                .animateItemPlacement(tween(300))
+                                .then(if (searchQuery.isBlank()) Modifier.animateItemPlacement(tween(300)) else Modifier)
                                 .onGloballyPositioned { coords ->
                                     drawerCellPositions[cellKey] = coords.positionInRoot()
                                     drawerCellSizes[cellKey] = coords.size
@@ -1285,7 +1285,7 @@ internal fun MainDrawerContent(
                         val isDropAnimTarget = app.packageName == dropAnimatingPackage
                         Box(
                             modifier = Modifier
-                                .animateItemPlacement(tween(300))
+                                .then(if (searchQuery.isBlank()) Modifier.animateItemPlacement(tween(300)) else Modifier)
                                 .onGloballyPositioned { coords ->
                                     drawerCellPositions[cellKey] = coords.positionInRoot()
                                     drawerCellSizes[cellKey] = coords.size
