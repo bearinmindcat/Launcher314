@@ -104,6 +104,9 @@ import com.bearinmind.launcher314.helpers.setDrawerTransparency
 import com.bearinmind.launcher314.ui.widgets.PlacedWidget
 import com.bearinmind.launcher314.ui.widgets.WidgetManager
 import com.bearinmind.launcher314.data.getGridSize
+import com.bearinmind.launcher314.data.getGlobalIconShape
+import com.bearinmind.launcher314.data.getGlobalIconBgColor
+import com.bearinmind.launcher314.data.getGlobalIconBgIntensity
 import com.bearinmind.launcher314.data.setGridSize
 import com.bearinmind.launcher314.data.getDrawerIconSizePercent
 import com.bearinmind.launcher314.data.setDrawerIconSizePercent
@@ -192,7 +195,8 @@ fun AppDrawerPreviewSection(
     iconShapeOverride: String? = null,
     iconBgColorOverride: Int? = null,
     iconBgIntensityOverride: Int = 100,
-    onEditDrawerSettingsClick: () -> Unit = {}
+    onEditDrawerSettingsClick: () -> Unit = {},
+    onManageTabsClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -575,9 +579,86 @@ fun AppDrawerPreviewSection(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Search behavior, suggested apps, and the tab manager live on their own
-        // "Edit Drawer Settings" screen to keep this section uncluttered. Styled
-        // like the "Hide apps from launcher" box — full-width outlined card.
+        // Drawer Tabs — manage button + enable checkbox, directly under transparency.
+        var drawerTabsEnabled by remember {
+            mutableStateOf(com.bearinmind.launcher314.ui.drawer.isDrawerTabsEnabled(context))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp)
+            ) {
+                Button(
+                    onClick = onManageTabsClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Manage Tab Settings")
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .width(72.dp)
+                    .height(48.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Checkbox(
+                    checked = drawerTabsEnabled,
+                    onCheckedChange = { checked ->
+                        drawerTabsEnabled = checked
+                        com.bearinmind.launcher314.ui.drawer.setDrawerTabsEnabled(context, checked)
+                    },
+                    modifier = Modifier.offset(x = 10.dp),
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.primary,
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Text(
+                text = "Drawer Tabs",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp, top = 4.dp),
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Enable",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .width(72.dp)
+                    .offset(x = 10.dp)
+                    .padding(top = 4.dp),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Search behavior and suggested apps live on their own "Edit Drawer
+        // Settings" screen to keep this section uncluttered. Styled like the
+        // "Hide apps from launcher" box — full-width outlined card.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -589,7 +670,7 @@ fun AppDrawerPreviewSection(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Edit Drawer Settings",
+                text = "Additional Drawer Settings",
                 fontSize = 16.sp,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
@@ -602,6 +683,122 @@ fun AppDrawerPreviewSection(
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+
+/**
+ * Standalone live drawer preview (no sliders) for screens that want to show the
+ * drawer's current look — used at the top of the Edit Drawer Settings screen.
+ * Loads everything from prefs and refreshes on resume, mirroring the main
+ * AppDrawerPreviewSection's preview.
+ */
+@Composable
+fun DrawerPreviewCard(onPlayClick: () -> Unit = {}) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+
+    var gridSize by remember { mutableIntStateOf(getGridSize(context)) }
+    var iconSizePercent by remember { mutableIntStateOf(getDrawerIconSizePercent(context)) }
+    var transparency by remember { mutableIntStateOf(getDrawerTransparency(context)) }
+    var gridRows by remember { mutableIntStateOf(getDrawerGridRows(context)) }
+    var isPagedMode by remember { mutableStateOf(getDrawerPagedMode(context)) }
+    var fontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
+    var iconTextSizePercent by remember { mutableIntStateOf(getIconTextSizePercent(context)) }
+    var iconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
+    var iconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
+    var iconBgIntensity by remember { mutableIntStateOf(getGlobalIconBgIntensity(context)) }
+
+    val scrollbarWidthPercent = remember { getScrollbarWidthPercent(context) }
+    val scrollbarHeightPercent = remember { getScrollbarHeightPercent(context) }
+    val scrollbarColor = remember { getScrollbarColor(context) }
+    val scrollbarIntensity = remember { getScrollbarIntensity(context) }
+
+    var previewApps by remember { mutableStateOf<List<PreviewAppInfo>>(emptyList()) }
+    var previewFolders by remember { mutableStateOf<List<PreviewFolder>>(emptyList()) }
+    var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
+    var wallpaperDrawable by remember { mutableStateOf<android.graphics.drawable.Drawable?>(null) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                gridSize = getGridSize(context)
+                iconSizePercent = getDrawerIconSizePercent(context)
+                transparency = getDrawerTransparency(context)
+                gridRows = getDrawerGridRows(context)
+                isPagedMode = getDrawerPagedMode(context)
+                fontFamily = FontManager.getSelectedFontFamily(context)
+                iconTextSizePercent = getIconTextSizePercent(context)
+                iconShape = getGlobalIconShape(context)
+                iconBgColor = getGlobalIconBgColor(context)
+                iconBgIntensity = getGlobalIconBgIntensity(context)
+                scope.launch(Dispatchers.IO) { appCustomizations = loadAppCustomizations(context) }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            previewApps = loadPreviewApps(context)
+            previewFolders = loadPreviewFolders(context)
+            appCustomizations = loadAppCustomizations(context)
+        }
+    }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val wm = android.app.WallpaperManager.getInstance(context)
+                val loaded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) null
+                    else try { wm.drawable } catch (e: SecurityException) { null }
+                withContext(Dispatchers.Main) { wallpaperDrawable = loaded }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(context) }
+    val previewItems by remember(previewApps, previewFolders) {
+        derivedStateOf {
+            val appsInFolders = previewFolders.flatMap { it.appPackageNames.filter { p -> p.isNotEmpty() } }.toSet()
+            val items = mutableListOf<PreviewItem>()
+            previewFolders.forEach { folder ->
+                val allPkgs = folder.appPackageNames.filter { it.isNotEmpty() && it !in hiddenApps }
+                val icons = allPkgs.mapNotNull { pkg -> previewApps.find { it.packageName == pkg }?.iconPath }.take(4)
+                val pkgs = allPkgs.filter { pkg -> previewApps.any { it.packageName == pkg } }.take(4)
+                items.add(PreviewItem.FolderItem(folder, icons, pkgs))
+            }
+            previewApps.filter { it.packageName !in appsInFolders && it.packageName !in hiddenApps }
+                .forEach { items.add(PreviewItem.AppItem(it)) }
+            items.toList()
+        }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        RealAppDrawerPreview(
+            items = previewItems,
+            gridSize = gridSize,
+            iconSizePercent = iconSizePercent,
+            transparency = transparency,
+            wallpaperDrawable = wallpaperDrawable,
+            scrollbarWidthPercent = scrollbarWidthPercent,
+            scrollbarHeightPercent = scrollbarHeightPercent,
+            scrollbarColor = scrollbarColor,
+            scrollbarIntensity = scrollbarIntensity,
+            drawerGridRows = gridRows,
+            isPagedMode = isPagedMode,
+            iconTextSizePercent = iconTextSizePercent,
+            labelFontFamily = fontFamily,
+            onPlayClick = onPlayClick,
+            iconShapeOverride = iconShape,
+            iconBgColorOverride = iconBgColor,
+            iconBgIntensityOverride = iconBgIntensity,
+            appCustomizations = appCustomizations
+        )
     }
 }
 

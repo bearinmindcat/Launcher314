@@ -223,8 +223,7 @@ fun AppDrawerScreen(
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
     var globalTextColor by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
     var globalTextColorIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
-    var searchFuzziness by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context)) }
-    var fuzzySearchEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)) }
+    // Fuzzy search retired to LegacyFeatures.kt — search is classic substring.
     var recentFirstSearch by remember { mutableStateOf(com.bearinmind.launcher314.data.isRecentFirstSearchEnabled(context)) }
     // Last-opened timestamps for the "recently used first" search order (#64).
     // Re-read on resume (below) so a just-launched app ranks up on next open.
@@ -292,8 +291,6 @@ fun AppDrawerScreen(
                 globalIconBgColor = getGlobalIconBgColor(context)
                 globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
                 globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
-                searchFuzziness = com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context)
-                fuzzySearchEnabled = com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)
                 recentFirstSearch = com.bearinmind.launcher314.data.isRecentFirstSearchEnabled(context)
                 lastOpenedMap = com.bearinmind.launcher314.data.getLastOpenedMap(context)
                 suggestedAppsEnabled = com.bearinmind.launcher314.data.isSuggestedAppsEnabled(context)
@@ -594,24 +591,16 @@ fun AppDrawerScreen(
                     }
                 }
             } else profileFiltered
-            // Choose the search set. Fuzzy matcher only when the user opted in;
-            // otherwise the classic case-insensitive substring search the drawer
-            // has always used. Fuzzy sorts by relevance; classic keeps the
-            // user's manual sort.
-            val searched = when {
-                searchQuery.isBlank() -> tabFiltered
-                fuzzySearchEnabled ->
-                    com.bearinmind.launcher314.helpers.DrawerSearchMatcher.searchApps(
-                        tabFiltered, searchQuery, searchFuzziness,
-                        // Recency only feeds the tiebreak when the option is on.
-                        if (recentFirstSearch) lastOpenedMap else emptyMap()
-                    )
-                else -> tabFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
+            // Classic case-insensitive substring search (the fuzzy matcher was
+            // retired — see LegacyFeatures.kt). Recency ("recently used first")
+            // still applies as the search order when enabled.
+            val searched = if (searchQuery.isBlank()) {
+                tabFiltered
+            } else {
+                tabFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
             }
             when {
-                // Fuzzy results are already relevance-ranked (recency tiebreak baked in).
-                searchQuery.isNotBlank() && fuzzySearchEnabled -> searched
-                // Classic search + "recently used first" (#64): most-recently-opened
+                // Search + "recently used first" (#64): most-recently-opened
                 // matches first, alphabetical as the tiebreak.
                 searchQuery.isNotBlank() && recentFirstSearch -> searched.sortedWith(
                     compareByDescending<AppInfo> {

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -37,48 +38,23 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.bearinmind.launcher314.data.getDrawerSearchFuzziness
+import com.bearinmind.launcher314.data.getAutoLaunchSearchResult
+import com.bearinmind.launcher314.data.getAutoOpenKeyboard
+import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
 import com.bearinmind.launcher314.data.getSuggestedAppsColumns
 import com.bearinmind.launcher314.data.getSuggestedAppsRows
-import com.bearinmind.launcher314.data.isFuzzySearchEnabled
 import com.bearinmind.launcher314.data.isRecentFirstSearchEnabled
 import com.bearinmind.launcher314.data.isSuggestedAppsEnabled
-import com.bearinmind.launcher314.data.setDrawerSearchFuzziness
-import com.bearinmind.launcher314.data.setFuzzySearchEnabled
+import com.bearinmind.launcher314.data.setAutoLaunchSearchResult
+import com.bearinmind.launcher314.data.setAutoOpenKeyboard
 import com.bearinmind.launcher314.data.setRecentFirstSearchEnabled
+import com.bearinmind.launcher314.data.setReverseDrawerSearchBar
 import com.bearinmind.launcher314.data.setSuggestedAppsColumns
 import com.bearinmind.launcher314.data.setSuggestedAppsEnabled
 import com.bearinmind.launcher314.data.setSuggestedAppsRows
 import com.bearinmind.launcher314.ui.components.SliderConfigs
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
 import kotlin.math.roundToInt
-
-/** A title + subtitle row with a trailing checkbox, matching the drawer settings style. */
-@Composable
-private fun DrawerToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp)
-            Text(
-                subtitle,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                fontSize = 12.sp
-            )
-        }
-        Box(modifier = Modifier.width(72.dp).height(48.dp), contentAlignment = Alignment.Center) {
-            Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        }
-    }
-}
 
 @Composable
 private fun SettingSlider(
@@ -105,24 +81,22 @@ private fun SettingSlider(
 @Composable
 fun EditDrawerSettingsScreen(
     onBack: () -> Unit,
-    onManageTabsClick: () -> Unit,
 ) {
     val context = LocalContext.current
-    var fuzzyEnabled by remember { mutableStateOf(isFuzzySearchEnabled(context)) }
-    var fuzziness by remember { mutableFloatStateOf(getDrawerSearchFuzziness(context).toFloat()) }
     var recentFirst by remember { mutableStateOf(isRecentFirstSearchEnabled(context)) }
     var suggestedEnabled by remember { mutableStateOf(isSuggestedAppsEnabled(context)) }
     var suggestedCols by remember { mutableFloatStateOf(getSuggestedAppsColumns(context).toFloat()) }
     var suggestedRows by remember { mutableFloatStateOf(getSuggestedAppsRows(context).toFloat()) }
-    var tabsEnabled by remember {
-        mutableStateOf(com.bearinmind.launcher314.ui.drawer.isDrawerTabsEnabled(context))
-    }
+    var reverseSearchBar by remember { mutableStateOf(getReverseDrawerSearchBar(context)) }
+    var autoOpenKeyboard by remember { mutableStateOf(getAutoOpenKeyboard(context)) }
+    var autoLaunchSearchResult by remember { mutableStateOf(getAutoLaunchSearchResult(context)) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF121212))
             .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
     ) {
         Row(
@@ -133,32 +107,22 @@ fun EditDrawerSettingsScreen(
                 Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
             Text(
-                "Edit Drawer Settings",
+                "Additional Drawer Settings",
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium
             )
         }
 
-        Spacer(Modifier.height(8.dp))
+        // Live drawer preview, same as the main settings screen.
+        DrawerPreviewCard()
 
-        // Fuzzy app search + fuzziness slider
-        DrawerToggleRow(
-            title = "Fuzzy app search",
-            subtitle = "Find apps by initials, e.g. \"yt\" → YouTube",
-            checked = fuzzyEnabled,
-            onCheckedChange = { fuzzyEnabled = it; setFuzzySearchEnabled(context, it) }
-        )
-        if (fuzzyEnabled) {
-            SettingSlider(fuzziness, SliderConfigs.searchFuzziness) {
-                fuzziness = it; setDrawerSearchFuzziness(context, it.roundToInt())
-            }
-        }
+        Spacer(Modifier.height(12.dp))
 
-        Spacer(Modifier.height(8.dp))
+        // NOTE: "Fuzzy app search" was retired here — see LegacyFeatures.kt.
 
         // Recently used first when searching
-        DrawerToggleRow(
+        SettingsToggleItem(
             title = "Recently used first when searching",
             subtitle = "Surfaces the app you opened most recently first",
             checked = recentFirst,
@@ -168,7 +132,7 @@ fun EditDrawerSettingsScreen(
         Spacer(Modifier.height(8.dp))
 
         // Suggested apps + columns/rows sliders
-        DrawerToggleRow(
+        SettingsToggleItem(
             title = "Suggested apps",
             subtitle = "A row of your most-used apps when you open search",
             checked = suggestedEnabled,
@@ -183,40 +147,33 @@ fun EditDrawerSettingsScreen(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
-        // Drawer tabs — manage button + enable checkbox
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
-                Button(
-                    onClick = onManageTabsClick,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) { Text("Manage Tab Settings") }
-            }
-            Box(modifier = Modifier.width(72.dp).height(48.dp), contentAlignment = Alignment.Center) {
-                Checkbox(
-                    checked = tabsEnabled,
-                    onCheckedChange = { checked ->
-                        tabsEnabled = checked
-                        com.bearinmind.launcher314.ui.drawer.setDrawerTabsEnabled(context, checked)
-                    }
-                )
-            }
-        }
-        Text(
-            text = "Enable drawer tabs",
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            fontSize = 12.sp,
-            modifier = Modifier.padding(start = 16.dp, top = 2.dp, bottom = 16.dp)
+        SettingsToggleItem(
+            title = "Launch app from search results",
+            subtitle = "Opens the app when the search narrows to one; press enter to launch the first of several",
+            checked = autoLaunchSearchResult,
+            onCheckedChange = { autoLaunchSearchResult = it; setAutoLaunchSearchResult(context, it) }
         )
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsToggleItem(
+            title = "Reverse drawer search bar",
+            subtitle = "Moves the drawer search bar to the bottom",
+            checked = reverseSearchBar,
+            onCheckedChange = { reverseSearchBar = it; setReverseDrawerSearchBar(context, it) }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsToggleItem(
+            title = "Auto open keyboard",
+            subtitle = "Automatically opens the keyboard in the app drawer",
+            checked = autoOpenKeyboard,
+            onCheckedChange = { autoOpenKeyboard = it; setAutoOpenKeyboard(context, it) }
+        )
+
+        Spacer(Modifier.height(16.dp))
     }
 }

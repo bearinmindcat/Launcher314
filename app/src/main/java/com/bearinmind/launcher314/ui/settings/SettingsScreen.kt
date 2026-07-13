@@ -112,6 +112,7 @@ fun SettingsScreen(
     onIconPacksClick: () -> Unit = {},
     onHideAppsClick: () -> Unit = {},
     onEditDrawerSettingsClick: () -> Unit = {},
+    onManageTabsClick: () -> Unit = {},
     onPickAppForGesture: (com.bearinmind.launcher314.data.GestureId) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -273,7 +274,8 @@ fun SettingsScreen(
                         iconShapeOverride = globalIconShape,
                         iconBgColorOverride = globalIconBgColor,
                         iconBgIntensityOverride = globalIconBgIntensity,
-                        onEditDrawerSettingsClick = onEditDrawerSettingsClick
+                        onEditDrawerSettingsClick = onEditDrawerSettingsClick,
+                        onManageTabsClick = onManageTabsClick
                     )
                 }
 
@@ -412,43 +414,8 @@ fun SettingsScreen(
                     }
                 )
 
-                // Reverse drawer search bar toggle
-                var reverseSearchBar by remember { mutableStateOf(getReverseDrawerSearchBar(context)) }
-                SettingsToggleItem(
-                    title = "Reverse drawer search bar",
-                    subtitle = "Moves drawer search bar to the bottom",
-                    checked = reverseSearchBar,
-                    onCheckedChange = {
-                        reverseSearchBar = !reverseSearchBar
-                        setReverseDrawerSearchBar(context, reverseSearchBar)
-                    }
-                )
-
-                // Auto open keyboard toggle
-                var autoOpenKeyboard by remember { mutableStateOf(getAutoOpenKeyboard(context)) }
-                SettingsToggleItem(
-                    title = "Auto open keyboard",
-                    subtitle = "Automatically opens keyboard in app drawer",
-                    checked = autoOpenKeyboard,
-                    onCheckedChange = {
-                        autoOpenKeyboard = !autoOpenKeyboard
-                        setAutoOpenKeyboard(context, autoOpenKeyboard)
-                    }
-                )
-
-                // Auto-launch search results toggle
-                var autoLaunchSearchResult by remember {
-                    mutableStateOf(com.bearinmind.launcher314.data.getAutoLaunchSearchResult(context))
-                }
-                SettingsToggleItem(
-                    title = "Launch app from search results",
-                    subtitle = "Launches app from search results if only one app exists; press \"enter\" on keyboard to launch the first option if multiple",
-                    checked = autoLaunchSearchResult,
-                    onCheckedChange = {
-                        autoLaunchSearchResult = !autoLaunchSearchResult
-                        com.bearinmind.launcher314.data.setAutoLaunchSearchResult(context, autoLaunchSearchResult)
-                    }
-                )
+                // (Reverse search bar, Auto open keyboard, and Launch-from-search
+                // moved to the Additional Drawer Settings screen.)
 
                 // Double-tap to lock screen toggle
                 var doubleTapLockEnabled by remember { mutableStateOf(getDoubleTapLockEnabled(context)) }

@@ -871,6 +871,9 @@ fun MainScreen(
                             onEditDrawerSettingsClick = {
                                 navController.navigateSafely("edit_drawer_settings")
                             },
+                            onManageTabsClick = {
+                                navController.navigateSafely("manage_tabs")
+                            },
                             onPickAppForGesture = { gestureId ->
                                 navController.navigateSafely("app_picker/${gestureId.name}")
                             }
@@ -888,8 +891,7 @@ fun MainScreen(
             }
             composable("edit_drawer_settings") {
                 com.bearinmind.launcher314.ui.settings.EditDrawerSettingsScreen(
-                    onBack = { navController.popBackStackSafely() },
-                    onManageTabsClick = { navController.navigateSafely("manage_tabs") }
+                    onBack = { navController.popBackStackSafely() }
                 )
             }
             composable("icon_packs") {
@@ -1004,6 +1006,9 @@ fun MainScreen(
                         onEditDrawerSettingsClick = {
                             navController.navigateSafely("edit_drawer_settings")
                         },
+                        onManageTabsClick = {
+                            navController.navigateSafely("manage_tabs")
+                        },
                         onPickAppForGesture = { gestureId ->
                             navController.navigateSafely("app_picker/${gestureId.name}")
                         }
@@ -1021,8 +1026,7 @@ fun MainScreen(
                 }
                 composable("edit_drawer_settings") {
                     com.bearinmind.launcher314.ui.settings.EditDrawerSettingsScreen(
-                        onBack = { navController.popBackStackSafely() },
-                        onManageTabsClick = { navController.navigateSafely("manage_tabs") }
+                        onBack = { navController.popBackStackSafely() }
                     )
                 }
                 composable("icon_packs") {
