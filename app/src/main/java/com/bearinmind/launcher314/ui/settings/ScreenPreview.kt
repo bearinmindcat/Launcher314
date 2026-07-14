@@ -797,7 +797,9 @@ fun DrawerPreviewCard(onPlayClick: () -> Unit = {}) {
             iconShapeOverride = iconShape,
             iconBgColorOverride = iconBgColor,
             iconBgIntensityOverride = iconBgIntensity,
-            appCustomizations = appCustomizations
+            appCustomizations = appCustomizations,
+            // Display-only here — let the settings page scroll under it.
+            previewScrollEnabled = false
         )
     }
 }
@@ -858,7 +860,11 @@ private fun RealAppDrawerPreview(
     iconShapeOverride: String? = null,
     iconBgColorOverride: Int? = null,
     iconBgIntensityOverride: Int = 100,
-    appCustomizations: AppCustomizations = AppCustomizations()
+    appCustomizations: AppCustomizations = AppCustomizations(),
+    // When false the preview's own grid won't consume vertical drags, so a
+    // parent scroll (e.g. the Additional Drawer Settings page) scrolls instead
+    // of the preview grabbing the gesture.
+    previewScrollEnabled: Boolean = true
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp.dp
@@ -1194,7 +1200,7 @@ private fun RealAppDrawerPreview(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
-                        userScrollEnabled = true
+                        userScrollEnabled = previewScrollEnabled
                     ) {
                         items(
                             items = items,

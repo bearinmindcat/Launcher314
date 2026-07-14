@@ -223,15 +223,14 @@ fun AppDrawerScreen(
     var globalIconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
     var globalTextColor by remember { mutableStateOf(com.bearinmind.launcher314.data.getGlobalTextColor(context)) }
     var globalTextColorIntensity by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)) }
-    // Fuzzy search retired to LegacyFeatures.kt — search is classic substring.
+    var searchFuzziness by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context)) }
+    var fuzzySearchEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)) }
     var recentFirstSearch by remember { mutableStateOf(com.bearinmind.launcher314.data.isRecentFirstSearchEnabled(context)) }
     // Last-opened timestamps for the "recently used first" search order (#64).
     // Re-read on resume (below) so a just-launched app ranks up on next open.
     var lastOpenedMap by remember { mutableStateOf(com.bearinmind.launcher314.data.getLastOpenedMap(context)) }
     // Suggested apps card (frecency-ranked) state.
     var suggestedAppsEnabled by remember { mutableStateOf(com.bearinmind.launcher314.data.isSuggestedAppsEnabled(context)) }
-    var suggestedColumns by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getSuggestedAppsColumns(context)) }
-    var suggestedRows by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getSuggestedAppsRows(context)) }
     var launchCountMap by remember { mutableStateOf(com.bearinmind.launcher314.data.getLaunchCountMap(context)) }
     // Re-read on every composition entry
     globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
@@ -292,10 +291,10 @@ fun AppDrawerScreen(
                 globalTextColor = com.bearinmind.launcher314.data.getGlobalTextColor(context)
                 globalTextColorIntensity = com.bearinmind.launcher314.data.getGlobalTextColorIntensity(context)
                 recentFirstSearch = com.bearinmind.launcher314.data.isRecentFirstSearchEnabled(context)
+                searchFuzziness = com.bearinmind.launcher314.data.getDrawerSearchFuzziness(context)
+                fuzzySearchEnabled = com.bearinmind.launcher314.data.isFuzzySearchEnabled(context)
                 lastOpenedMap = com.bearinmind.launcher314.data.getLastOpenedMap(context)
                 suggestedAppsEnabled = com.bearinmind.launcher314.data.isSuggestedAppsEnabled(context)
-                suggestedColumns = com.bearinmind.launcher314.data.getSuggestedAppsColumns(context)
-                suggestedRows = com.bearinmind.launcher314.data.getSuggestedAppsRows(context)
                 launchCountMap = com.bearinmind.launcher314.data.getLaunchCountMap(context)
                 // NOTE: no app-list re-query here. Installs / uninstalls / profile
                 // changes already trigger a refresh via the package-change
@@ -591,15 +590,22 @@ fun AppDrawerScreen(
                     }
                 }
             } else profileFiltered
-            // Classic case-insensitive substring search (the fuzzy matcher was
-            // retired — see LegacyFeatures.kt). Recency ("recently used first")
-            // still applies as the search order when enabled.
-            val searched = if (searchQuery.isBlank()) {
-                tabFiltered
-            } else {
-                tabFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
+            // Choose the search set. Fuzzy matcher only when the user opted in;
+            // otherwise the classic case-insensitive substring search. Fuzzy
+            // sorts by relevance; classic keeps the user's manual sort.
+            val searched = when {
+                searchQuery.isBlank() -> tabFiltered
+                fuzzySearchEnabled ->
+                    com.bearinmind.launcher314.helpers.DrawerSearchMatcher.searchApps(
+                        tabFiltered, searchQuery, searchFuzziness,
+                        // Recency only feeds the tiebreak when the option is on.
+                        if (recentFirstSearch) lastOpenedMap else emptyMap()
+                    )
+                else -> tabFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
             }
             when {
+                // Fuzzy results are already relevance-ranked (recency baked in).
+                searchQuery.isNotBlank() && fuzzySearchEnabled -> searched
                 // Search + "recently used first" (#64): most-recently-opened
                 // matches first, alphabetical as the tiebreak.
                 searchQuery.isNotBlank() && recentFirstSearch -> searched.sortedWith(
@@ -620,12 +626,13 @@ fun AppDrawerScreen(
     }
 
     // Suggested apps (frecency-ranked) for the top-of-drawer card. Personal,
-    // non-hidden apps only; capped at columns × rows; empty when disabled.
+    // non-hidden apps only. The bar is one column narrower than the drawer grid,
+    // one row tall; empty when disabled.
     val suggestedApps by remember {
         derivedStateOf {
             if (!suggestedAppsEnabled) return@derivedStateOf emptyList<AppInfo>()
             val now = System.currentTimeMillis()
-            val limit = (suggestedColumns * suggestedRows).coerceAtLeast(1)
+            val limit = (gridSize - 1).coerceAtLeast(1) // (drawer columns - 1) × 1 row
             allApps.asSequence()
                 .filter {
                     it.profileType == com.bearinmind.launcher314.helpers.ProfileType.PERSONAL &&
@@ -905,7 +912,7 @@ fun AppDrawerScreen(
                     }
                 },
                 suggestedApps = suggestedApps,
-                suggestedColumns = suggestedColumns
+                suggestedColumns = (gridSize - 1).coerceAtLeast(1)
             ),
             escapeHoverState = EscapeHoverState(
                 folderId = if (escapeHoveredFolderId != null && folderEscapedApp != null) escapeHoveredFolderId else null,

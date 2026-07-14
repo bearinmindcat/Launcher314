@@ -891,7 +891,13 @@ fun MainScreen(
             }
             composable("edit_drawer_settings") {
                 com.bearinmind.launcher314.ui.settings.EditDrawerSettingsScreen(
-                    onBack = { navController.popBackStackSafely() }
+                    onBack = { navController.popBackStackSafely() },
+                    onPreviewDrawer = {
+                        val popped = navController.popBackStack("launcher", inclusive = false)
+                        if (popped) {
+                            activity?.openDrawerTrigger?.let { it.intValue++ }
+                        }
+                    }
                 )
             }
             composable("icon_packs") {
@@ -1026,7 +1032,14 @@ fun MainScreen(
                 }
                 composable("edit_drawer_settings") {
                     com.bearinmind.launcher314.ui.settings.EditDrawerSettingsScreen(
-                        onBack = { navController.popBackStackSafely() }
+                        onBack = { navController.popBackStackSafely() },
+                        onPreviewDrawer = {
+                            val intent = android.content.Intent(context, MainActivity::class.java).apply {
+                                putExtra("navigate_to", "launcher_preview_drawer")
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        }
                     )
                 }
                 composable("icon_packs") {
