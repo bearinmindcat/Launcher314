@@ -871,6 +871,9 @@ fun MainScreen(
                             onEditDrawerSettingsClick = {
                                 navController.navigateSafely("edit_drawer_settings")
                             },
+                            onEditHomeSettingsClick = {
+                                navController.navigateSafely("edit_home_settings")
+                            },
                             onManageTabsClick = {
                                 navController.navigateSafely("manage_tabs")
                             },
@@ -897,6 +900,17 @@ fun MainScreen(
                         if (popped) {
                             activity?.openDrawerTrigger?.let { it.intValue++ }
                         }
+                    }
+                )
+            }
+            composable("edit_home_settings") {
+                com.bearinmind.launcher314.ui.settings.EditHomeScreenSettingsScreen(
+                    onBack = { navController.popBackStackSafely() },
+                    onPreviewLauncher = {
+                        navController.popBackStack("launcher", inclusive = false)
+                    },
+                    onPickAppForGesture = { gestureId ->
+                        navController.navigateSafely("app_picker/${gestureId.name}")
                     }
                 )
             }
@@ -1012,6 +1026,9 @@ fun MainScreen(
                         onEditDrawerSettingsClick = {
                             navController.navigateSafely("edit_drawer_settings")
                         },
+                        onEditHomeSettingsClick = {
+                            navController.navigateSafely("edit_home_settings")
+                        },
                         onManageTabsClick = {
                             navController.navigateSafely("manage_tabs")
                         },
@@ -1028,6 +1045,21 @@ fun MainScreen(
                 composable("manage_tabs") {
                     com.bearinmind.launcher314.ui.drawer.ManageDrawerTabsScreen(
                         onBack = { navController.popBackStackSafely() }
+                    )
+                }
+                composable("edit_home_settings") {
+                    com.bearinmind.launcher314.ui.settings.EditHomeScreenSettingsScreen(
+                        onBack = { navController.popBackStackSafely() },
+                        onPreviewLauncher = {
+                            val intent = android.content.Intent(context, MainActivity::class.java).apply {
+                                putExtra("navigate_to", "launcher_preview")
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        },
+                        onPickAppForGesture = { gestureId ->
+                            navController.navigateSafely("app_picker/${gestureId.name}")
+                        }
                     )
                 }
                 composable("edit_drawer_settings") {

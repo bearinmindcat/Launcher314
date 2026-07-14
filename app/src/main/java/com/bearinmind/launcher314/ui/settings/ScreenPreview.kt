@@ -805,6 +805,106 @@ fun DrawerPreviewCard(onPlayClick: () -> Unit = {}) {
 }
 
 /**
+ * Standalone live home-screen preview (no sliders) for the Additional Home
+ * Screen Settings screen. Loads everything from prefs and refreshes on resume,
+ * mirroring the main HomeScreenPreviewSection's preview.
+ */
+@Composable
+fun HomePreviewCard(onPlayClick: () -> Unit = {}) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+
+    var gridColumns by remember { mutableIntStateOf(getHomeGridSize(context)) }
+    var gridRows by remember { mutableIntStateOf(getHomeGridRows(context)) }
+    var dockColumns by remember { mutableIntStateOf(getDockColumns(context)) }
+    var isDockEnabled by remember { mutableStateOf(getDockEnabled(context)) }
+    var iconSizePercent by remember { mutableIntStateOf(getHomeIconSizePercent(context)) }
+    var fontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
+    var iconTextSizePercent by remember { mutableIntStateOf(getIconTextSizePercent(context)) }
+    var iconShape by remember { mutableStateOf(getGlobalIconShape(context)) }
+    var iconBgColor by remember { mutableStateOf(getGlobalIconBgColor(context)) }
+    var iconBgIntensity by remember { mutableIntStateOf(getGlobalIconBgIntensity(context)) }
+
+    var homeScreenApps by remember { mutableStateOf<List<HomeScreenAppData>>(emptyList()) }
+    var dockApps by remember { mutableStateOf<List<HomeDockAppData>>(emptyList()) }
+    var allApps by remember { mutableStateOf<List<PreviewAppInfo>>(emptyList()) }
+    var homeFolders by remember { mutableStateOf<List<HomeFolderData>>(emptyList()) }
+    var placedWidgets by remember { mutableStateOf<List<PlacedWidget>>(emptyList()) }
+    var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
+    val widgetBitmaps = remember { mutableStateMapOf<Int, android.graphics.Bitmap>() }
+    var wallpaperDrawable by remember { mutableStateOf<android.graphics.drawable.Drawable?>(null) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                gridColumns = getHomeGridSize(context)
+                gridRows = getHomeGridRows(context)
+                dockColumns = getDockColumns(context)
+                isDockEnabled = getDockEnabled(context)
+                iconSizePercent = getHomeIconSizePercent(context)
+                fontFamily = FontManager.getSelectedFontFamily(context)
+                iconTextSizePercent = getIconTextSizePercent(context)
+                iconShape = getGlobalIconShape(context)
+                iconBgColor = getGlobalIconBgColor(context)
+                iconBgIntensity = getGlobalIconBgIntensity(context)
+                scope.launch(Dispatchers.IO) { appCustomizations = loadAppCustomizations(context) }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            homeScreenApps = loadHomeScreenApps(context)
+            dockApps = loadDockApps(context)
+            allApps = loadPreviewApps(context)
+            homeFolders = loadHomeFolders(context)
+            placedWidgets = WidgetManager.loadPlacedWidgets(context)
+            appCustomizations = loadAppCustomizations(context)
+        }
+    }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val wm = android.app.WallpaperManager.getInstance(context)
+                val loaded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) null
+                    else try { wm.drawable } catch (e: SecurityException) { null }
+                withContext(Dispatchers.Main) { wallpaperDrawable = loaded }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        HomeScreenPreview(
+            gridColumns = gridColumns,
+            gridRows = gridRows,
+            dockColumns = if (isDockEnabled) dockColumns else 0,
+            iconSizePercent = iconSizePercent,
+            iconTextSizePercent = iconTextSizePercent,
+            homeScreenApps = homeScreenApps,
+            dockApps = dockApps,
+            allApps = allApps,
+            homeFolders = homeFolders,
+            placedWidgets = placedWidgets,
+            widgetBitmaps = widgetBitmaps,
+            labelFontFamily = fontFamily,
+            wallpaperDrawable = wallpaperDrawable,
+            onPlayClick = onPlayClick,
+            iconShapeOverride = iconShape,
+            iconBgColorOverride = iconBgColor,
+            iconBgIntensityOverride = iconBgIntensity,
+            appCustomizations = appCustomizations
+        )
+    }
+}
+
+/**
  * Horizontal transparency slider for App Drawer (0% to 100%)
  * Snaps to 5% increments with tick marks at every 5%
  */
@@ -1815,6 +1915,7 @@ fun loadPreviewWidgets(context: Context): List<PlacedWidget> {
 @Composable
 fun HomeScreenPreviewSection(
     onPreviewLauncher: () -> Unit = {},
+    onEditHomeSettingsClick: () -> Unit = {},
     iconTextSizeOverride: Int? = null,
     sharedIconSize: Float? = null,
     onSharedIconSizeChanged: (Float) -> Unit = {},
@@ -2117,6 +2218,36 @@ fun HomeScreenPreviewSection(
                 onValueChangeFinished = {
                     com.bearinmind.launcher314.data.setDockPages(context, dockPages.roundToInt())
                 }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Home-screen behavior (gestures, etc.) lives on its own "Additional Home
+        // Screen Settings" screen to keep this section uncluttered. Styled like the
+        // "Hide apps from launcher" / "Additional Drawer Settings" boxes.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 8.dp)
+                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onEditHomeSettingsClick() }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Additional Home Screen Settings",
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Additional Customization for Home Screen",
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center
             )
         }
     }
