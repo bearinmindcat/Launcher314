@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,7 +53,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -328,15 +334,27 @@ internal fun DrawerTabRow(
     val labelColor = MaterialTheme.colorScheme.onSurface
     val chipShape = RoundedCornerShape(50)
 
+    // Per-chip layout (offset px, width px), written by each chip as it's placed
+    // and read by the auto-scroll effect below to keep the active chip's label
+    // on-screen when tabs are switched by swiping (issue #62).
+    val chipPositions = remember { mutableStateMapOf<String, Pair<Int, Int>>() }
+
     @Composable
     fun TabChip(
         label: String,
         selected: Boolean,
+        positionKey: String,
         onClick: () -> Unit,
         onLongClick: (() -> Unit)? = null
     ) {
         Box(
             modifier = Modifier
+                // Record this chip's offset + width (in the scroll content's
+                // coordinate space) so the row can auto-scroll it into view when
+                // it becomes the active tab (issue #62).
+                .onGloballyPositioned { coords ->
+                    chipPositions[positionKey] = coords.positionInParent().x.roundToInt() to coords.size.width
+                }
                 .clip(chipShape)
                 .background(if (selected) fillSelected else Color.Transparent, chipShape)
                 .border(1.dp, outline, chipShape)
@@ -358,26 +376,50 @@ internal fun DrawerTabRow(
     val tabAlignment = remember { getTabAlignment(tabRowContext) }
     val showCounts = remember { isShowTabCounts(tabRowContext) }
     val hidePlus = remember { isHidePlusChip(tabRowContext) }
-    // Center/Right modes can't scroll (a horizontally-scrollable Row has
-    // unbounded width, so alignment is meaningless there) — Left keeps the scroll.
     val chipScroll = rememberScrollState()
-    Row(
+
+    // The currently-selected chip, and its recorded (offset, width).
+    val selectedKey = selectedTabId ?: "__all__"
+    val selectedPos = chipPositions[selectedKey]
+
+    val chipAlignment = when (tabAlignment) {
+        1 -> Alignment.CenterHorizontally
+        2 -> Alignment.End
+        else -> Alignment.Start
+    }
+
+    // The strip is ALWAYS horizontally scrollable. The inner row is forced to be
+    // at least the viewport width, so Center/Right alignment still applies while
+    // the chips fit, yet the row grows (enabling scroll) once they overflow. That
+    // is what lets the active chip auto-scroll into view in Center/Right modes
+    // too — not just Left (issue #62).
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (tabAlignment == 0) Modifier.horizontalScroll(chipScroll) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(
-            8.dp,
-            when (tabAlignment) {
-                1 -> Alignment.CenterHorizontally
-                2 -> Alignment.End
-                else -> Alignment.Start
-            }
-        )
+            .padding(horizontal = 16.dp, vertical = 2.dp)
     ) {
+        val viewportWidthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
+
+        // When the selected tab changes (tap OR swipe gesture), centre it in the
+        // viewport so its label is always visible.
+        LaunchedEffect(selectedKey, selectedPos, viewportWidthPx) {
+            val pos = selectedPos ?: return@LaunchedEffect
+            if (viewportWidthPx <= 0) return@LaunchedEffect
+            val (left, width) = pos
+            val target = (left - (viewportWidthPx - width) / 2).coerceIn(0, chipScroll.maxValue)
+            chipScroll.animateScrollTo(target)
+        }
+
+        Row(
+            modifier = Modifier
+                .horizontalScroll(chipScroll)
+                .widthIn(min = maxWidth),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, chipAlignment)
+        ) {
         TabChip(
             label = "All",
             selected = selectedTabId == null,
+            positionKey = "__all__",
             onClick = { onTabSelected(null) }
         )
         tabs.forEach { tab ->
@@ -386,6 +428,7 @@ internal fun DrawerTabRow(
             TabChip(
                 label = baseLabel,
                 selected = selectedTabId == tab.id,
+                positionKey = tab.id,
                 onClick = { onTabSelected(tab.id) },
                 onLongClick = {
                     if (tab.locked) unlockingTab = tab else editingTab = tab
@@ -396,8 +439,10 @@ internal fun DrawerTabRow(
             TabChip(
                 label = "+",
                 selected = false,
+                positionKey = "__plus__",
                 onClick = { editingTab = DrawerTab(id = "", name = "") }
             )
+        }
         }
     }
 
