@@ -1,11 +1,18 @@
 package com.bearinmind.launcher314.ui.drawer
 
 import android.content.Context
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.AnimationVector2D
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,18 +53,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.round
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,9 +83,12 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.bearinmind.launcher314.data.AppInfo
 import com.bearinmind.launcher314.data.getInstalledApps
+import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -249,20 +270,27 @@ fun setSwipeTabsEnabled(context: Context, enabled: Boolean) {
 // Chip row style: alignment (0 = Left, 1 = Center, 2 = Right), app count on
 // each chip, and whether the "+" chip is shown in the drawer at all.
 private const val KEY_CENTER_CHIPS = "drawer_tabs_center_chips" // legacy bool, migrated
-private const val KEY_TAB_ALIGNMENT = "drawer_tabs_alignment"
+private const val KEY_TAB_ALIGNMENT = "drawer_tabs_alignment"     // legacy 3-way 0/1/2
+private const val KEY_TAB_ALIGNMENT_LR = "drawer_tabs_align_lr"   // 2-way: 0 = Left, 1 = Right
 private const val KEY_SHOW_COUNTS = "drawer_tabs_show_counts"
 private const val KEY_HIDE_PLUS = "drawer_tabs_hide_plus"
 
+// Alignment is now Left (0) / Right (1) only — Center was removed. Legacy values
+// migrate once into the new key: old Right (2) -> Right (1); old Left/Center -> Left (0).
 fun getTabAlignment(context: Context): Int {
     val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    // Migrate from the old "Center tab chips" toggle: true -> Center.
-    val legacyDefault = if (prefs.getBoolean(KEY_CENTER_CHIPS, false)) 1 else 0
-    return prefs.getInt(KEY_TAB_ALIGNMENT, legacyDefault).coerceIn(0, 2)
+    if (prefs.contains(KEY_TAB_ALIGNMENT_LR)) {
+        return prefs.getInt(KEY_TAB_ALIGNMENT_LR, 0).coerceIn(0, 1)
+    }
+    val legacy = prefs.getInt(KEY_TAB_ALIGNMENT, 0)
+    val migrated = if (legacy >= 2) 1 else 0
+    prefs.edit().putInt(KEY_TAB_ALIGNMENT_LR, migrated).apply()
+    return migrated
 }
 
 fun setTabAlignment(context: Context, alignment: Int) {
     context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        .edit().putInt(KEY_TAB_ALIGNMENT, alignment.coerceIn(0, 2)).apply()
+        .edit().putInt(KEY_TAB_ALIGNMENT_LR, alignment.coerceIn(0, 1)).apply()
 }
 
 fun isHidePlusChip(context: Context): Boolean {
@@ -311,6 +339,59 @@ fun setSelectedDrawerTabId(context: Context, id: String?) {
 }
 
 /**
+ * Shared end-of-gesture handling for a tab drag: a real drag (moved) commits the
+ * reordered list; a hold-in-place (not moved) opens the tab editor (or the unlock
+ * prompt for a locked tab). Called from BOTH onDragEnd and onDragCancel because
+ * the chip's own click can turn an "end" into a "cancel".
+ */
+private fun finishTabDrag(
+    id: String?,
+    moved: Boolean,
+    liveTabs: List<DrawerTab>,
+    savedTabs: List<DrawerTab>,
+    onTabsChanged: (List<DrawerTab>) -> Unit,
+    openEdit: (DrawerTab) -> Unit,
+    openUnlock: (DrawerTab) -> Unit
+) {
+    if (id == null) return
+    if (moved) {
+        if (liveTabs.map { it.id } != savedTabs.map { it.id }) onTabsChanged(liveTabs)
+    } else {
+        val t = savedTabs.firstOrNull { it.id == id } ?: return
+        if (t.locked) openUnlock(t) else openEdit(t)
+    }
+}
+
+/**
+ * Smoothly animates a child to its new placement when the layout reshuffles
+ * (the official Compose `animatePlacement` recipe). Used so the non-dragged tab
+ * chips slide aside instead of snapping when a chip is dragged past them. When
+ * [animate] is false (the chip currently being dragged) it snaps instead, so it
+ * can follow the finger via its own translation without a competing animation.
+ */
+private fun Modifier.animatePlacement(animate: Boolean): Modifier = composed {
+    val scope = rememberCoroutineScope()
+    var targetOffset by remember { mutableStateOf(IntOffset.Zero) }
+    var animatable by remember { mutableStateOf<Animatable<IntOffset, AnimationVector2D>?>(null) }
+    this
+        .onPlaced { targetOffset = it.positionInParent().round() }
+        .offset {
+            val anim = animatable ?: Animatable(targetOffset, IntOffset.VectorConverter)
+                .also { animatable = it }
+            if (anim.targetValue != targetOffset) {
+                scope.launch {
+                    if (animate) {
+                        anim.animateTo(targetOffset, spring(stiffness = Spring.StiffnessMediumLow))
+                    } else {
+                        anim.snapTo(targetOffset)
+                    }
+                }
+            }
+            anim.value - targetOffset
+        }
+}
+
+/**
  * The chip row: [All] [tab] [tab] ... [+]. Self-contained — hosts its own
  * create/edit dialog state so MainDrawerContent only needs one call site.
  */
@@ -328,6 +409,7 @@ internal fun DrawerTabRow(
     // Pending unlock: authenticate this tab, then open its editor.
     var unlockingTab by remember { mutableStateOf<DrawerTab?>(null) }
     val tabRowContext = LocalContext.current
+    val haptics = rememberHapticFeedback()
 
     val outline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f)
     val fillSelected = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
@@ -345,8 +427,18 @@ internal fun DrawerTabRow(
         selected: Boolean,
         positionKey: String,
         onClick: () -> Unit,
-        onLongClick: (() -> Unit)? = null
+        onLongClick: (() -> Unit)? = null,
+        // Drag-to-reorder visuals (custom tabs only): a follow-the-finger
+        // horizontal offset and a "lifted" highlight. The gesture itself lives on
+        // the row, not here.
+        translationX: Float = 0f,
+        lifted: Boolean = false
     ) {
+        // Smoothly pop bigger when picked up (long-pressed), like an app icon.
+        val liftScale by animateFloatAsState(
+            targetValue = if (lifted) 1.18f else 1f,
+            label = "chipLift"
+        )
         Box(
             modifier = Modifier
                 // Record this chip's offset + width (in the scroll content's
@@ -354,6 +446,19 @@ internal fun DrawerTabRow(
                 // it becomes the active tab (issue #62).
                 .onGloballyPositioned { coords ->
                     chipPositions[positionKey] = coords.positionInParent().x.roundToInt() to coords.size.width
+                }
+                .zIndex(if (lifted) 1f else 0f)
+                // Slide into place when the row reshuffles; the dragged chip snaps
+                // (animate = false) so it can follow the finger cleanly instead.
+                .animatePlacement(animate = !lifted)
+                .graphicsLayer {
+                    this.translationX = translationX
+                    scaleX = liftScale
+                    scaleY = liftScale
+                    if (lifted) {
+                        shadowElevation = 10.dp.toPx()
+                        alpha = 0.97f
+                    }
                 }
                 .clip(chipShape)
                 .background(if (selected) fillSelected else Color.Transparent, chipShape)
@@ -378,14 +483,44 @@ internal fun DrawerTabRow(
     val hidePlus = remember { isHidePlusChip(tabRowContext) }
     val chipScroll = rememberScrollState()
 
+    // Drag-to-reorder state. liveTabs is a working copy that gets shuffled while
+    // a chip is being dragged and committed (saved) on drop; it resets whenever
+    // the saved list changes.
+    var liveTabs by remember(tabs) { mutableStateOf(tabs) }
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragFingerX by remember { mutableFloatStateOf(0f) }   // finger x in row-content space
+    var dragStartX by remember { mutableFloatStateOf(0f) }
+    var dragInitialSlotLeft by remember { mutableFloatStateOf(0f) } // grabbed chip's slot at pickup
+    var dragMoved by remember { mutableStateOf(false) }
+    // After a drop, the chip springs from where the finger let go back to its slot.
+    var settlingId by remember { mutableStateOf<String?>(null) }
+    val settleAnim = remember { Animatable(0f) }
+    val settleScope = rememberCoroutineScope()
+
     // The currently-selected chip, and its recorded (offset, width).
     val selectedKey = selectedTabId ?: "__all__"
     val selectedPos = chipPositions[selectedKey]
 
-    val chipAlignment = when (tabAlignment) {
-        1 -> Alignment.CenterHorizontally
-        2 -> Alignment.End
-        else -> Alignment.Start
+    val chipAlignment = if (tabAlignment == 1) Alignment.End else Alignment.Start
+
+    // Called on drop / cancel: spring the dragged chip from where the finger let
+    // go back into its slot (nice settle, like the EQ app), then commit the new
+    // order or open the editor.
+    val releaseDrag = {
+        val id = draggingId
+        if (id != null) {
+            val residual = dragInitialSlotLeft + (dragFingerX - dragStartX) -
+                (chipPositions[id]?.first?.toFloat() ?: 0f)
+            settlingId = id
+            settleScope.launch {
+                settleAnim.snapTo(residual)
+                settleAnim.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow))
+                if (settlingId == id) settlingId = null
+            }
+        }
+        finishTabDrag(id, dragMoved, liveTabs, tabs, onTabsChanged, { editingTab = it }, { unlockingTab = it })
+        draggingId = null
+        dragMoved = false
     }
 
     // The strip is ALWAYS horizontally scrollable. The inner row is forced to be
@@ -402,7 +537,8 @@ internal fun DrawerTabRow(
 
         // When the selected tab changes (tap OR swipe gesture), centre it in the
         // viewport so its label is always visible.
-        LaunchedEffect(selectedKey, selectedPos, viewportWidthPx) {
+        LaunchedEffect(selectedKey, selectedPos, viewportWidthPx, draggingId) {
+            if (draggingId != null) return@LaunchedEffect   // don't fight a reorder drag
             val pos = selectedPos ?: return@LaunchedEffect
             if (viewportWidthPx <= 0) return@LaunchedEffect
             val (left, width) = pos
@@ -413,7 +549,61 @@ internal fun DrawerTabRow(
         Row(
             modifier = Modifier
                 .horizontalScroll(chipScroll)
-                .widthIn(min = maxWidth),
+                .widthIn(min = maxWidth)
+                // ONE long-press-drag gesture on the whole row (not per-chip), so
+                // reordering the chips can't tear down the in-flight gesture. This
+                // is how standard reorderable lists work. It picks up whichever
+                // custom tab the finger is over, then shuffles liveTabs live and
+                // commits on drop.
+                .pointerInput(Unit) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { offset ->
+                            val hit = liveTabs.firstOrNull { t ->
+                                val p = chipPositions[t.id]
+                                p != null && offset.x >= p.first && offset.x <= p.first + p.second
+                            }
+                            if (hit != null) {
+                                draggingId = hit.id
+                                dragMoved = false
+                                dragStartX = offset.x
+                                dragFingerX = offset.x
+                                dragInitialSlotLeft = (chipPositions[hit.id]?.first ?: 0).toFloat()
+                                // Buzz on pickup, like long-pressing an app icon.
+                                haptics.performLongPress()
+                            } else {
+                                draggingId = null
+                            }
+                        },
+                        onDrag = { change, dragAmount ->
+                            val id = draggingId ?: return@detectDragGesturesAfterLongPress
+                            change.consume()
+                            dragFingerX += dragAmount.x
+                            if (abs(dragFingerX - dragStartX) > viewConfiguration.touchSlop) {
+                                dragMoved = true
+                            }
+                            val dragged = liveTabs.firstOrNull { it.id == id }
+                                ?: return@detectDragGesturesAfterLongPress
+                            val others = liveTabs.filter { it.id != id }
+                            var insert = others.size
+                            for (i in others.indices) {
+                                val p = chipPositions[others[i].id] ?: continue
+                                val center = p.first + p.second / 2f
+                                if (dragFingerX < center) { insert = i; break }
+                            }
+                            val rebuilt = others.toMutableList().also { it.add(insert, dragged) }
+                            if (rebuilt.map { it.id } != liveTabs.map { it.id }) {
+                                liveTabs = rebuilt
+                            }
+                        },
+                        // onDragEnd and onDragCancel do the SAME thing: a real drag
+                        // commits the new order, a hold-in-place opens the editor.
+                        // (The chip's own click can consume the finger-up and turn an
+                        // end into a cancel, so both must handle the "edit" case or
+                        // the customize menu never shows.)
+                        onDragEnd = { releaseDrag() },
+                        onDragCancel = { releaseDrag() }
+                    )
+                },
             horizontalArrangement = Arrangement.spacedBy(8.dp, chipAlignment)
         ) {
         TabChip(
@@ -422,18 +612,38 @@ internal fun DrawerTabRow(
             positionKey = "__all__",
             onClick = { onTabSelected(null) }
         )
-        tabs.forEach { tab ->
-            // No lock glyph on the drawer chip — keep it looking like a normal tab.
-            val baseLabel = if (showCounts) "${tab.name} (${tab.packages.size})" else tab.name
-            TabChip(
-                label = baseLabel,
-                selected = selectedTabId == tab.id,
-                positionKey = tab.id,
-                onClick = { onTabSelected(tab.id) },
-                onLongClick = {
-                    if (tab.locked) unlockingTab = tab else editingTab = tab
+        liveTabs.forEach { tab ->
+            // key(tab.id): identity-stable so a reorder MOVES the existing node
+            // (carrying its placement-animation state) instead of recreating it.
+            key(tab.id) {
+                // No lock glyph on the drawer chip — keep it looking like a normal tab.
+                val baseLabel = if (showCounts) "${tab.name} (${tab.packages.size})" else tab.name
+                val isDragging = tab.id == draggingId
+                val isSettling = tab.id == settlingId
+                val isEditingThis = editingTab?.id == tab.id || unlockingTab?.id == tab.id
+                // Follow the FINGER'S MOVEMENT from where it grabbed, not the finger's
+                // absolute position — so on long-press the chip stays exactly in place
+                // (offset 0) and only moves once the finger moves. Formula stays
+                // continuous across reshuffles: rendered pos = grabSlot + fingerDelta.
+                val slotLeft = (chipPositions[tab.id]?.first ?: 0).toFloat()
+                val translation = when {
+                    isDragging -> (dragInitialSlotLeft + (dragFingerX - dragStartX)) - slotLeft
+                    isSettling -> settleAnim.value   // spring back into the slot after drop
+                    else -> 0f
                 }
-            )
+                TabChip(
+                    label = baseLabel,
+                    selected = selectedTabId == tab.id,
+                    positionKey = tab.id,
+                    onClick = { onTabSelected(tab.id) },
+                    // No onLongClick — the row-level gesture owns long-press (drag to
+                    // reorder, or hold-in-place to edit).
+                    translationX = translation,
+                    // Stay enlarged while dragging, while springing back, AND while
+                    // this tab's editor is open — then shrink smoothly.
+                    lifted = isDragging || isSettling || isEditingThis
+                )
+            }
         }
         if (!hidePlus) {
             TabChip(

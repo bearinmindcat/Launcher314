@@ -870,13 +870,13 @@ object SliderConfigs {
         label = "Suggested Rows"
     )
 
-    // Drawer tab chip alignment: 0 = Left, 1 = Center, 2 = Right
+    // Drawer tab chip alignment: 0 = Left, 1 = Right (Center was removed).
     val tabAlignment = HorizontalSliderConfig(
         minValue = 0f,
-        maxValue = 2f,
-        tickValues = listOf(0, 1, 2),
+        maxValue = 1f,
+        tickValues = listOf(0, 1),
         label = "Tab Alignment",
-        tickTextLabels = listOf("Left", "Center", "Right")
+        tickTextLabels = listOf("Left", "Right")
     )
 
     val gridRows = HorizontalSliderConfig(
