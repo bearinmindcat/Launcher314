@@ -195,6 +195,41 @@ fun FolderCustomizeDialog(
                     } else Color.White.copy(alpha = 0.3f)
                     val resolvedFolderClip = folderClipShape ?: RoundedCornerShape(12.dp)
                     val previewCustomIcon = customIconPath?.let { File(it) }?.takeIf { it.exists() }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                    // Left: reset button — always shown, resets ALL of this folder's
+                    // customizations to defaults (mirrors the app customize dialog).
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Column(
+                            modifier = Modifier
+                                .background(Color(0xFFFF6B6B).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    customLabel = ""
+                                    hideLabel = false
+                                    selectedShapeExp = null
+                                    selectedTintColor = null
+                                    tintIntensity = 100f
+                                    selectedSizePercent = globalIconSizePercent.toFloat().coerceIn(SliderConfigs.perAppIconSize.minValue, SliderConfigs.perAppIconSize.maxValue)
+                                    selectedTextSizePercent = globalIconTextSizePercent.toFloat().coerceIn(SliderConfigs.iconTextSize.minValue, SliderConfigs.iconTextSize.maxValue)
+                                    selectedFontId = null
+                                    selectedLabelColor = null
+                                    labelColorIntensity = 100f
+                                    customIconPath = null
+                                    customIconVersion++
+                                    val iconFile = File(getCustomIconsDir(context), "folder_$folderId.png")
+                                    if (iconFile.exists()) iconFile.delete()
+                                }
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(painterResource(id = R.drawable.ic_reset_icon), contentDescription = "Reset", modifier = Modifier.size(16.dp), tint = Color.White.copy(alpha = 0.7f))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Reset", color = Color.White.copy(alpha = 0.5f), fontSize = 9.sp)
+                        }
+                    }
                     if (previewCustomIcon != null) {
                         // Custom icon replaces the whole folder — a single image
                         // clipped to the folder shape (no dark box / grid).
@@ -254,6 +289,27 @@ fun FolderCustomizeDialog(
                         // Border overlay — on top
                         Box(modifier = Modifier.matchParentSize().border(1.dp, borderColor, resolvedFolderClip))
                     }
+                    // Right: pick a single image for this folder (mirrors the app
+                    // customize dialog's right-side "Icon" button).
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Column(
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    imagePickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                }
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(painterResource(id = R.drawable.ic_add_photo), contentDescription = "Change icon", modifier = Modifier.size(16.dp), tint = Color.White.copy(alpha = 0.7f))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Icon", color = Color.White.copy(alpha = 0.5f), fontSize = 9.sp)
+                        }
+                    }
+                    } // end preview Row
                     Spacer(modifier = Modifier.height(4.dp))
 
                     val previewFontFamily = if (selectedFontId != null) {
@@ -357,23 +413,9 @@ fun FolderCustomizeDialog(
                         Text("Label", color = labelColor, fontSize = 11.sp)
                     }
 
-                    // Icon button (Issue #57) — set a single image for the folder
-                    val iconSectionColor = when {
-                        customIconPath != null -> Color.White
-                        expandedSection == 5 -> MaterialTheme.colorScheme.primary
-                        else -> Color.White.copy(alpha = 0.4f)
-                    }
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .clip(selectedShape).clickable { expandedSection = if (expandedSection == 5) 0 else 5 }
-                            .then(if (expandedSection == 5) Modifier.background(selectedBg, selectedShape) else Modifier)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Outlined.Image, contentDescription = "Icon", modifier = iconSize, tint = iconSectionColor)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Icon", color = iconSectionColor, fontSize = 11.sp)
-                    }
+                    // (The folder's icon picker now lives as a right-side button on
+                    // the live preview above — like the app customize dialog —
+                    // instead of a separate expandable "Icon" section.)
                 }
 
                 // Expandable section content
@@ -581,44 +623,6 @@ fun FolderCustomizeDialog(
                                     onValueChange = { labelColorIntensity = it },
                                     onValueChangeFinished = {}
                                 )
-                            }
-                        }
-                        5 -> {
-                            // Icon (Issue #57) — pick / clear a single folder image
-                            Column(
-                                modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp)).padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "Show a single image for this folder instead of a preview of its apps.",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = 12.sp,
-                                    textAlign = TextAlign.Center
-                                )
-                                Button(
-                                    onClick = {
-                                        imagePickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    },
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(if (customIconPath != null) "Change image" else "Choose image", fontSize = 13.sp)
-                                }
-                                if (customIconPath != null) {
-                                    OutlinedButton(
-                                        onClick = { customIconPath = null; customIconVersion++ },
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF9A9A))
-                                    ) {
-                                        Icon(Icons.Outlined.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Remove custom icon", fontSize = 13.sp)
-                                    }
-                                }
                             }
                         }
                         else -> Spacer(modifier = Modifier.fillMaxWidth())
