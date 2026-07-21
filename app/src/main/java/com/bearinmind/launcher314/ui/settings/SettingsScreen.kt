@@ -688,7 +688,7 @@ fun SettingsLargeItem(
 @Composable
 fun SettingsToggleItem(
     title: String,
-    subtitle: String,
+    subtitle: String = "",
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true
@@ -713,15 +713,17 @@ fun SettingsToggleItem(
                 else
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
             )
-            Text(
-                text = subtitle,
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
-                color = if (enabled)
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                else
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    color = if (enabled)
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    else
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                )
+            }
         }
         Switch(
             checked = checked,

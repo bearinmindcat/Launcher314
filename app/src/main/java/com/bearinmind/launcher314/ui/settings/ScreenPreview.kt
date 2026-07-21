@@ -22,6 +22,7 @@ import com.bearinmind.launcher314.data.getDockColumns
 import com.bearinmind.launcher314.data.setDockColumns
 import com.bearinmind.launcher314.data.getDockEnabled
 import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
+import com.bearinmind.launcher314.data.getHideDrawerSearchBar
 import com.bearinmind.launcher314.data.setDockEnabled
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
 import com.bearinmind.launcher314.ui.components.ThumbDragVerticalSlider
@@ -210,6 +211,7 @@ fun AppDrawerPreviewSection(
     var drawerGridRows by remember { mutableFloatStateOf(getDrawerGridRows(context).toFloat()) }
     var isPagedMode by remember { mutableStateOf(getDrawerPagedMode(context)) }
     var selectedFontFamily by remember { mutableStateOf(FontManager.getSelectedFontFamily(context)) }
+    var hideSearchBar by remember { mutableStateOf(getHideDrawerSearchBar(context)) }
 
     // Sync icon size from shared state (updated by either section's slider)
     LaunchedEffect(sharedIconSize) {
@@ -244,6 +246,7 @@ fun AppDrawerPreviewSection(
                 drawerGridRows = getDrawerGridRows(context).toFloat()
                 isPagedMode = getDrawerPagedMode(context)
                 selectedFontFamily = FontManager.getSelectedFontFamily(context)
+                hideSearchBar = getHideDrawerSearchBar(context)
                 drawerPreviewScope.launch(Dispatchers.IO) {
                     appCustomizations = loadAppCustomizations(context)
                 }
@@ -398,7 +401,8 @@ fun AppDrawerPreviewSection(
                     iconShapeOverride = iconShapeOverride,
                     iconBgColorOverride = iconBgColorOverride,
                     iconBgIntensityOverride = iconBgIntensityOverride,
-                    appCustomizations = appCustomizations
+                    appCustomizations = appCustomizations,
+                    hideSearchBar = hideSearchBar
                 )
             }
 
@@ -693,7 +697,7 @@ fun AppDrawerPreviewSection(
  * AppDrawerPreviewSection's preview.
  */
 @Composable
-fun DrawerPreviewCard(onPlayClick: () -> Unit = {}) {
+fun DrawerPreviewCard(onPlayClick: () -> Unit = {}, hideSearchBar: Boolean = false) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -799,7 +803,8 @@ fun DrawerPreviewCard(onPlayClick: () -> Unit = {}) {
             iconBgIntensityOverride = iconBgIntensity,
             appCustomizations = appCustomizations,
             // Display-only here — let the settings page scroll under it.
-            previewScrollEnabled = false
+            previewScrollEnabled = false,
+            hideSearchBar = hideSearchBar
         )
     }
 }
@@ -964,7 +969,9 @@ private fun RealAppDrawerPreview(
     // When false the preview's own grid won't consume vertical drags, so a
     // parent scroll (e.g. the Additional Drawer Settings page) scrolls instead
     // of the preview grabbing the gesture.
-    previewScrollEnabled: Boolean = true
+    previewScrollEnabled: Boolean = true,
+    // Reflect the "Hide search bar" setting — drops the preview's search bar.
+    hideSearchBar: Boolean = false
 ) {
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp.dp
@@ -1167,7 +1174,7 @@ private fun RealAppDrawerPreview(
                 }
 
                 // Search bar at top (normal mode)
-                if (!isReverseSearchBar) previewSearchBar()
+                if (!isReverseSearchBar && !hideSearchBar) previewSearchBar()
 
                 // Drawer tab chips (mirrors the real drawer's tab row) — shown
                 // whenever tabs are enabled, honoring counts / hide-(+) / alignment.
@@ -1342,7 +1349,7 @@ private fun RealAppDrawerPreview(
                 }
 
                 // Search bar at bottom (reverse mode)
-                if (isReverseSearchBar) previewSearchBar()
+                if (isReverseSearchBar && !hideSearchBar) previewSearchBar()
 
                 // Navigation bar area (transparent background, visible gesture bar)
                 Box(
@@ -1370,8 +1377,8 @@ private fun RealAppDrawerPreview(
                         .align(Alignment.TopEnd)
                         .fillMaxHeight()
                         .padding(
-                            top = statusBarHeight + if (!isReverseSearchBar) searchBarHeight else 0.dp,
-                            bottom = navBarHeight + if (isReverseSearchBar) searchBarHeight else 0.dp + 2.dp
+                            top = statusBarHeight + if (!isReverseSearchBar && !hideSearchBar) searchBarHeight else 0.dp,
+                            bottom = navBarHeight + if (isReverseSearchBar && !hideSearchBar) searchBarHeight else 0.dp + 2.dp
                         ),
                     thumbColor = scrollbarComposeColor.copy(alpha = 0.5f),
                     thumbSelectedColor = scrollbarComposeColor.copy(alpha = 0.8f),

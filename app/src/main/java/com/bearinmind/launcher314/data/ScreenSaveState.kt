@@ -464,6 +464,21 @@ fun setReverseDrawerSearchBar(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_REVERSE_SEARCH_BAR, enabled).apply()
 }
 
+// Hide the drawer's top section entirely — the search bar AND its (⋮) settings
+// menu. Also removes the search-bar drop zone used to drag an app to the home
+// screen. Default off.
+private const val KEY_HIDE_SEARCH_BAR = "hide_drawer_search_bar"
+
+fun getHideDrawerSearchBar(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_HIDE_SEARCH_BAR, false)
+}
+
+fun setHideDrawerSearchBar(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_HIDE_SEARCH_BAR, enabled).apply()
+}
+
 // ============================================================================
 // DOUBLE-TAP TO LOCK SCREEN
 // ============================================================================

@@ -208,6 +208,7 @@ internal fun MainDrawerContent(
     }
 
     val reverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
+    val hideSearchBar = com.bearinmind.launcher314.data.getHideDrawerSearchBar(LocalContext.current)
 
     // Track cell positions and sizes for drag overlay positioning (shared across paged/scroll modes)
     // Hoisted here so drag lambdas can access them for folder hover detection
@@ -442,7 +443,7 @@ internal fun MainDrawerContent(
 
     // Auto-focus search bar only when drawer is fully open
     LaunchedEffect(isDrawerFullyOpen) {
-        if (isDrawerFullyOpen && autoOpenKeyboard) {
+        if (isDrawerFullyOpen && autoOpenKeyboard && !hideSearchBar) {
             kotlinx.coroutines.delay(200)
             try { searchFocusRequester.requestFocus() } catch (_: Exception) {}
         }
@@ -747,7 +748,7 @@ internal fun MainDrawerContent(
         }
         }
 
-        if (!reverseSearchBar) searchBarBlock()
+        if (!reverseSearchBar && !hideSearchBar) searchBarBlock()
 
         // Per-profile chip strip — Personal / Work / Cloned / Private /
         // Other. Only types with apps get a chip; hidden when only Personal
@@ -961,8 +962,9 @@ internal fun MainDrawerContent(
                     val screenH = LocalConfiguration.current.screenHeightDp.dp
                     val statusBarH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                     val navBarH = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                    // Non-grid space: status bar + search bar (~72dp) + nav dots (~30dp) + nav bar + padding (~16dp)
-                    val nonGridSpace = statusBarH + navBarH + 118.dp
+                    // Non-grid space: status bar + search bar (~72dp) + nav dots (~30dp) + nav bar + padding (~16dp).
+                    // When the search bar is hidden, drop its ~72dp so the grid reclaims the space.
+                    val nonGridSpace = statusBarH + navBarH + (if (hideSearchBar) 46.dp else 118.dp)
                     val stableCellH = if (drawerGridRows > 0) (screenH - nonGridSpace) / drawerGridRows else 80.dp
 
                     HorizontalPager(
@@ -1623,7 +1625,7 @@ internal fun MainDrawerContent(
         }
         } // close shared wrapper Box
 
-        if (reverseSearchBar) {
+        if (reverseSearchBar && !hideSearchBar) {
             searchBarBlock()
             Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
         }

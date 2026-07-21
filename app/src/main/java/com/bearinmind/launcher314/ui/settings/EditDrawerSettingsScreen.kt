@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.bearinmind.launcher314.data.getAutoLaunchSearchResult
 import com.bearinmind.launcher314.data.getAutoOpenKeyboard
 import com.bearinmind.launcher314.data.getDrawerSearchFuzziness
+import com.bearinmind.launcher314.data.getHideDrawerSearchBar
 import com.bearinmind.launcher314.data.getReverseDrawerSearchBar
 import com.bearinmind.launcher314.data.getScrollbarColor
 import com.bearinmind.launcher314.data.getScrollbarHeightPercent
@@ -55,6 +56,7 @@ import com.bearinmind.launcher314.data.setAutoLaunchSearchResult
 import com.bearinmind.launcher314.data.setAutoOpenKeyboard
 import com.bearinmind.launcher314.data.setDrawerSearchFuzziness
 import com.bearinmind.launcher314.data.setFuzzySearchEnabled
+import com.bearinmind.launcher314.data.setHideDrawerSearchBar
 import com.bearinmind.launcher314.data.setRecentFirstSearchEnabled
 import com.bearinmind.launcher314.data.setReverseDrawerSearchBar
 import com.bearinmind.launcher314.data.setSuggestedAppsEnabled
@@ -96,6 +98,7 @@ fun EditDrawerSettingsScreen(
     var recentFirst by remember { mutableStateOf(isRecentFirstSearchEnabled(context)) }
     var suggestedEnabled by remember { mutableStateOf(isSuggestedAppsEnabled(context)) }
     var reverseSearchBar by remember { mutableStateOf(getReverseDrawerSearchBar(context)) }
+    var hideSearchBar by remember { mutableStateOf(getHideDrawerSearchBar(context)) }
     var autoOpenKeyboard by remember { mutableStateOf(getAutoOpenKeyboard(context)) }
     var autoLaunchSearchResult by remember { mutableStateOf(getAutoLaunchSearchResult(context)) }
 
@@ -122,7 +125,8 @@ fun EditDrawerSettingsScreen(
         }
 
         // Live drawer preview — PINNED at the top (outside the scroll below).
-        DrawerPreviewCard(onPlayClick = onPreviewDrawer)
+        // Pass the live toggle so hiding the search bar updates the preview at once.
+        DrawerPreviewCard(onPlayClick = onPreviewDrawer, hideSearchBar = hideSearchBar)
 
         Spacer(Modifier.height(12.dp))
 
@@ -185,6 +189,14 @@ fun EditDrawerSettingsScreen(
             subtitle = "Moves the drawer search bar to the bottom",
             checked = reverseSearchBar,
             onCheckedChange = { reverseSearchBar = it; setReverseDrawerSearchBar(context, it) }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsToggleItem(
+            title = "Hide search bar",
+            checked = hideSearchBar,
+            onCheckedChange = { hideSearchBar = it; setHideDrawerSearchBar(context, it) }
         )
 
         Spacer(Modifier.height(8.dp))
