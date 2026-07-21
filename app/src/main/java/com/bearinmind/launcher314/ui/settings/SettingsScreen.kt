@@ -556,11 +556,6 @@ fun SettingsScreen(
             // Developer Information Section
             SettingsSection(title = "Development Information") {
                 SettingsClickableItem(
-                    title = "Version",
-                    subtitle = "v0.0.20-beta",
-                    onClick = { }
-                )
-                SettingsClickableItem(
                     title = "Bugs & Feature Requests",
                     subtitle = "Report bugs or leave feature requests on my github or reddit posts :)",
                     onClick = { }
