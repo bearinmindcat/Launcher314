@@ -936,8 +936,8 @@ private fun DrawerTabEditDialog(
 }
 
 /**
- * Confirm-delete dialog styled like DeviceAudioEQ's preset-delete popup:
- * "Delete" title, the message, then equal-width red Delete + Cancel buttons.
+ * Confirm-delete dialog matching DeviceAudioEQ's preset-delete popup: outlined
+ * #252525 card, title + message, divider, equal-width Delete/Cancel buttons.
  */
 @Composable
 fun ConfirmDeleteDialog(
@@ -947,16 +947,19 @@ fun ConfirmDeleteDialog(
     title: String = "Delete"
 ) {
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF1E1E1E), tonalElevation = 8.dp) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(message, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF252525),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
+        ) {
+            Column(modifier = Modifier.padding(start = 24.dp, top = 20.dp, end = 24.dp, bottom = 16.dp)) {
+                Text(title, color = Color(0xFFE2E2E2), fontSize = 20.sp)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(message, color = Color(0xFFAAAAAA), fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                Divider(color = Color(0xFF444444), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = onConfirm,
                         shape = RoundedCornerShape(12.dp),
@@ -964,7 +967,7 @@ fun ConfirmDeleteDialog(
                         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                             contentColor = Color(0xFFEF9A9A)
                         ),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).padding(end = 3.dp)
                     ) { Text("Delete", fontSize = 14.sp) }
                     OutlinedButton(
                         onClick = onDismiss,
@@ -973,7 +976,7 @@ fun ConfirmDeleteDialog(
                         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                             contentColor = Color(0xFFDDDDDD)
                         ),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).padding(start = 3.dp)
                     ) { Text("Cancel", fontSize = 14.sp) }
                 }
             }

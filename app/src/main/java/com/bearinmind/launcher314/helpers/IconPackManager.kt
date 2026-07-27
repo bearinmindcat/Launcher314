@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import com.bearinmind.launcher314.data.drawableToBitmap
+import com.bearinmind.launcher314.data.getCustomIconsDir
 import com.bearinmind.launcher314.data.getSelectedIconPack
 import com.bearinmind.launcher314.data.saveBitmapToFile
 import com.bearinmind.launcher314.data.setSelectedIconPack
@@ -372,6 +373,82 @@ object IconPackManager {
         saveBitmapToFile(bitmap, outFile)
         bitmap.recycle()
         return outFile.absolutePath
+    }
+
+    // ---- Per-app browsing of any installed pack (issue #70) ----
+
+    /** Every unique drawable in [packPackage]'s appfilter. */
+    fun getIconPackDrawables(context: Context, packPackage: String): List<IconPackDrawable> {
+        if (packPackage.isEmpty()) return emptyList()
+        return try {
+            val iconPackResources = context.packageManager.getResourcesForApplication(packPackage)
+            parseAppFilter(context, packPackage).values.distinct().mapNotNull { drawableName ->
+                val resId = iconPackResources.getIdentifier(drawableName, "drawable", packPackage)
+                if (resId != 0) IconPackDrawable(drawableName, resId) else null
+            }.sortedBy { it.drawableName }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Load one drawable by name from [packPackage]. */
+    fun loadIconPackDrawable(context: Context, packPackage: String, drawableName: String): Drawable? {
+        if (packPackage.isEmpty()) return null
+        return try {
+            val iconPackResources = context.packageManager.getResourcesForApplication(packPackage)
+            val resId = iconPackResources.getIdentifier(drawableName, "drawable", packPackage)
+            if (resId == 0) return null
+            @Suppress("DEPRECATION")
+            iconPackResources.getDrawable(resId, null)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** The drawable [packPackage] maps to [packageName], or null if unthemed. */
+    fun findMatchingDrawableName(context: Context, packPackage: String, packageName: String): String? {
+        return try {
+            val appFilterMap = parseAppFilter(context, packPackage)
+            val prefix = "ComponentInfo{$packageName/"
+            appFilterMap.entries.firstOrNull { it.key.startsWith(prefix) }?.value
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Apply [drawableName] from [packPackage] to [packageName]. */
+    fun applyIconPackDrawableToApp(
+        context: Context,
+        packageName: String,
+        packPackage: String,
+        drawableName: String
+    ): Boolean {
+        val drawable = loadIconPackDrawable(context, packPackage, drawableName) ?: return false
+        val bitmap = drawableToBitmap(drawable)
+        saveBitmapToFile(bitmap, File(getIconPackCacheDir(context), "$packageName.png"))
+        bitmap.recycle()
+
+        // Clear any gallery-picked icon (it would win over the pack icon).
+        File(getCustomIconsDir(context), "$packageName.png").let {
+            if (it.exists()) it.delete()
+        }
+        clearDerivedIconCaches(context, packageName)
+        return true
+    }
+
+    /** Drop every generated (shaped / tinted) icon for one package. */
+    fun clearDerivedIconCaches(context: Context, packageName: String) {
+        listOf("app_icons").forEach { dir ->
+            File(context.cacheDir, dir).listFiles()
+                ?.filter { it.name.startsWith(packageName) }?.forEach { it.delete() }
+        }
+        listOf(
+            "global_shaped_icons", "bg_color_shaped_icons", "shaped_exp_icons",
+            "shaped_bg_tinted_icons", "bg_tinted_icons", "foreground_icons"
+        ).forEach { dir ->
+            File(context.filesDir, dir).listFiles()
+                ?.filter { it.name.startsWith(packageName) }?.forEach { it.delete() }
+        }
     }
 
     // ========== Directory Helpers ==========

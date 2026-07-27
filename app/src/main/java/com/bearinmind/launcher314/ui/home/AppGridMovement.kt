@@ -1751,23 +1751,14 @@ fun DraggableGridCell(
                         }
 
                     if (showFolderRemoveConfirm) {
-                        AlertDialog(
-                            onDismissRequest = { showFolderRemoveConfirm = false },
-                            title = { Text("Remove Folder?") },
-                            text = { Text("Apps inside this folder (${cell.folder.name}) will be removed from the launcher screen.") },
-                            confirmButton = {
-                                TextButton(onClick = {
-                                    onRemove()
-                                    showFolderRemoveConfirm = false
-                                }) {
-                                    Text("Remove")
-                                }
+                        com.bearinmind.launcher314.ui.drawer.ConfirmDeleteDialog(
+                            title = "Delete folder?",
+                            message = "Apps inside this folder (${cell.folder.name}) will be removed from the launcher screen.",
+                            onConfirm = {
+                                onRemove()
+                                showFolderRemoveConfirm = false
                             },
-                            dismissButton = {
-                                TextButton(onClick = { showFolderRemoveConfirm = false }) {
-                                    Text("Cancel")
-                                }
-                            }
+                            onDismiss = { showFolderRemoveConfirm = false }
                         )
                     }
                 }

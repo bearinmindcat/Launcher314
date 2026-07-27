@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontFamily
 import com.bearinmind.launcher314.helpers.FontManager
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Clear
@@ -218,6 +219,8 @@ fun AppCustomizeDialog(
     var selectedIconPackName by remember { mutableStateOf(currentCustomization?.customIconPackName) }
     var showFontScreen by remember { mutableStateOf(false) }
     var showIconPackBrowser by remember { mutableStateOf(false) }
+    // "Icon" button asks gallery-vs-icon-pack first (issue #70).
+    var showIconSourceChooser by remember { mutableStateOf(false) }
 
     // Version counter to bust Coil cache when the same file path is overwritten
     var customIconVersion by remember { mutableStateOf(0) }
@@ -526,11 +529,7 @@ fun AppCustomizeDialog(
                                     RoundedCornerShape(8.dp)
                                 )
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    imagePickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                }
+                                .clickable { showIconSourceChooser = true }
                                 .padding(horizontal = 6.dp, vertical = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -1655,6 +1654,56 @@ fun AppCustomizeDialog(
         }
     }
 
+    // Pick the icon source: gallery picture or an icon pack.
+    if (showIconSourceChooser) {
+        Dialog(onDismissRequest = { showIconSourceChooser = false }) {
+            // Same card styling as ConfirmDeleteDialog.
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF252525),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
+            ) {
+                Column(modifier = Modifier.padding(start = 24.dp, top = 20.dp, end = 24.dp, bottom = 16.dp)) {
+                    Text(
+                        text = "Change icon",
+                        color = Color(0xFFE2E2E2),
+                        fontSize = 20.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    IconModeChip(
+                        label = "Choose a picture",
+                        selected = false,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        showIconSourceChooser = false
+                        imagePickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    IconModeChip(
+                        label = "Choose from an icon pack",
+                        selected = false,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        showIconSourceChooser = false
+                        showIconPackBrowser = true
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider(color = Color(0xFF444444), thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = { showIconSourceChooser = false },
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDDDDDD)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Cancel", fontSize = 14.sp) }
+                }
+            }
+        }
+    }
+
     // Icon pack picker — select a pack and apply its icon to THIS app only
     if (showIconPackBrowser) {
         Dialog(
@@ -1692,6 +1741,41 @@ private fun PerAppIconPackPicker(
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var loadingMessage by remember { mutableStateOf("") }
+
+    // Tapping a pack opens its full icon grid (issue #70).
+    var browsingPack by remember {
+        mutableStateOf<com.bearinmind.launcher314.helpers.IconPackManager.IconPackInfo?>(null)
+    }
+    val activePack = browsingPack
+    if (activePack != null) {
+        IconPackDrawableGrid(
+            context = context,
+            pack = activePack,
+            targetPackageName = packageName,
+            onIconPicked = { drawableName ->
+                scope.launch(Dispatchers.IO) {
+                    val applied = com.bearinmind.launcher314.helpers.IconPackManager
+                        .applyIconPackDrawableToApp(context, packageName, activePack.packageName, drawableName)
+                    withContext(Dispatchers.Main) {
+                        if (applied) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Applied $drawableName from ${activePack.displayName}",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            onIconApplied("", activePack.displayName)
+                        } else {
+                            android.widget.Toast.makeText(
+                                context, "Couldn't load that icon", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            },
+            onBack = { browsingPack = null }
+        )
+        return
+    }
 
     val installedPacks = remember { com.bearinmind.launcher314.helpers.IconPackManager.getInstalledIconPacks(context) }
     val filteredPacks = remember(searchQuery, installedPacks) {
@@ -1813,102 +1897,7 @@ private fun PerAppIconPackPicker(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 56.dp)
-                            .clickable {
-                                isLoading = true
-                                loadingMessage = "Applying ${pack.displayName}..."
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                    val pm = context.packageManager
-
-                                    // Use EXACTLY the same approach as global cacheIconPackIcons:
-                                    // just call it for this single package
-                                    val appFilterMap = com.bearinmind.launcher314.helpers.IconPackManager.parseAppFilter(context, pack.packageName)
-                                    val iconPackResources = pm.getResourcesForApplication(pack.packageName)
-
-                                    // Query all launcher activities (same as cacheIconPackIcons)
-                                    val launchIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-                                        addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-                                    }
-                                    val resolveInfoList = pm.queryIntentActivities(launchIntent, 0)
-
-                                    // Find ALL activities for this package (some apps have multiple)
-                                    val matchingActivities = resolveInfoList.filter {
-                                        it.activityInfo.packageName == packageName
-                                    }
-
-                                    var found = false
-                                    for (ri in matchingActivities) {
-                                        val activityInfo = ri.activityInfo
-                                        val activityName = activityInfo.name
-                                        val componentInfo = "ComponentInfo{$packageName/$activityName}"
-
-                                        // Try exact match first, then prefix match
-                                        var drawableName = appFilterMap[componentInfo]
-                                        if (drawableName == null) {
-                                            val prefix = "ComponentInfo{$packageName/"
-                                            val matchKey = appFilterMap.keys.firstOrNull { it.startsWith(prefix) }
-                                            if (matchKey != null) drawableName = appFilterMap[matchKey]
-                                        }
-
-                                        if (drawableName == null) continue
-
-                                        val drawableResId = iconPackResources.getIdentifier(drawableName, "drawable", pack.packageName)
-                                        if (drawableResId == 0) continue
-
-                                        @Suppress("DEPRECATION")
-                                        val drawable = iconPackResources.getDrawable(drawableResId, null) ?: continue
-
-                                        val bitmap = com.bearinmind.launcher314.data.drawableToBitmap(drawable)
-
-                                        // Save to icon_pack_cache — exact same location as global cacheIconPackIcons
-                                        val cacheDir = File(context.cacheDir, "icon_pack_cache")
-                                        if (!cacheDir.exists()) cacheDir.mkdirs()
-                                        val cacheFile = File(cacheDir, "$packageName.png")
-                                        com.bearinmind.launcher314.data.saveBitmapToFile(bitmap, cacheFile)
-                                        bitmap.recycle()
-
-                                        // Remove custom icon so hasCustomIcon=false
-                                        val customFile = File(getCustomIconsDir(context), "$packageName.png")
-                                        if (customFile.exists()) customFile.delete()
-
-                                        // Clear ALL derived caches for this package so they regenerate
-                                        listOf("app_icons").forEach { dir ->
-                                            File(context.cacheDir, dir).listFiles()?.filter {
-                                                it.name.startsWith(packageName)
-                                            }?.forEach { it.delete() }
-                                        }
-                                        listOf("global_shaped_icons", "bg_color_shaped_icons",
-                                            "shaped_exp_icons", "shaped_bg_tinted_icons",
-                                            "bg_tinted_icons", "foreground_icons").forEach { dir ->
-                                            File(context.filesDir, dir).listFiles()?.filter {
-                                                it.name.startsWith(packageName)
-                                            }?.forEach { it.delete() }
-                                        }
-
-                                        found = true
-                                        withContext(Dispatchers.Main) {
-                                            isLoading = false
-                                            android.widget.Toast.makeText(context, "Applied $drawableName from ${pack.displayName}", android.widget.Toast.LENGTH_SHORT).show()
-                                            onIconApplied("", pack.displayName)
-                                        }
-                                        break
-                                    }
-
-                                    if (found) return@launch
-                                    } catch (e: Exception) {
-                                        android.util.Log.e("PerAppIconPack", "Error: ${e.message}", e)
-                                    }
-
-                                    withContext(Dispatchers.Main) {
-                                        isLoading = false
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            "No icon found for this app in ${pack.displayName}",
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                }
-                            }
+                            .clickable { browsingPack = pack }
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1995,6 +1984,201 @@ private fun PerAppIconPackPicker(
                     Text(loadingMessage, color = Color.White, fontSize = 14.sp)
                 }
             }
+        }
+    }
+}
+
+/**
+ * Grid of every icon in one pack (issue #70). The pack's own mapping for the
+ * app is shown first as "Suggested for this app".
+ */
+@Composable
+private fun IconPackDrawableGrid(
+    context: Context,
+    pack: com.bearinmind.launcher314.helpers.IconPackManager.IconPackInfo,
+    targetPackageName: String,
+    onIconPicked: (drawableName: String) -> Unit,
+    onBack: () -> Unit
+) {
+    var search by remember { mutableStateOf("") }
+    var drawables by remember {
+        mutableStateOf<List<com.bearinmind.launcher314.helpers.IconPackManager.IconPackDrawable>>(emptyList())
+    }
+    var suggested by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(pack.packageName) {
+        withContext(Dispatchers.IO) {
+            val list = com.bearinmind.launcher314.helpers.IconPackManager
+                .getIconPackDrawables(context, pack.packageName)
+            val match = com.bearinmind.launcher314.helpers.IconPackManager
+                .findMatchingDrawableName(context, pack.packageName, targetPackageName)
+            withContext(Dispatchers.Main) {
+                drawables = list
+                suggested = match
+                loading = false
+            }
+        }
+    }
+
+    val filtered = remember(search, drawables) {
+        if (search.isBlank()) drawables
+        else drawables.filter { it.drawableName.contains(search, ignoreCase = true) }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF121212))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Text(
+                    text = pack.displayName,
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            TextField(
+                value = search,
+                onValueChange = { search = it },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                placeholder = { Text("Search icons", color = Color.White.copy(alpha = 0.6f)) },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (search.isNotEmpty()) {
+                        IconButton(onClick = { search = "" }) {
+                            Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(28.dp),
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                    focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    cursorColor = Color.White
+                )
+            )
+
+            if (loading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color.White)
+                }
+            } else if (drawables.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Couldn't read any icons from ${pack.displayName}.",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                val suggestedName = suggested
+                androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                    columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(72.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 12.dp, end = 12.dp, top = 8.dp,
+                        bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
+                    )
+                ) {
+                    if (suggestedName != null && search.isBlank()) {
+                        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                text = "Suggested for this app",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            )
+                        }
+                        item {
+                            IconPackGridCell(
+                                context = context,
+                                packPackage = pack.packageName,
+                                drawableName = suggestedName,
+                                onClick = { onIconPicked(suggestedName) }
+                            )
+                        }
+                        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                text = "All icons (${drawables.size})",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            )
+                        }
+                    }
+                    items(filtered.size) { index ->
+                        val d = filtered[index]
+                        IconPackGridCell(
+                            context = context,
+                            packPackage = pack.packageName,
+                            drawableName = d.drawableName,
+                            onClick = { onIconPicked(d.drawableName) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One icon in the pack grid, decoded off the main thread. */
+@Composable
+private fun IconPackGridCell(
+    context: Context,
+    packPackage: String,
+    drawableName: String,
+    onClick: () -> Unit
+) {
+    var bitmap by remember(packPackage, drawableName) {
+        mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    }
+    LaunchedEffect(packPackage, drawableName) {
+        withContext(Dispatchers.IO) {
+            val loaded = try {
+                com.bearinmind.launcher314.helpers.IconPackManager
+                    .loadIconPackDrawable(context, packPackage, drawableName)
+                    ?.let { com.bearinmind.launcher314.data.drawableToBitmap(it).asImageBitmap() }
+            } catch (_: Exception) { null }
+            withContext(Dispatchers.Main) { bitmap = loaded }
+        }
+    }
+    Box(
+        modifier = Modifier
+            .padding(4.dp)
+            .size(64.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        bitmap?.let {
+            androidx.compose.foundation.Image(
+                bitmap = it,
+                contentDescription = drawableName,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(48.dp)
+            )
         }
     }
 }

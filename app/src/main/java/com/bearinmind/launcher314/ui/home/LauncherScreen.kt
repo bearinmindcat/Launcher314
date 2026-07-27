@@ -7931,24 +7931,15 @@ fun LauncherScreen(
 
         // Delete folder confirmation dialog
         if (showFolderDeleteConfirm) {
-            AlertDialog(
-                onDismissRequest = { showFolderDeleteConfirm = false },
-                title = { Text("Remove Folder?") },
-                text = { Text("Apps inside this folder (${folder.name}) will be removed from the launcher screen.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        saveHomeFolders(homeFolders.filter { it.id != folder.id })
-                        openHomeFolder = null
-                        showFolderDeleteConfirm = false
-                    }) {
-                        Text("Delete")
-                    }
+            com.bearinmind.launcher314.ui.drawer.ConfirmDeleteDialog(
+                title = "Delete folder?",
+                message = "Apps inside this folder (${folder.name}) will be removed from the launcher screen.",
+                onConfirm = {
+                    saveHomeFolders(homeFolders.filter { it.id != folder.id })
+                    openHomeFolder = null
+                    showFolderDeleteConfirm = false
                 },
-                dismissButton = {
-                    TextButton(onClick = { showFolderDeleteConfirm = false }) {
-                        Text("Cancel")
-                    }
-                }
+                onDismiss = { showFolderDeleteConfirm = false }
             )
         }
     }
