@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -88,6 +89,9 @@ internal fun FolderContentScreen(
     folders: List<AppFolder> = emptyList(),
     onMoveToFolder: (String, AppFolder) -> Unit = { _, _ -> },
     onMoveAppsToFolder: (List<String>, AppFolder) -> Unit = { _, _ -> },
+    // Sub-folders (issue #71): tap opens, long-press menu un-nests.
+    onOpenSubFolder: (AppFolder) -> Unit = {},
+    onRemoveSubFolder: (String) -> Unit = {},
     isFolderMenuExpanded: Boolean = false,
     onFolderMenuExpandedChange: (Boolean) -> Unit = {},
     onAddToHome: (AppInfo) -> Unit = {},
@@ -335,6 +339,10 @@ internal fun FolderContentScreen(
                                 val cellIdx = row * gridColumns + col
                                 val pkg = folderCellMap[cellIdx]
                                 val cellApp = pkg?.let { p -> allApps.find { it.packageName == p } }
+                                // "folder:<id>" entry → this cell is a nested sub-folder.
+                                val cellSubFolder = pkg
+                                    ?.takeIf { com.bearinmind.launcher314.data.isFolderEntry(it) }
+                                    ?.let { e -> folders.firstOrNull { f -> f.id == com.bearinmind.launcher314.data.folderEntryId(e) } }
                                 val isDragged = cellApp != null && draggedPkg == cellApp.packageName
 
                                 // Per-cell press feedback — mirrors the home-screen folder cell
@@ -586,6 +594,12 @@ internal fun FolderContentScreen(
                                                         } finally {
                                                             isFingerDown = false
                                                         }
+                                                    } else if (cellSubFolder != null && draggedPkg == null) {
+                                                        // Long press on a sub-folder cell → context menu.
+                                                        hapticFeedback.performLongPress()
+                                                        flashOverlay = true
+                                                        contextMenuCellIdx = cellIdx
+                                                        isFingerDown = false
                                                     } else {
                                                         // Long-press fired but cell wasn't an app (or
                                                         // a drag was already in progress). Still need
@@ -614,6 +628,9 @@ internal fun FolderContentScreen(
                                                             if (currentCellApp != null && draggedPkg == null) {
                                                                 flashOverlay = true
                                                                 launchApp(context, currentCellApp.packageName, currentCellApp.userSerial)
+                                                            } else if (cellSubFolder != null && draggedPkg == null) {
+                                                                flashOverlay = true
+                                                                onOpenSubFolder(cellSubFolder)
                                                             }
                                                         }
                                                     }
@@ -829,6 +846,116 @@ internal fun FolderContentScreen(
                                                             }
                                                         )
                                             }
+                                    } else if (cellSubFolder != null) {
+                                        // Sub-folder cell — exact same folder-icon look via MiniFolderBox.
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(markerHalfSize),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .wrapContentHeight(unbounded = true)
+                                                    .graphicsLayer { clip = false },
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .onGloballyPositioned { coords ->
+                                                            val targetScale = 1.265f
+                                                            val pos = coords.positionInRoot()
+                                                            val w = coords.size.width * targetScale
+                                                            val h = coords.size.height * targetScale
+                                                            val offX = (coords.size.width - w) / 2f
+                                                            val offY = (coords.size.height - h) / 2f
+                                                            cellIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                                                                pos.x + offX, pos.y + offY,
+                                                                pos.x + offX + w, pos.y + offY + h
+                                                            )
+                                                        }
+                                                        .graphicsLayer { scaleX = cellScale; scaleY = cellScale }
+                                                ) {
+                                                    MiniFolderBox(
+                                                        folder = cellSubFolder,
+                                                        allApps = allApps,
+                                                        size = iconSize.dp,
+                                                        iconClipShape = iconClipShape,
+                                                        iconBgColor = iconBgColor,
+                                                        globalIconShapeName = globalIconShapeName
+                                                    )
+                                                    if (cellOverlayAlpha > 0f) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .matchParentSize()
+                                                                .graphicsLayer { alpha = cellOverlayAlpha }
+                                                                .background(Color.Black)
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = cellSubFolder.name,
+                                                    fontSize = labelFontSize,
+                                                    fontFamily = labelFontFamily ?: FontFamily.Default,
+                                                    color = com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .graphicsLayer { alpha = cellLabelAlpha },
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        shadow = androidx.compose.ui.graphics.Shadow(
+                                                            color = Color.Black,
+                                                            offset = Offset(1f, 1f),
+                                                            blurRadius = 3f
+                                                        )
+                                                    )
+                                                )
+                                            }
+                                        }
+
+                                        // Sub-folder context menu
+                                        AnimatedPopup(
+                                            visible = contextMenuCellIdx == cellIdx &&
+                                                cellIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                                            onDismissRequest = { contextMenuCellIdx = null },
+                                            iconBoundsInRoot = cellIconBoundsInRoot
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .defaultMinSize(minHeight = 48.dp)
+                                                    .padding(horizontal = 16.dp),
+                                                contentAlignment = Alignment.CenterStart
+                                            ) {
+                                                Text(
+                                                    text = cellSubFolder.name,
+                                                    fontWeight = FontWeight.Bold,
+                                                    lineHeight = 22.sp,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Divider()
+                                            DropdownMenuItem(
+                                                text = { Text("Open") },
+                                                leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                                                onClick = {
+                                                    contextMenuCellIdx = null
+                                                    onOpenSubFolder(cellSubFolder)
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Remove from folder") },
+                                                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                                                onClick = {
+                                                    contextMenuCellIdx = null
+                                                    onRemoveSubFolder(cellSubFolder.id)
+                                                }
+                                            )
+                                        }
                                     } else {
                                         // Empty cell — show hover indicator when dragged over
                                         GridCellHoverIndicator(

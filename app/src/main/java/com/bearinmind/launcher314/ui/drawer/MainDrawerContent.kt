@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -105,6 +106,10 @@ internal data class DrawerExtraCallbacks(
     val onFolderPositioned: (String, Offset) -> Unit = { _, _ -> },
     val onAddAppToFolder: (AppInfo, AppFolder) -> Unit = { _, _ -> },
     val onDeleteFolder: (AppFolder) -> Unit = {},
+    // Nest `child` inside `parent` (sub-folders, issue #71).
+    val onMoveFolderToFolder: (AppFolder, AppFolder) -> Unit = { _, _ -> },
+    // All folders, so previews can resolve nested folder: entries.
+    val allFolders: List<AppFolder> = emptyList(),
     val onAddToHome: (AppInfo) -> Unit = {},
     val onAddFolderToHome: (AppFolder) -> Unit = {},
     val onBulkAddToFolder: (List<AppInfo>, AppFolder) -> Unit = { _, _ -> },
@@ -316,6 +321,24 @@ internal fun MainDrawerContent(
                 if (hoveredFolderKey != previousHovered && hoveredFolderKey != null) {
                     drawerHaptic.performTextHandleMove()
                 }
+            } else if (!transferredToHome && !isDropZoneHovered && drawerDraggedItem is AppFolder) {
+                // Dragging a folder — hover other folders to nest into (issue #71).
+                val draggedFolder = drawerDraggedItem as AppFolder
+                val overlayCenter = Offset(
+                    overlayPos.x + drawerDragCellSize.width / 2f,
+                    overlayPos.y + drawerDragCellSize.height / 2f
+                )
+                val previousHovered = hoveredFolderKey
+                hoveredFolderKey = drawerCellPositions.entries.firstOrNull { (key, pos) ->
+                    if (!key.startsWith("folder_")) return@firstOrNull false
+                    if (key.removePrefix("folder_") == draggedFolder.id) return@firstOrNull false
+                    val size = drawerCellSizes[key] ?: return@firstOrNull false
+                    val bounds = Rect(pos.x, pos.y, pos.x + size.width.toFloat(), pos.y + size.height.toFloat())
+                    bounds.contains(overlayCenter)
+                }?.key
+                if (hoveredFolderKey != previousHovered && hoveredFolderKey != null) {
+                    drawerHaptic.performTextHandleMove()
+                }
             } else if (transferredToHome || isDropZoneHovered) {
                 hoveredFolderKey = null
             }
@@ -398,6 +421,33 @@ internal fun MainDrawerContent(
                 hoveredFolderKey = null
             }
             } // close isAppDrop else
+        } else if (hoveredFolderKey?.startsWith("folder_") == true && drawerDraggedItem is AppFolder) {
+            // Folder dropped onto a folder — nest it, shrink animation (issue #71).
+            val draggedFolder = drawerDraggedItem as AppFolder
+            val folderId = hoveredFolderKey!!.removePrefix("folder_")
+            val targetFolder = folders.firstOrNull { it.id == folderId }
+            val targetFolderPos = drawerCellPositions[hoveredFolderKey!!] ?: Offset.Zero
+            val targetFolderSize = drawerCellSizes[hoveredFolderKey!!] ?: IntSize.Zero
+            folderDropTargetPos = Offset(
+                targetFolderPos.x + targetFolderSize.width / 2f,
+                targetFolderPos.y + targetFolderSize.height / 2f
+            )
+            drawerDragCurrentOffset = drawerDragOffset
+            folderDropAnimating = true
+            drawerIsDropAnimating = true
+            drawerDragScope.launch {
+                drawerDropAnim.snapTo(0f)
+                drawerDropAnim.animateTo(1f, tween(400, easing = FastOutSlowInEasing))
+                if (targetFolder != null) {
+                    extraCallbacks.onMoveFolderToFolder(draggedFolder, targetFolder)
+                }
+                drawerDraggedItem = null
+                drawerDragOffset = Offset.Zero
+                drawerDragCurrentOffset = Offset.Zero
+                drawerIsDropAnimating = false
+                folderDropAnimating = false
+                hoveredFolderKey = null
+            }
         } else if (isDropZoneHovered && drawerDraggedItem != null) {
             // Finger lifted on the zone — transition to home
             val cellCenter = Offset(drawerDragCellSize.width / 2f, drawerDragCellSize.height / 2f)
@@ -1070,10 +1120,17 @@ internal fun MainDrawerContent(
                                                         (drawerDraggedItem as AppInfo).iconPath
                                                     else if (escapeHoverState?.folderId == cellItem.id) escapeHoverState.iconPath
                                                     else null,
+                                                    draggedFolder = if (hoveredFolderKey == "folder_${cellItem.id}" && drawerDraggedItem is AppFolder)
+                                                        drawerDraggedItem as AppFolder else null,
+                                                    allFolders = extraCallbacks.allFolders,
                                                     iconClipShape = iconClipShape,
                                                     iconBgColor = iconBgColor,
                                                     globalIconShapeName = globalIconShapeName,
-                                                    onCustomize = { localCustomizingFolder = cellItem }
+                                                    onCustomize = { localCustomizingFolder = cellItem },
+                                                    moveTargetFolders = folders.filter { it.id != cellItem.id },
+                                                    onMoveIntoFolder = { target ->
+                                                        extraCallbacks.onMoveFolderToFolder(cellItem, target)
+                                                    }
                                                 )
                                             } else if (cellItem is AppInfo) {
                                                 val selectedApps = filteredApps.filter { it.packageName in selectedAppPackages }
@@ -1272,10 +1329,17 @@ internal fun MainDrawerContent(
                                     (drawerDraggedItem as AppInfo).iconPath
                                 else if (escapeHoverState?.folderId == folder.id) escapeHoverState.iconPath
                                 else null,
+                                draggedFolder = if (hoveredFolderKey == cellKey && drawerDraggedItem is AppFolder)
+                                    drawerDraggedItem as AppFolder else null,
+                                allFolders = extraCallbacks.allFolders,
                                 iconClipShape = iconClipShape,
                                 iconBgColor = iconBgColor,
                                 globalIconShapeName = globalIconShapeName,
-                                onCustomize = { localCustomizingFolder = folder }
+                                onCustomize = { localCustomizingFolder = folder },
+                                moveTargetFolders = folders.filter { it.id != folder.id },
+                                onMoveIntoFolder = { target ->
+                                    extraCallbacks.onMoveFolderToFolder(folder, target)
+                                }
                             )
                         }
                     }
@@ -1506,50 +1570,20 @@ internal fun MainDrawerContent(
             ) {
                 val dragItem = drawerDraggedItem
                 if (dragItem is AppFolder) {
-                    // Folder overlay: 2x2 preview + label
-                    val previewApps = remember(dragItem.appPackageNames, allApps) {
-                        val validPkgs = dragItem.appPackageNames.filter { it.isNotEmpty() }
-                        allApps.filter { it.packageName in validPkgs }.take(4)
-                    }
+                    // Same MiniFolderBox as the resting cell, so the folder keeps
+                    // its exact look (outline included) mid-drag.
                     Column(
                         modifier = Modifier.padding(8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        BoxWithConstraints(
-                            modifier = Modifier
-                                .size(iconSize.dp)
-                                .clip(RoundedCornerShape((iconSize * 0.29f).dp))
-                                .background(Color(0xFF1A1A1A)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (previewApps.isNotEmpty()) {
-                                val boxSize = maxWidth
-                                val padding = boxSize * 0.08f
-                                val spacing = boxSize * 0.04f
-                                val miniIconSize = (boxSize - padding * 2 - spacing) / 2
-                                Column(
-                                    modifier = Modifier.padding(padding),
-                                    verticalArrangement = Arrangement.spacedBy(spacing)
-                                ) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                                        previewApps.getOrNull(0)?.let { app ->
-                                            FolderPreviewIcon(app, miniIconSize)
-                                        } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                        previewApps.getOrNull(1)?.let { app ->
-                                            FolderPreviewIcon(app, miniIconSize)
-                                        } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                                        previewApps.getOrNull(2)?.let { app ->
-                                            FolderPreviewIcon(app, miniIconSize)
-                                        } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                        previewApps.getOrNull(3)?.let { app ->
-                                            FolderPreviewIcon(app, miniIconSize)
-                                        } ?: Spacer(modifier = Modifier.size(miniIconSize))
-                                    }
-                                }
-                            }
-                        }
+                        MiniFolderBox(
+                            folder = dragItem,
+                            allApps = allApps,
+                            size = iconSize.dp,
+                            iconClipShape = iconClipShape,
+                            iconBgColor = iconBgColor,
+                            globalIconShapeName = globalIconShapeName
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = dragItem.name,

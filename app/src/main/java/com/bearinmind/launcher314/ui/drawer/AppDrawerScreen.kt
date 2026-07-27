@@ -402,11 +402,8 @@ fun AppDrawerScreen(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var appsToMoveToNewFolder by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var openFolder by remember { mutableStateOf<AppFolder?>(null) }
-
-    // Back button: if folder is open, close folder and return to drawer
-    BackHandler(enabled = openFolder != null) {
-        openFolder = null
-    }
+    // Parent-folder ids above the currently open folder (sub-folder navigation).
+    var folderNavStack by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // Trigger to clear selection in MainDrawerContent after folder creation
     var clearSelectionTrigger by remember { mutableIntStateOf(0) }
@@ -492,12 +489,36 @@ fun AppDrawerScreen(
     // recreated on each open, so this re-reads fresh from disk every time.
     var folders by remember { mutableStateOf(loadDrawerData(context).folders) }
 
+    // Back button: pop to the parent folder first, then close.
+    BackHandler(enabled = openFolder != null) {
+        val parentId = folderNavStack.lastOrNull()
+        if (parentId != null) {
+            folderNavStack = folderNavStack.dropLast(1)
+            openFolder = folders.firstOrNull { it.id == parentId }
+        } else {
+            openFolder = null
+        }
+    }
+    // Folder UI fully closed (tap-outside, launch, etc.) → reset the nav stack.
+    LaunchedEffect(openFolder) {
+        if (openFolder == null) folderNavStack = emptyList()
+    }
+
     // Save folders when changed
     fun saveFolders(newFolders: List<AppFolder>) {
         Log.d("FolderDebug", "saveFolders: saving ${newFolders.size} folders")
         newFolders.forEach { f -> Log.d("FolderDebug", "  folder '${f.name}' (${f.id}): apps=${f.appPackageNames}") }
         folders = newFolders
         saveDrawerData(context, DrawerData(folders = newFolders))
+    }
+
+    // Delete a folder and strip any parent's reference to it; its own
+    // sub-folders return to top level.
+    fun deleteFolder(folderId: String) {
+        val ref = com.bearinmind.launcher314.data.folderEntry(folderId)
+        saveFolders(folders.filter { it.id != folderId }.map { f ->
+            if (ref in f.appPackageNames) f.copy(appPackageNames = f.appPackageNames - ref) else f
+        })
     }
 
     // Load/refresh app list whenever trigger changes (initial load, package changes).
@@ -754,14 +775,16 @@ fun AppDrawerScreen(
             .background(drawerBackground)
     ) {
         // Main drawer content (always rendered)
-        // During escape drag, filter the escaped app out of the source folder's preview
-        val displayFolders = if (folderEscapedApp != null && folderEscapedFromFolderId != null) {
+        // During escape drag, filter the escaped app out of the source folder's
+        // preview. Nested folders don't show at top level.
+        val nestedIds = com.bearinmind.launcher314.data.nestedFolderIds(folders)
+        val displayFolders = (if (folderEscapedApp != null && folderEscapedFromFolderId != null) {
             folders.map { f ->
                 if (f.id == folderEscapedFromFolderId) {
                     f.copy(appPackageNames = f.appPackageNames - folderEscapedApp!!.packageName)
                 } else f
             }
-        } else folders
+        } else folders).filter { it.id !in nestedIds }
 
         MainDrawerContent(
             searchQuery = searchQuery,
@@ -860,8 +883,21 @@ fun AppDrawerScreen(
                     }
                 },
                 onDeleteFolder = { folder ->
-                    saveFolders(folders.filter { it.id != folder.id })
+                    deleteFolder(folder.id)
                 },
+                onMoveFolderToFolder = { child, parent ->
+                    // Nest `child` inside `parent` (guard against cycles/self).
+                    val blocked = com.bearinmind.launcher314.data.folderAndDescendantIds(folders, child.id)
+                    if (parent.id !in blocked) {
+                        val ref = com.bearinmind.launcher314.data.folderEntry(child.id)
+                        saveFolders(folders.map { f ->
+                            if (f.id == parent.id && ref !in f.appPackageNames)
+                                f.copy(appPackageNames = f.appPackageNames + ref)
+                            else f
+                        })
+                    }
+                },
+                allFolders = folders,
                 onAddToHome = onAddToHome,
                 onAddFolderToHome = onAddFolderToHome,
                 onBulkAddToFolder = { apps, folder ->
@@ -1050,7 +1086,7 @@ fun AppDrawerScreen(
                         onUninstallApp = { app -> uninstallApp(context, app.packageName) },
                         onAppInfo = { app -> openAppInfo(context, app.packageName) },
                         onDeleteFolder = {
-                            saveFolders(folders.filter { it.id != currentFolder.id })
+                            deleteFolder(currentFolder.id)
                             isFolderVisible = false
                         },
                         onRenameFolder = { newName ->
@@ -1059,6 +1095,19 @@ fun AppDrawerScreen(
                             openFolder = updatedFolder
                         },
                         folders = folders,
+                        onOpenSubFolder = { subFolder ->
+                            folderNavStack = folderNavStack + currentFolder.id
+                            openFolder = folders.firstOrNull { it.id == subFolder.id } ?: subFolder
+                        },
+                        onRemoveSubFolder = { subFolderId ->
+                            // Un-nest: drop the reference; the sub-folder reappears at top level.
+                            val ref = com.bearinmind.launcher314.data.folderEntry(subFolderId)
+                            val updatedFolder = currentFolder.copy(
+                                appPackageNames = currentFolder.appPackageNames - ref
+                            )
+                            saveFolders(folders.map { if (it.id == updatedFolder.id) updatedFolder else it })
+                            openFolder = updatedFolder
+                        },
                         onMoveToFolder = { packageName, targetFolder ->
                             // Remove from current folder
                             val updatedCurrentFolder = currentFolder.copy(

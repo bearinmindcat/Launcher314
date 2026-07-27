@@ -40,8 +40,31 @@ data class AppInfo(
 data class AppFolder(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
+    // Package names, "" gap markers, and "folder:<id>" sub-folder refs (issue #71).
     val appPackageNames: List<String> = emptyList()
 )
+
+// ---- Sub-folder entry helpers ----
+const val FOLDER_ENTRY_PREFIX = "folder:"
+fun folderEntry(folderId: String) = "$FOLDER_ENTRY_PREFIX$folderId"
+fun isFolderEntry(entry: String) = entry.startsWith(FOLDER_ENTRY_PREFIX)
+fun folderEntryId(entry: String) = entry.removePrefix(FOLDER_ENTRY_PREFIX)
+
+/** Ids of folders nested inside another folder — hidden from top level. */
+fun nestedFolderIds(folders: List<AppFolder>): Set<String> =
+    folders.flatMap { f -> f.appPackageNames.filter(::isFolderEntry).map(::folderEntryId) }.toSet()
+
+/** [folderId] plus every folder reachable inside it — used to block cycles. */
+fun folderAndDescendantIds(folders: List<AppFolder>, folderId: String): Set<String> {
+    val out = mutableSetOf<String>()
+    fun visit(id: String) {
+        if (!out.add(id)) return
+        folders.firstOrNull { it.id == id }?.appPackageNames
+            ?.filter(::isFolderEntry)?.map(::folderEntryId)?.forEach(::visit)
+    }
+    visit(folderId)
+    return out
+}
 
 @Serializable
 data class DrawerData(

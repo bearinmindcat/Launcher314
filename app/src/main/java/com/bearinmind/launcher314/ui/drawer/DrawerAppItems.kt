@@ -96,11 +96,18 @@ internal fun FolderItem(
     onDelete: () -> Unit = {},
     onAddToHome: () -> Unit = {},
     onCustomize: () -> Unit = {},
+    // Other top-level folders this one can be nested into (issue #71).
+    moveTargetFolders: List<AppFolder> = emptyList(),
+    onMoveIntoFolder: (AppFolder) -> Unit = {},
     onDragStarted: (() -> Unit)? = null,
     onDragMoved: ((Offset) -> Unit)? = null,
     onDragEnded: (() -> Unit)? = null,
     isDragHovered: Boolean = false,
     draggedIconPath: String? = null,
+    // Set while a folder hovers over this one — previewed in the free slot (issue #71).
+    draggedFolder: AppFolder? = null,
+    // All folders, so the preview can resolve nested folder: entries.
+    allFolders: List<AppFolder> = emptyList(),
     iconClipShape: androidx.compose.ui.graphics.Shape? = null,
     iconBgColor: Int? = null,
     globalIconShapeName: String? = null
@@ -117,23 +124,63 @@ internal fun FolderItem(
     // folder cell.
     var folderIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
-    // Get the first 4 apps in this folder for preview (filter empty gap markers)
-    val previewApps = remember(folder.appPackageNames, allApps) {
-        val validPkgs = folder.appPackageNames.filter { it.isNotEmpty() }
-        allApps.filter { it.packageName in validPkgs }.take(4)
+    // First 4 items for the preview — apps and nested folders, in list order.
+    val previewItems: List<Any> = remember(folder.appPackageNames, allApps, allFolders) {
+        folder.appPackageNames.filter { it.isNotEmpty() }.mapNotNull { entry ->
+            if (com.bearinmind.launcher314.data.isFolderEntry(entry)) {
+                allFolders.firstOrNull { it.id == com.bearinmind.launcher314.data.folderEntryId(entry) }
+            } else {
+                allApps.firstOrNull { it.packageName == entry }
+            }
+        }.take(4)
     }
 
-    // Animated fade-in for dragged icon preview in folder
+    // Animated fade-in for dragged icon preview in folder (app OR folder drag)
     var lastDraggedIconPath by remember { mutableStateOf<String?>(null) }
     if (draggedIconPath != null) lastDraggedIconPath = draggedIconPath
+    val hasDragPreview = draggedIconPath != null || draggedFolder != null
     val dragIconProgress by animateFloatAsState(
-        targetValue = if (draggedIconPath != null) 1f else 0f,
-        animationSpec = if (draggedIconPath != null) tween(durationMillis = 300) else snap(),
+        targetValue = if (hasDragPreview) 1f else 0f,
+        animationSpec = if (hasDragPreview) tween(durationMillis = 300) else snap(),
         label = "folderDragIconProgress",
         finishedListener = { value -> if (value == 0f) lastDraggedIconPath = null }
     )
     val effectiveDraggedIconPath = draggedIconPath ?: lastDraggedIconPath
-    val addSlotIndex = previewApps.size.coerceAtMost(3)
+    val addSlotIndex = previewItems.size.coerceAtMost(3)
+
+    // What fades into the free slot: the dragged app's icon, or a mini folder box.
+    val dragPreviewSlot: @Composable (androidx.compose.ui.unit.Dp) -> Unit = { mini ->
+        if (draggedFolder != null) {
+            MiniFolderBox(
+                folder = draggedFolder,
+                allApps = allApps,
+                size = mini,
+                iconClipShape = iconClipShape,
+                iconBgColor = iconBgColor,
+                globalIconShapeName = globalIconShapeName,
+                borderWidth = 0.5.dp,
+                alpha = dragIconProgress
+            )
+        } else if (draggedIconPath != null) {
+            AsyncImage(
+                model = File(draggedIconPath),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(mini)
+                    .clip(RoundedCornerShape(mini * 0.2f))
+                    .graphicsLayer { alpha = dragIconProgress }
+            )
+        }
+    }
+
+    // One preview slot of the resting 2x2 — an app icon or a nested folder box.
+    val previewItemSlot: @Composable (Any, androidx.compose.ui.unit.Dp, Float) -> Unit = { item, mini, itemAlpha ->
+        when (item) {
+            is AppInfo -> FolderPreviewIcon(item, mini, alpha = itemAlpha, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
+            is AppFolder -> MiniFolderBox(item, allApps, mini, iconClipShape, iconBgColor, globalIconShapeName, borderWidth = 0.5.dp, alpha = itemAlpha)
+        }
+    }
 
     // Animate scale when context menu is shown (matches home screen folder style)
     val menuScale by animateFloatAsState(
@@ -316,7 +363,7 @@ internal fun FolderItem(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                if (previewApps.isNotEmpty() || (draggedIconPath != null && dragIconProgress > 0f)) {
+                if (previewItems.isNotEmpty() || (hasDragPreview && dragIconProgress > 0f)) {
                     val boxSize = maxWidth
                     val padding = boxSize * 0.12f
                     val spacing = boxSize * 0.05f
@@ -327,88 +374,42 @@ internal fun FolderItem(
                         verticalArrangement = Arrangement.spacedBy(spacing)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                            previewApps.getOrNull(0)?.let { app ->
-                                FolderPreviewIcon(app, miniIconSize, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
-                            } ?: if (addSlotIndex == 0 && draggedIconPath != null && dragIconProgress > 0f) {
-                                AsyncImage(
-                                    model = File(draggedIconPath),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .size(miniIconSize)
-                                        .clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                        .graphicsLayer { alpha = dragIconProgress }
-                                )
+                            previewItems.getOrNull(0)?.let { item ->
+                                previewItemSlot(item, miniIconSize, 1f)
+                            } ?: if (addSlotIndex == 0 && hasDragPreview && dragIconProgress > 0f) {
+                                dragPreviewSlot(miniIconSize)
                             } else {
                                 Spacer(modifier = Modifier.size(miniIconSize))
                             }
-                            previewApps.getOrNull(1)?.let { app ->
-                                FolderPreviewIcon(app, miniIconSize, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
-                            } ?: if (addSlotIndex == 1 && draggedIconPath != null && dragIconProgress > 0f) {
-                                AsyncImage(
-                                    model = File(draggedIconPath),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .size(miniIconSize)
-                                        .clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                        .graphicsLayer { alpha = dragIconProgress }
-                                )
+                            previewItems.getOrNull(1)?.let { item ->
+                                previewItemSlot(item, miniIconSize, 1f)
+                            } ?: if (addSlotIndex == 1 && hasDragPreview && dragIconProgress > 0f) {
+                                dragPreviewSlot(miniIconSize)
                             } else {
                                 Spacer(modifier = Modifier.size(miniIconSize))
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                            previewApps.getOrNull(2)?.let { app ->
-                                FolderPreviewIcon(app, miniIconSize, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
-                            } ?: if (addSlotIndex == 2 && draggedIconPath != null && dragIconProgress > 0f) {
-                                AsyncImage(
-                                    model = File(draggedIconPath),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .size(miniIconSize)
-                                        .clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                        .graphicsLayer { alpha = dragIconProgress }
-                                )
+                            previewItems.getOrNull(2)?.let { item ->
+                                previewItemSlot(item, miniIconSize, 1f)
+                            } ?: if (addSlotIndex == 2 && hasDragPreview && dragIconProgress > 0f) {
+                                dragPreviewSlot(miniIconSize)
                             } else {
                                 Spacer(modifier = Modifier.size(miniIconSize))
                             }
-                            // Slot 3 — when all 4 slots occupied and hovering, crossfade to dragged app
-                            if (draggedIconPath != null && dragIconProgress > 0f && previewApps.size >= 4) {
+                            // Slot 3 — when all 4 slots occupied and hovering, crossfade to dragged item
+                            if (hasDragPreview && dragIconProgress > 0f && previewItems.size >= 4) {
                                 Box(modifier = Modifier.size(miniIconSize)) {
-                                    previewApps.getOrNull(3)?.let { app ->
-                                        FolderPreviewIcon(
-                                            app, miniIconSize,
-                                            alpha = 1f - dragIconProgress,
-                                            iconClipShape = iconClipShape,
-                                            iconBgColor = iconBgColor,
-                                            globalIconShapeName = globalIconShapeName
-                                        )
+                                    previewItems.getOrNull(3)?.let { item ->
+                                        previewItemSlot(item, miniIconSize, 1f - dragIconProgress)
                                     }
-                                    AsyncImage(
-                                        model = File(draggedIconPath),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Fit,
-                                        modifier = Modifier
-                                            .size(miniIconSize)
-                                            .clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                            .graphicsLayer { alpha = dragIconProgress }
-                                    )
+                                    dragPreviewSlot(miniIconSize)
                                 }
                             } else {
-                                previewApps.getOrNull(3)?.let { app ->
-                                    FolderPreviewIcon(app, miniIconSize, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
-                                } ?: if (addSlotIndex == 3 && draggedIconPath != null && dragIconProgress > 0f) {
-                                    AsyncImage(
-                                        model = File(draggedIconPath),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Fit,
-                                        modifier = Modifier
-                                            .size(miniIconSize)
-                                            .clip(RoundedCornerShape(miniIconSize * 0.2f))
-                                            .graphicsLayer { alpha = dragIconProgress }
-                                    )
+                                previewItems.getOrNull(3)?.let { item ->
+                                    previewItemSlot(item, miniIconSize, 1f)
+                                } ?: if (addSlotIndex == 3 && hasDragPreview && dragIconProgress > 0f) {
+                                    dragPreviewSlot(miniIconSize)
                                 } else {
                                     Spacer(modifier = Modifier.size(miniIconSize))
                                 }
@@ -509,6 +510,16 @@ internal fun FolderItem(
                             },
                             leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
                         )
+                        moveTargetFolders.forEach { target ->
+                            DropdownMenuItem(
+                                text = { Text("Move to ${target.name}") },
+                                onClick = {
+                                    showContextMenu = false
+                                    onMoveIntoFolder(target)
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) }
+                            )
+                        }
             }
 
         if (showDeleteConfirmDialog) {
@@ -521,6 +532,79 @@ internal fun FolderItem(
                 },
                 onDismiss = { showDeleteConfirmDialog = false }
             )
+        }
+    }
+}
+
+/**
+ * The folder-icon look at any size — one source of truth for the resting cell,
+ * drag overlay, hover preview, and sub-folder cells.
+ */
+@Composable
+internal fun MiniFolderBox(
+    folder: AppFolder,
+    allApps: List<AppInfo>,
+    size: Dp,
+    iconClipShape: androidx.compose.ui.graphics.Shape? = null,
+    iconBgColor: Int? = null,
+    globalIconShapeName: String? = null,
+    borderWidth: Dp = 1.dp,
+    alpha: Float = 1f,
+    modifier: Modifier = Modifier
+) {
+    val miniBoxContext = LocalContext.current
+    val customIcon = remember(folder.id) {
+        com.bearinmind.launcher314.data.folderCustomIconPath(
+            com.bearinmind.launcher314.data.loadAppCustomizations(miniBoxContext)
+                .customizations["folder_${folder.id}"]
+        )
+    }
+    val boxPreviewApps = remember(folder.appPackageNames, allApps) {
+        val pkgs = folder.appPackageNames.filter {
+            it.isNotEmpty() && !com.bearinmind.launcher314.data.isFolderEntry(it)
+        }
+        allApps.filter { it.packageName in pkgs }.take(4)
+    }
+    // Lay out from the ACTUAL size — a small cell can clamp us below `size`,
+    // and sizing the interior off the request then overflows.
+    BoxWithConstraints(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+        val actual = androidx.compose.ui.unit.min(maxWidth, maxHeight).coerceAtMost(size)
+        val shape = iconClipShape ?: RoundedCornerShape(actual * 0.29f)
+        Box(
+            modifier = Modifier
+                .size(actual)
+                .graphicsLayer { this.alpha = alpha }
+                .clip(shape)
+                .background(Color(0xFF1A1A1A))
+                .border(borderWidth, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, shape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (customIcon != null) {
+                AsyncImage(
+                    model = File(customIcon),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (boxPreviewApps.isNotEmpty()) {
+                val padding = actual * 0.12f
+                val spacing = actual * 0.05f
+                val mini = (actual - padding * 2 - spacing) / 2
+                Column(
+                    modifier = Modifier.padding(padding),
+                    verticalArrangement = Arrangement.spacedBy(spacing)
+                ) {
+                    for (r in 0 until 2) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                            for (c in 0 until 2) {
+                                boxPreviewApps.getOrNull(r * 2 + c)?.let {
+                                    FolderPreviewIcon(it, mini, iconClipShape = iconClipShape, iconBgColor = iconBgColor, globalIconShapeName = globalIconShapeName)
+                                } ?: Spacer(Modifier.size(mini))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
