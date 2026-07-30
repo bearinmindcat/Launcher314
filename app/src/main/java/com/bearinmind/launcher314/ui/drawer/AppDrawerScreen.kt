@@ -448,6 +448,7 @@ fun AppDrawerScreen(
 
     // Sort state — initialized from saved prefs so the user's choice persists across
     // open/close and returning from the dock (issue #4). Defaults to Name / ascending.
+    val sortFoldersEnabled = remember { com.bearinmind.launcher314.data.getSortFoldersEnabled(context) }
     var currentSortOption by remember { mutableStateOf(com.bearinmind.launcher314.data.getDrawerSortOption(context)) }
     var isSortAscending by remember { mutableStateOf(com.bearinmind.launcher314.data.getDrawerSortAscending(context)) }
 
@@ -786,6 +787,21 @@ fun AppDrawerScreen(
             }
         } else folders).filter { it.id !in nestedIds }
 
+        // Folders follow the app sort dropdown; MANUAL falls back to alphabetical
+        // on the app side too, so folders match.
+        val sortedDisplayFolders = if (!sortFoldersEnabled) displayFolders else when (currentSortOption) {
+            SortOption.NAME, SortOption.MANUAL -> if (isSortAscending)
+                displayFolders.sortedBy { it.name.lowercase() }
+                else displayFolders.sortedByDescending { it.name.lowercase() }
+            SortOption.SIZE -> {
+                val count = { f: AppFolder -> f.appPackageNames.count { it.isNotEmpty() } }
+                if (isSortAscending) displayFolders.sortedBy(count) else displayFolders.sortedByDescending(count)
+            }
+            // No timestamps on a folder — stored order is creation order.
+            SortOption.INSTALLED, SortOption.UPDATED ->
+                if (isSortAscending) displayFolders else displayFolders.reversed()
+        }
+
         MainDrawerContent(
             searchQuery = searchQuery,
             onSearchQueryChange = { searchQuery = it },
@@ -812,7 +828,7 @@ fun AppDrawerScreen(
                     (drawerTabsEnabled && selectedDrawerTabId != null) ||
                     selectedProfile != com.bearinmind.launcher314.helpers.ProfileType.PERSONAL)
                 emptyList()
-                else displayFolders.map { folder ->
+                else sortedDisplayFolders.map { folder ->
                     folder.copy(appPackageNames = folder.appPackageNames.filter { it !in hiddenApps })
                 },
             filteredApps = filteredApps,
@@ -898,6 +914,7 @@ fun AppDrawerScreen(
                     }
                 },
                 allFolders = folders,
+                sortFoldersWithApps = sortFoldersEnabled,
                 onAddToHome = onAddToHome,
                 onAddFolderToHome = onAddFolderToHome,
                 onBulkAddToFolder = { apps, folder ->

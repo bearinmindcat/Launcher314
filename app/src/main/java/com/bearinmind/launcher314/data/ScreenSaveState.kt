@@ -464,6 +464,19 @@ fun setReverseDrawerSearchBar(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_REVERSE_SEARCH_BAR, enabled).apply()
 }
 
+// Include drawer folders in the sort order. Default on.
+private const val KEY_SORT_FOLDERS = "drawer_sort_folders"
+
+fun getSortFoldersEnabled(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_SORT_FOLDERS, true)
+}
+
+fun setSortFoldersEnabled(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_SORT_FOLDERS, enabled).apply()
+}
+
 // Hide the drawer's top section entirely — the search bar AND its (⋮) settings
 // menu. Also removes the search-bar drop zone used to drag an app to the home
 // screen. Default off.

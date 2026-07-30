@@ -49,6 +49,8 @@ import com.bearinmind.launcher314.data.getScrollbarColor
 import com.bearinmind.launcher314.data.getScrollbarHeightPercent
 import com.bearinmind.launcher314.data.getScrollbarIntensity
 import com.bearinmind.launcher314.data.getScrollbarWidthPercent
+import com.bearinmind.launcher314.data.getSortFoldersEnabled
+import com.bearinmind.launcher314.data.setSortFoldersEnabled
 import com.bearinmind.launcher314.data.isFuzzySearchEnabled
 import com.bearinmind.launcher314.data.isRecentFirstSearchEnabled
 import com.bearinmind.launcher314.data.isSuggestedAppsEnabled
@@ -99,6 +101,7 @@ fun EditDrawerSettingsScreen(
     var suggestedEnabled by remember { mutableStateOf(isSuggestedAppsEnabled(context)) }
     var reverseSearchBar by remember { mutableStateOf(getReverseDrawerSearchBar(context)) }
     var hideSearchBar by remember { mutableStateOf(getHideDrawerSearchBar(context)) }
+    var sortFolders by remember { mutableStateOf(getSortFoldersEnabled(context)) }
     var autoOpenKeyboard by remember { mutableStateOf(getAutoOpenKeyboard(context)) }
     var autoLaunchSearchResult by remember { mutableStateOf(getAutoLaunchSearchResult(context)) }
 
@@ -197,6 +200,15 @@ fun EditDrawerSettingsScreen(
             title = "Hide search bar",
             checked = hideSearchBar,
             onCheckedChange = { hideSearchBar = it; setHideDrawerSearchBar(context, it) }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsToggleItem(
+            title = "Add folders to sorting",
+            subtitle = "Allowed folders to be sorted instead of staying at the top of the list",
+            checked = sortFolders,
+            onCheckedChange = { sortFolders = it; setSortFoldersEnabled(context, it) }
         )
 
         Spacer(Modifier.height(8.dp))

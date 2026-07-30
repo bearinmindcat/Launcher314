@@ -110,6 +110,8 @@ internal data class DrawerExtraCallbacks(
     val onMoveFolderToFolder: (AppFolder, AppFolder) -> Unit = { _, _ -> },
     // All folders, so previews can resolve nested folder: entries.
     val allFolders: List<AppFolder> = emptyList(),
+    // Sort folders in with the apps instead of pinning them to the top.
+    val sortFoldersWithApps: Boolean = false,
     val onAddToHome: (AppInfo) -> Unit = {},
     val onAddFolderToHome: (AppFolder) -> Unit = {},
     val onBulkAddToFolder: (List<AppInfo>, AppFolder) -> Unit = { _, _ -> },
@@ -951,7 +953,10 @@ internal fun MainDrawerContent(
 
             // Combine folders and apps into a single display list
             // Folders go first, then apps
-            val allDisplayItems = remember(folders, filteredApps, searchQuery, allApps) {
+            val allDisplayItems = remember(
+                folders, filteredApps, searchQuery, allApps,
+                extraCallbacks.sortFoldersWithApps, currentSortOption, isSortAscending
+            ) {
                 val items = mutableListOf<Any>()
                 if (searchQuery.isBlank()) {
                     // Show all folders when not searching
@@ -967,7 +972,19 @@ internal fun MainDrawerContent(
                     })
                 }
                 items.addAll(filteredApps)
-                items
+                // Sort folders in among the apps when the setting is on.
+                val interleave = extraCallbacks.sortFoldersWithApps &&
+                    (currentSortOption == SortOption.NAME || currentSortOption == SortOption.MANUAL)
+                if (!interleave) items else {
+                    val nameOf = { item: Any ->
+                        when (item) {
+                            is AppFolder -> item.name.lowercase()
+                            is AppInfo -> item.name.lowercase()
+                            else -> ""
+                        }
+                    }
+                    if (isSortAscending) items.sortedBy(nameOf) else items.sortedByDescending(nameOf)
+                }
             }
 
             val pageCount = if (allDisplayItems.isEmpty()) 1
@@ -980,6 +997,11 @@ internal fun MainDrawerContent(
                 if (pagerState.currentPage != 0) {
                     pagerState.scrollToPage(0)
                 }
+            }
+
+            // Re-sorting keeps the same item count, so jump back to the top here too.
+            LaunchedEffect(currentSortOption, isSortAscending) {
+                if (pagerState.currentPage != 0) pagerState.scrollToPage(0)
             }
 
             // Cancel any active drag when pager scrolls (prevents app from "disappearing")
@@ -1261,6 +1283,11 @@ internal fun MainDrawerContent(
             // Scroll mode: LazyVerticalGrid with scrollbar
             val gridState = rememberLazyGridState()
 
+            // Jump back to the top when the sort changes.
+            LaunchedEffect(currentSortOption, isSortAscending) {
+                gridState.scrollToItem(0)
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1283,11 +1310,32 @@ internal fun MainDrawerContent(
                             }
                         }
                     }
+                    // Folders and apps in ONE list so folders can sort in among the
+                    // apps rather than always leading.
+                    val nameOf = { item: Any ->
+                        when (item) {
+                            is AppFolder -> item.name.lowercase()
+                            is AppInfo -> item.name.lowercase()
+                            else -> ""
+                        }
+                    }
+                    val interleave = extraCallbacks.sortFoldersWithApps &&
+                        (currentSortOption == SortOption.NAME || currentSortOption == SortOption.MANUAL)
+                    val mergedItems: List<Any> = when {
+                        !interleave -> displayFolders + filteredApps
+                        isSortAscending -> (displayFolders + filteredApps).sortedBy(nameOf)
+                        else -> (displayFolders + filteredApps).sortedByDescending(nameOf)
+                    }
                     items(
-                        items = displayFolders,
-                        key = { "folder_${it.id}" },
-                        contentType = { "folder" }
-                    ) { folder ->
+                        items = mergedItems,
+                        key = { item ->
+                            if (item is AppFolder) "folder_${item.id}"
+                            else (item as AppInfo).let { "${it.packageName}#${it.userSerial ?: 0}" }
+                        },
+                        contentType = { if (it is AppFolder) "folder" else "app" }
+                    ) { listItem ->
+                    if (listItem is AppFolder) {
+                        val folder = listItem
                         val cellKey = "folder_${folder.id}"
                         val isDragTarget = drawerDraggedItem == folder
                         val cellDragStart: () -> Unit = {
@@ -1344,16 +1392,8 @@ internal fun MainDrawerContent(
                         }
                     }
 
-                    // Then show apps
-                    items(
-                        items = filteredApps,
-                        // Composite key (pkg, userSerial) — same package can
-                        // appear in BOTH personal and work profile; using
-                        // packageName alone would collide and crash the
-                        // LazyGrid with "Key X was already used".
-                        key = { "${it.packageName}#${it.userSerial ?: 0}" },
-                        contentType = { "app" }
-                    ) { app ->
+                    if (listItem is AppInfo) {
+                        val app = listItem
                         val cellKey = "app_${app.packageName}_u${app.userSerial ?: 0}"
                         val isDragTarget = drawerDraggedItem == app
                         val cellDragStart: () -> Unit = {
@@ -1448,6 +1488,7 @@ internal fun MainDrawerContent(
                                 onCustomize = { onCustomizeApp(app) }
                             )
                         }
+                    }
                     }
                 }
 
