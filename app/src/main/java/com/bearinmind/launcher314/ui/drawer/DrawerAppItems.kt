@@ -1853,7 +1853,7 @@ internal fun SelectableAppItem(
                                             thumbSelectedColor = sbColor.copy(alpha = 0.9f),
                                             thumbWidth = 4.dp,
                                             thumbMinHeight = 24.dp,
-                                            alwaysShow = true
+                                            alwaysShow = !com.bearinmind.launcher314.data.getAutoHideScrollbar(LocalContext.current)
                                         )
                                         }
                                     }

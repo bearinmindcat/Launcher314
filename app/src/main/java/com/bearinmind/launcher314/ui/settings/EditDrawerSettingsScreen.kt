@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bearinmind.launcher314.data.getAutoHideScrollbar
 import com.bearinmind.launcher314.data.getAutoLaunchSearchResult
 import com.bearinmind.launcher314.data.getAutoOpenKeyboard
 import com.bearinmind.launcher314.data.getDrawerSearchFuzziness
@@ -245,7 +246,7 @@ fun EditDrawerSettingsScreen(
             thumbWidth = sbWidth.dp,
             thumbMinHeight = sbHeight.dp,
             hideDelayMillis = 1500,
-            alwaysShow = true
+            alwaysShow = !getAutoHideScrollbar(context)
         )
         } // end Box
     }

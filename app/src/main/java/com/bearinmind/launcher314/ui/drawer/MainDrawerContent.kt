@@ -216,6 +216,7 @@ internal fun MainDrawerContent(
 
     val reverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
     val hideSearchBar = com.bearinmind.launcher314.data.getHideDrawerSearchBar(LocalContext.current)
+    val autoHideScrollbar = com.bearinmind.launcher314.data.getAutoHideScrollbar(LocalContext.current)
 
     // Track cell positions and sizes for drag overlay positioning (shared across paged/scroll modes)
     // Hoisted here so drag lambdas can access them for folder hover detection
@@ -1530,7 +1531,7 @@ internal fun MainDrawerContent(
                     thumbMinHeight = scrollbarHeight.dp,
                     scrollbarPadding = 0.dp,
                     hideDelayMillis = 1500,
-                    alwaysShow = true
+                    alwaysShow = !autoHideScrollbar
                 )
             }
         }

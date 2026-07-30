@@ -464,6 +464,19 @@ fun setReverseDrawerSearchBar(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_REVERSE_SEARCH_BAR, enabled).apply()
 }
 
+// Fade scrollbars out when idle. Default off.
+private const val KEY_AUTOHIDE_SCROLLBAR = "autohide_scrollbar"
+
+fun getAutoHideScrollbar(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_AUTOHIDE_SCROLLBAR, false)
+}
+
+fun setAutoHideScrollbar(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_AUTOHIDE_SCROLLBAR, enabled).apply()
+}
+
 // Include drawer folders in the sort order. Default on.
 private const val KEY_SORT_FOLDERS = "drawer_sort_folders"
 

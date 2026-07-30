@@ -1385,6 +1385,19 @@ fun ScrollbarPersonalizationCard(
                 adjustedColor = adjustColorIntensity(scrollbarColor, scrollbarIntensity)
             )
         }
+
+        var autoHideScrollbar by remember {
+            mutableStateOf(com.bearinmind.launcher314.data.getAutoHideScrollbar(context))
+        }
+        SettingsToggleItem(
+            title = "Hide scrollbar",
+            subtitle = "Auto hides scrollbar when not in use",
+            checked = autoHideScrollbar,
+            onCheckedChange = {
+                autoHideScrollbar = it
+                com.bearinmind.launcher314.data.setAutoHideScrollbar(context, it)
+            }
+        )
     }
 }
 
@@ -1676,7 +1689,7 @@ fun EditHomeScreenSettingsScreen(
                 thumbWidth = sbWidth.dp,
                 thumbMinHeight = sbHeight.dp,
                 hideDelayMillis = 1500,
-                alwaysShow = true
+                alwaysShow = !com.bearinmind.launcher314.data.getAutoHideScrollbar(context)
             )
         }
     }
