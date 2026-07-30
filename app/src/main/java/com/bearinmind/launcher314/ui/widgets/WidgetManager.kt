@@ -595,6 +595,116 @@ object WidgetManager {
         )
     }
 
+    /** Do two widgets on the same page overlap? */
+    private fun overlaps(a: PlacedWidget, b: PlacedWidget): Boolean {
+        if (a.page != b.page) return false
+        return a.startColumn < b.startColumn + b.columnSpan &&
+            b.startColumn < a.startColumn + a.columnSpan &&
+            a.startRow < b.startRow + b.rowSpan &&
+            b.startRow < a.startRow + a.rowSpan
+    }
+
+    /**
+     * Re-flow placed widgets after a grid-size change (Launcher3's
+     * GridSizeMigrationLogic approach): keep each widget where it is when it
+     * still fits, otherwise shrink it to fit and row-major scan for the first
+     * vacant region, spilling onto later pages when a page is full. Cells taken
+     * by home apps/folders are treated as occupied so widgets don't land on them.
+     */
+    fun reconcileWidgetsToGrid(context: Context, widgets: List<PlacedWidget>): List<PlacedWidget> {
+        if (widgets.isEmpty()) return widgets
+        val columns = getHomeGridSize(context).coerceAtLeast(1)
+        val rows = getHomeGridRows(context).coerceAtLeast(1)
+
+        // Fast path: everything already fits and nothing overlaps.
+        val outOfBounds = widgets.any {
+            it.columnSpan > columns || it.rowSpan > rows ||
+                it.startColumn < 0 || it.startRow < 0 ||
+                it.startColumn + it.columnSpan > columns ||
+                it.startRow + it.rowSpan > rows
+        }
+        val overlapping = widgets.indices.any { i ->
+            (i + 1 until widgets.size).any { j -> overlaps(widgets[i], widgets[j]) }
+        }
+        if (!outOfBounds && !overlapping) return widgets
+
+        // Cells already used by apps / folders, per page.
+        val home = com.bearinmind.launcher314.data.loadHomeScreenData(context)
+        val staticCells = mutableMapOf<Int, MutableSet<Int>>()
+        home.apps.forEach { staticCells.getOrPut(it.page) { mutableSetOf() }.add(it.position) }
+        home.folders.forEach { staticCells.getOrPut(it.page) { mutableSetOf() }.add(it.position) }
+
+        val occupied = mutableMapOf<Int, MutableSet<Int>>()
+        fun cellsOf(page: Int) = occupied.getOrPut(page) {
+            (staticCells[page] ?: emptySet<Int>()).filter { it in 0 until columns * rows }.toMutableSet()
+        }
+        fun regionVacant(page: Int, col: Int, row: Int, w: Int, h: Int): Boolean {
+            if (col < 0 || row < 0 || col + w > columns || row + h > rows) return false
+            val taken = cellsOf(page)
+            for (r in row until row + h) for (c in col until col + w) {
+                if ((r * columns + c) in taken) return false
+            }
+            return true
+        }
+        fun mark(page: Int, col: Int, row: Int, w: Int, h: Int) {
+            val taken = cellsOf(page)
+            for (r in row until row + h) for (c in col until col + w) taken.add(r * columns + c)
+        }
+
+        val maxPage = maxOf(widgets.maxOf { it.page }, home.apps.maxOfOrNull { it.page } ?: 0)
+        // Original reading order, so relative layout is broadly preserved.
+        val ordered = widgets.sortedWith(
+            compareBy({ it.page }, { it.startRow }, { it.startColumn })
+        )
+
+        val result = ordered.map { w ->
+            val span = w.columnSpan.coerceIn(1, columns)
+            val rowSpan = w.rowSpan.coerceIn(1, rows)
+            // Smallest this widget may legally shrink to, if we need the room.
+            val minSpan = try {
+                val info = appWidgetManager?.getAppWidgetInfo(w.appWidgetId)
+                if (info != null) getMinResizeCells(context, info) else Pair(1, 1)
+            } catch (_: Exception) { Pair(1, 1) }
+
+            var placed: PlacedWidget? = null
+            for (page in w.page..maxPage + 1) {
+                // Only the original page may keep the original spot.
+                if (page == w.page && regionVacant(page, w.startColumn, w.startRow, span, rowSpan)) {
+                    placed = w.copy(columnSpan = span, rowSpan = rowSpan)
+                    break
+                }
+                for ((tryW, tryH) in listOf(
+                    span to rowSpan,
+                    minSpan.first.coerceIn(1, span) to minSpan.second.coerceIn(1, rowSpan)
+                )) {
+                    outer@ for (r in 0..rows - tryH) {
+                        for (c in 0..columns - tryW) {
+                            if (regionVacant(page, c, r, tryW, tryH)) {
+                                placed = w.copy(
+                                    page = page, startColumn = c, startRow = r,
+                                    columnSpan = tryW, rowSpan = tryH
+                                )
+                                break@outer
+                            }
+                        }
+                    }
+                    if (placed != null) break
+                }
+                if (placed != null) break
+            }
+            val final = placed ?: w.copy(
+                columnSpan = span, rowSpan = rowSpan,
+                startColumn = w.startColumn.coerceIn(0, columns - span),
+                startRow = w.startRow.coerceIn(0, rows - rowSpan)
+            )
+            mark(final.page, final.startColumn, final.startRow, final.columnSpan, final.rowSpan)
+            final
+        }
+
+        savePlacedWidgets(context, result)
+        return result
+    }
+
     /** Cells needed for one dimension: ceil(sizeDp / realCellDp), min 1. */
     private fun calculateCellCount(sizeInPixels: Int, density: Float, cellDp: Float): Int {
         val sizeInDp = sizeInPixels / density
@@ -621,7 +731,8 @@ object WidgetManager {
     fun loadPlacedWidgets(context: Context): List<PlacedWidget> {
         val jsonString = getPrefs(context).getString(KEY_PLACED_WIDGETS, null) ?: return emptyList()
         return try {
-            json.decodeFromString<List<PlacedWidget>>(jsonString)
+            // Self-heal widgets left oversized by a grid-size change.
+            reconcileWidgetsToGrid(context, json.decodeFromString<List<PlacedWidget>>(jsonString))
         } catch (e: Exception) {
             emptyList()
         }
