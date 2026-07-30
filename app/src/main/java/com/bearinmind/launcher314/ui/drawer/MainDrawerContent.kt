@@ -217,6 +217,7 @@ internal fun MainDrawerContent(
     val reverseSearchBar = getReverseDrawerSearchBar(LocalContext.current)
     val hideSearchBar = com.bearinmind.launcher314.data.getHideDrawerSearchBar(LocalContext.current)
     val autoHideScrollbar = com.bearinmind.launcher314.data.getAutoHideScrollbar(LocalContext.current)
+    val tabsAtBottom = isTabsAtBottom(LocalContext.current)
 
     // Track cell positions and sizes for drag overlay positioning (shared across paged/scroll modes)
     // Hoisted here so drag lambdas can access them for folder hover detection
@@ -854,15 +855,21 @@ internal fun MainDrawerContent(
         // Drawer tabs (user categories) — Neo-style chip row. Hidden while
         // searching, since search spans everything just like profiles do.
         // Gated by the Settings → Drawer Tabs "Enable" checkbox.
-        if (searchQuery.isBlank() && extraCallbacks.tabsEnabled) {
-            DrawerTabRow(
-                tabs = extraCallbacks.drawerTabs,
-                selectedTabId = extraCallbacks.selectedTabId,
-                allApps = allApps,
-                onTabSelected = extraCallbacks.onTabSelected,
-                onTabsChanged = extraCallbacks.onTabsChanged
-            )
+        val tabRowBlock: @Composable () -> Unit = {
+            if (searchQuery.isBlank() && extraCallbacks.tabsEnabled) {
+                // Match the 18dp gap the row gets above the grid when it's on top
+                // (grid contentPadding is 16 top / 8 bottom).
+                if (tabsAtBottom) Spacer(modifier = Modifier.height(8.dp))
+                DrawerTabRow(
+                    tabs = extraCallbacks.drawerTabs,
+                    selectedTabId = extraCallbacks.selectedTabId,
+                    allApps = allApps,
+                    onTabSelected = extraCallbacks.onTabSelected,
+                    onTabsChanged = extraCallbacks.onTabsChanged
+                )
+            }
         }
+        if (!tabsAtBottom) tabRowBlock()
 
         // Suggested apps card (frecency-ranked) — One UI style: shown only while
         // the search bar is focused and the query is still empty (typing replaces
@@ -1701,8 +1708,13 @@ internal fun MainDrawerContent(
         }
         } // close shared wrapper Box
 
+        if (tabsAtBottom) tabRowBlock()
+
         if (reverseSearchBar && !hideSearchBar) {
             searchBarBlock()
+            Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+        } else if (tabsAtBottom) {
+            // Nothing below the tabs — keep them clear of the gesture bar.
             Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars))
         }
     }

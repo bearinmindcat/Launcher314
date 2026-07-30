@@ -253,6 +253,19 @@ fun setHideTabbedAppsFromAll(context: Context, hide: Boolean) {
         .edit().putBoolean(KEY_HIDE_TABBED_FROM_ALL, hide).apply()
 }
 
+// Put the tab chip row under the app grid instead of above it (Nova style).
+private const val KEY_TABS_AT_BOTTOM = "drawer_tabs_at_bottom"
+
+fun isTabsAtBottom(context: Context): Boolean {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(KEY_TABS_AT_BOTTOM, false)
+}
+
+fun setTabsAtBottom(context: Context, enabled: Boolean) {
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_TABS_AT_BOTTOM, enabled).apply()
+}
+
 // Swipe horizontally on the drawer grid to move between tabs (Neo/Nova style).
 // Only active in scroll mode — paged mode already owns horizontal swipes.
 private const val KEY_SWIPE_TABS = "drawer_tabs_swipe"
@@ -1050,6 +1063,16 @@ fun ManageDrawerTabsScreen(onBack: () -> Unit) {
             onCheckedChange = {
                 swipeTabs = it
                 setSwipeTabsEnabled(context, it)
+            }
+        )
+        var tabsBottom by remember { mutableStateOf(isTabsAtBottom(context)) }
+        com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
+            title = "Tabs at bottom",
+            subtitle = "Moves the tab bar below the app list",
+            checked = tabsBottom,
+            onCheckedChange = {
+                tabsBottom = it
+                setTabsAtBottom(context, it)
             }
         )
         var showCounts by remember { mutableStateOf(isShowTabCounts(context)) }
