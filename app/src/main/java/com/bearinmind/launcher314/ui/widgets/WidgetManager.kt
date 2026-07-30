@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
+import com.bearinmind.launcher314.data.getHomeGridRows
+import com.bearinmind.launcher314.data.getHomeGridSize
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -552,46 +554,51 @@ object WidgetManager {
     }
 
     /**
-     * Calculate the number of grid cells a widget needs.
-     * Based on Fossify Launcher approach:
-     * - On Android S+ (API 31), prefer targetCellWidth/targetCellHeight if non-zero
-     * - Otherwise calculate from minWidth/minHeight using formula: ceil((dpValue - 30) / 70)
-     * - minWidth/minHeight are ALWAYS in pixels on all Android versions
+     * The home grid's real cell size in dp (width, height) — same math as
+     * LauncherScreen's grid layout, so spans match what actually renders.
      */
-    fun calculateCellSpan(context: Context, providerInfo: AppWidgetProviderInfo): Pair<Int, Int> {
-        val density = context.resources.displayMetrics.density
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val targetWidth = providerInfo.targetCellWidth
-            val targetHeight = providerInfo.targetCellHeight
-            if (targetWidth > 0 && targetHeight > 0) {
-                // Use target cell dimensions directly (most accurate)
-                Pair(targetWidth, targetHeight)
-            } else {
-                // Calculate from pixel dimensions
-                Pair(
-                    calculateCellCount(providerInfo.minWidth, density),
-                    calculateCellCount(providerInfo.minHeight, density)
-                )
-            }
-        } else {
-            // Pre-Android S: calculate from pixel dimensions
-            Pair(
-                calculateCellCount(providerInfo.minWidth, density),
-                calculateCellCount(providerInfo.minHeight, density)
-            )
-        }
+    fun homeCellSizeDp(context: Context): Pair<Float, Float> {
+        val config = context.resources.configuration
+        val screenWidthDp = config.screenWidthDp.toFloat()
+        val screenHeightDp = config.screenHeightDp.toFloat()
+        val gridColumns = getHomeGridSize(context).coerceAtLeast(1)
+        val gridRows = getHomeGridRows(context).coerceAtLeast(1)
+        val cellWidth = (screenWidthDp - screenWidthDp * 0.044f * 2) / gridColumns
+        val cellHeight = (screenHeightDp - 76f - screenWidthDp * 0.022f * 2) / gridRows
+        return Pair(cellWidth.coerceAtLeast(1f), cellHeight.coerceAtLeast(1f))
     }
 
     /**
-     * Calculate number of cells needed for a widget dimension.
-     * Based on Fossify Launcher formula: ceil((dpValue - 30) / 70)
-     * where 30dp is padding and 70dp is standard cell size.
+     * Calculate the number of grid cells a widget needs (Launcher3 approach):
+     * targetCellWidth/Height when declared (S+), else from minWidth/minHeight
+     * against the REAL cell size — always clamped to the grid, so a widget can
+     * never demand more cells than the grid has.
      */
-    private fun calculateCellCount(sizeInPixels: Int, density: Float): Int {
+    fun calculateCellSpan(context: Context, providerInfo: AppWidgetProviderInfo): Pair<Int, Int> {
+        val density = context.resources.displayMetrics.density
+        val (cellW, cellH) = homeCellSizeDp(context)
+
+        val target = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            providerInfo.targetCellWidth > 0 && providerInfo.targetCellHeight > 0
+        ) {
+            Pair(providerInfo.targetCellWidth, providerInfo.targetCellHeight)
+        } else {
+            Pair(
+                calculateCellCount(providerInfo.minWidth, density, cellW),
+                calculateCellCount(providerInfo.minHeight, density, cellH)
+            )
+        }
+
+        return Pair(
+            target.first.coerceIn(1, getHomeGridSize(context).coerceAtLeast(1)),
+            target.second.coerceIn(1, getHomeGridRows(context).coerceAtLeast(1))
+        )
+    }
+
+    /** Cells needed for one dimension: ceil(sizeDp / realCellDp), min 1. */
+    private fun calculateCellCount(sizeInPixels: Int, density: Float, cellDp: Float): Int {
         val sizeInDp = sizeInPixels / density
-        val cells = kotlin.math.ceil((sizeInDp - 30) / 70.0).toInt()
-        return maxOf(cells, 1)
+        return maxOf(kotlin.math.ceil(sizeInDp / cellDp).toInt(), 1)
     }
 
     // ---- Persistence ----
@@ -726,6 +733,7 @@ object WidgetManager {
      */
     fun getMinResizeCells(context: Context, providerInfo: AppWidgetProviderInfo): Pair<Int, Int> {
         val density = context.resources.displayMetrics.density
+        val (cellW, cellH) = homeCellSizeDp(context)
 
         val minResizeWidth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             providerInfo.minResizeWidth
@@ -740,8 +748,10 @@ object WidgetManager {
         }
 
         return Pair(
-            calculateCellCount(minResizeWidth, density),
-            calculateCellCount(minResizeHeight, density)
+            calculateCellCount(minResizeWidth, density, cellW)
+                .coerceAtMost(getHomeGridSize(context).coerceAtLeast(1)),
+            calculateCellCount(minResizeHeight, density, cellH)
+                .coerceAtMost(getHomeGridRows(context).coerceAtLeast(1))
         )
     }
 
@@ -752,13 +762,14 @@ object WidgetManager {
     fun getMaxResizeCells(context: Context, providerInfo: AppWidgetProviderInfo, maxGridCols: Int, maxGridRows: Int): Pair<Int, Int> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val density = context.resources.displayMetrics.density
+            val (cellW, cellH) = homeCellSizeDp(context)
             val maxWidth = if (providerInfo.maxResizeWidth > 0) {
-                calculateCellCount(providerInfo.maxResizeWidth, density)
+                calculateCellCount(providerInfo.maxResizeWidth, density, cellW)
             } else {
                 maxGridCols
             }
             val maxHeight = if (providerInfo.maxResizeHeight > 0) {
-                calculateCellCount(providerInfo.maxResizeHeight, density)
+                calculateCellCount(providerInfo.maxResizeHeight, density, cellH)
             } else {
                 maxGridRows
             }

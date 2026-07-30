@@ -924,29 +924,9 @@ private fun loadWidgetsGroupedByApp(context: Context): List<AppWidgetGroup> {
                 null
             }
 
-            // Calculate cell size using Fossify's approach:
-            // 1. On Android S+ (API 31), prefer targetCellWidth/targetCellHeight if non-zero
-            // 2. Otherwise calculate from minWidth/minHeight (always in pixels)
-            val (cellWidth, cellHeight) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val targetWidth = providerInfo.targetCellWidth
-                val targetHeight = providerInfo.targetCellHeight
-                if (targetWidth > 0 && targetHeight > 0) {
-                    // Use target cell dimensions directly (most accurate)
-                    Pair(targetWidth, targetHeight)
-                } else {
-                    // Calculate from pixel dimensions
-                    Pair(
-                        calculateCellCount(providerInfo.minWidth, density),
-                        calculateCellCount(providerInfo.minHeight, density)
-                    )
-                }
-            } else {
-                // Pre-Android S: calculate from pixel dimensions
-                Pair(
-                    calculateCellCount(providerInfo.minWidth, density),
-                    calculateCellCount(providerInfo.minHeight, density)
-                )
-            }
+            // Cell span from the REAL home grid cell size, clamped to the grid
+            // (Launcher3 approach) — shared with placement so picker and home agree.
+            val (cellWidth, cellHeight) = WidgetManager.calculateCellSpan(context, providerInfo)
 
             val widgetLabel = providerInfo.loadLabel(packageManager)
 
@@ -976,21 +956,6 @@ private fun loadWidgetsGroupedByApp(context: Context): List<AppWidgetGroup> {
             widgets = widgets.sortedBy { it.label }
         )
     }.sortedBy { it.appName }
-}
-
-/**
- * Calculate number of cells needed for a widget dimension.
- * Based on Fossify Launcher formula: ceil((dpValue - 30) / 70)
- * where 30dp is padding and 70dp is standard cell size.
- *
- * @param sizeInPixels The widget dimension in pixels
- * @param density The display density for dp conversion
- * @return Number of cells needed (minimum 1)
- */
-private fun calculateCellCount(sizeInPixels: Int, density: Float): Int {
-    val sizeInDp = sizeInPixels / density
-    val cells = kotlin.math.ceil((sizeInDp - 30) / 70.0).toInt()
-    return maxOf(cells, 1)
 }
 
 /**
