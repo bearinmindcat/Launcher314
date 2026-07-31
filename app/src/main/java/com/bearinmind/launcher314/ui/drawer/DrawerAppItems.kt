@@ -114,7 +114,8 @@ internal fun FolderItem(
 ) {
     val hapticFeedback = rememberHapticFeedback()
     val drawerFolderContext = LocalContext.current
-    val drawerFolderCust = remember(folder.id) {
+    val drawerFolderCustVersion = com.bearinmind.launcher314.ui.theme.LocalFolderCustomizationVersion.current
+    val drawerFolderCust = remember(folder.id, drawerFolderCustVersion) {
         com.bearinmind.launcher314.data.loadAppCustomizations(drawerFolderContext).customizations["folder_${folder.id}"]
     }
     var showContextMenu by remember { mutableStateOf(false) }
@@ -553,7 +554,8 @@ internal fun MiniFolderBox(
     modifier: Modifier = Modifier
 ) {
     val miniBoxContext = LocalContext.current
-    val customIcon = remember(folder.id) {
+    val miniBoxCustVersion = com.bearinmind.launcher314.ui.theme.LocalFolderCustomizationVersion.current
+    val customIcon = remember(folder.id, miniBoxCustVersion) {
         com.bearinmind.launcher314.data.folderCustomIconPath(
             com.bearinmind.launcher314.data.loadAppCustomizations(miniBoxContext)
                 .customizations["folder_${folder.id}"]

@@ -112,6 +112,8 @@ internal data class DrawerExtraCallbacks(
     val allFolders: List<AppFolder> = emptyList(),
     // Sort folders in with the apps instead of pinning them to the top.
     val sortFoldersWithApps: Boolean = false,
+    // Called after a folder's customization is saved, so cells re-read it.
+    val onFolderCustomizationChanged: () -> Unit = {},
     val onAddToHome: (AppInfo) -> Unit = {},
     val onAddFolderToHome: (AppFolder) -> Unit = {},
     val onBulkAddToFolder: (List<AppInfo>, AppFolder) -> Unit = { _, _ -> },
@@ -864,6 +866,7 @@ internal fun MainDrawerContent(
                     tabs = extraCallbacks.drawerTabs,
                     selectedTabId = extraCallbacks.selectedTabId,
                     allApps = allApps,
+                    allFolders = extraCallbacks.allFolders,
                     onTabSelected = extraCallbacks.onTabSelected,
                     onTabsChanged = extraCallbacks.onTabsChanged
                 )
@@ -1745,10 +1748,12 @@ internal fun MainDrawerContent(
             previewAppIcons = folderPreviewIcons,
             onSave = { newCustomization ->
                 com.bearinmind.launcher314.data.setCustomization(context, localAppCustomizations, folderKey, newCustomization)
+                extraCallbacks.onFolderCustomizationChanged()
                 localCustomizingFolder = null
             },
             onReset = {
                 com.bearinmind.launcher314.data.removeCustomization(context, localAppCustomizations, folderKey)
+                extraCallbacks.onFolderCustomizationChanged()
                 localCustomizingFolder = null
             },
             onDismiss = { localCustomizingFolder = null }

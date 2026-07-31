@@ -16,3 +16,6 @@ val LocalFolderBorderColor = compositionLocalOf { Color.White.copy(alpha = 0.3f)
  * after reading [com.bearinmind.launcher314.data.getHideIconText].
  */
 val LocalHideIconText = compositionLocalOf { false }
+
+/** Bumped when a folder's customization is saved, so cells re-read it. */
+val LocalFolderCustomizationVersion = compositionLocalOf { 0 }

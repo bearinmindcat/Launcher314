@@ -59,6 +59,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,8 +82,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.bearinmind.launcher314.data.AppFolder
 import com.bearinmind.launcher314.data.AppInfo
+import com.bearinmind.launcher314.data.folderEntry
 import com.bearinmind.launcher314.data.getInstalledApps
+import com.bearinmind.launcher314.data.nestedFolderIds
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -414,6 +418,7 @@ internal fun DrawerTabRow(
     tabs: List<DrawerTab>,
     selectedTabId: String?,
     allApps: List<AppInfo>,
+    allFolders: List<AppFolder> = emptyList(),
     onTabSelected: (String?) -> Unit,
     onTabsChanged: (List<DrawerTab>) -> Unit
 ) {
@@ -496,11 +501,16 @@ internal fun DrawerTabRow(
     val hidePlus = remember { isHidePlusChip(tabRowContext) }
     val chipScroll = rememberScrollState()
 
-    // Drag-to-reorder state. liveTabs is a working copy that gets shuffled while
-    // a chip is being dragged and committed (saved) on drop; it resets whenever
-    // the saved list changes.
-    var liveTabs by remember(tabs) { mutableStateOf(tabs) }
+    // Drag-to-reorder state. liveTabs is a working copy shuffled during a drag and
+    // committed on drop. These must be STABLE holders: the row's pointerInput never
+    // restarts, so a remember(tabs) would leave it reading a stale list (newly
+    // added tabs invisible to it).
     var draggingId by remember { mutableStateOf<String?>(null) }
+    val liveTabsState = remember { mutableStateOf(tabs) }
+    LaunchedEffect(tabs) { if (draggingId == null) liveTabsState.value = tabs }
+    var liveTabs by liveTabsState
+    val currentTabs by rememberUpdatedState(tabs)
+    val currentOnTabsChanged by rememberUpdatedState(onTabsChanged)
     var dragFingerX by remember { mutableFloatStateOf(0f) }   // finger x in row-content space
     var dragStartX by remember { mutableFloatStateOf(0f) }
     var dragInitialSlotLeft by remember { mutableFloatStateOf(0f) } // grabbed chip's slot at pickup
@@ -531,7 +541,7 @@ internal fun DrawerTabRow(
                 if (settlingId == id) settlingId = null
             }
         }
-        finishTabDrag(id, dragMoved, liveTabs, tabs, onTabsChanged, { editingTab = it }, { unlockingTab = it })
+        finishTabDrag(id, dragMoved, liveTabs, currentTabs, currentOnTabsChanged, { editingTab = it }, { unlockingTab = it })
         draggingId = null
         dragMoved = false
     }
@@ -673,6 +683,7 @@ internal fun DrawerTabRow(
         DrawerTabEditDialog(
             tab = tab,
             allApps = allApps,
+            allFolders = allFolders,
             excludedPackages = if (isHideTabbedAppsFromAll(tabRowContext)) {
                 tabs.filter { it.id != tab.id }.flatMap { it.packages }.toSet()
             } else emptySet(),
@@ -714,7 +725,9 @@ private fun DrawerTabEditDialog(
     onDismiss: () -> Unit,
     // Packages that belong to OTHER tabs while "Hide added apps from all" is
     // on — removed from this picker so an app can only live in one tab.
-    excludedPackages: Set<String> = emptySet()
+    excludedPackages: Set<String> = emptySet(),
+    // Top-level drawer folders, assignable to the tab as "folder:<id>" entries.
+    allFolders: List<AppFolder> = emptyList()
 ) {
     val isNew = tab.id.isEmpty()
     var name by remember { mutableStateOf(tab.name) }
@@ -755,6 +768,17 @@ private fun DrawerTabEditDialog(
     val shownApps = remember(pickerApps, search) {
         if (search.isBlank()) pickerApps
         else pickerApps.filter { it.name.contains(search, ignoreCase = true) }
+    }
+    val pickerCtx = LocalContext.current
+    val pickerIconShape = remember { com.bearinmind.launcher314.data.getGlobalIconShape(pickerCtx) }
+    val pickerIconBgColor = remember { com.bearinmind.launcher314.data.getGlobalIconBgColor(pickerCtx) }
+
+    // Folders are offered above the apps; nested ones belong to their parent.
+    val shownFolders = remember(allFolders, search) {
+        val nested = nestedFolderIds(allFolders)
+        allFolders.filter { it.id !in nested }
+            .filter { search.isBlank() || it.name.contains(search, ignoreCase = true) }
+            .sortedBy { it.name.lowercase() }
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -829,6 +853,44 @@ private fun DrawerTabEditDialog(
                         .fillMaxWidth()
                         .height(320.dp)
                 ) {
+                    items(shownFolders, key = { "folder_${it.id}" }) { folder ->
+                        val entry = folderEntry(folder.id)
+                        val checked = entry in selected
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    selected = if (checked) selected - entry else selected + entry
+                                }
+                                .padding(vertical = 2.dp)
+                        ) {
+                            MiniFolderBox(
+                                folder = folder,
+                                allApps = allApps,
+                                size = 32.dp,
+                                iconClipShape = com.bearinmind.launcher314.helpers.getIconShape(pickerIconShape),
+                                iconBgColor = pickerIconBgColor,
+                                globalIconShapeName = pickerIconShape
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = folder.name,
+                                color = Color.White.copy(alpha = 0.87f),
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = {
+                                    selected = if (checked) selected - entry else selected + entry
+                                }
+                            )
+                        }
+                    }
                     items(shownApps, key = { it.packageName }) { app ->
                         val checked = app.packageName in selected
                         Row(
@@ -1006,6 +1068,7 @@ fun ConfirmDeleteDialog(
 fun ManageDrawerTabsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var tabs by remember { mutableStateOf(loadDrawerTabs(context)) }
+    val drawerFolders = remember { com.bearinmind.launcher314.data.loadDrawerData(context).folders }
     var apps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var editingTab by remember { mutableStateOf<DrawerTab?>(null) }
     var unlockingTab by remember { mutableStateOf<DrawerTab?>(null) }
@@ -1192,6 +1255,7 @@ fun ManageDrawerTabsScreen(onBack: () -> Unit) {
         DrawerTabEditDialog(
             tab = tab,
             allApps = apps,
+            allFolders = drawerFolders,
             excludedPackages = if (isHideTabbedAppsFromAll(context)) {
                 tabs.filter { it.id != tab.id }.flatMap { it.packages }.toSet()
             } else emptySet(),

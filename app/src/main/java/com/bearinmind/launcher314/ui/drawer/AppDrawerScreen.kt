@@ -550,6 +550,40 @@ fun AppDrawerScreen(
         }
     }
 
+    // Folders on screen now: all of them on "All", else the ones assigned to the
+    // selected tab (stored as "folder:<id>" entries in the tab's packages).
+    val visibleFolders by remember {
+        derivedStateOf {
+            val nested = com.bearinmind.launcher314.data.nestedFolderIds(folders)
+            val topLevel = folders.filter { it.id !in nested }
+            val tabId = selectedDrawerTabId
+            if (drawerTabsEnabled && tabId != null) {
+                val ids = drawerTabs.firstOrNull { it.id == tabId }?.packages.orEmpty()
+                    .filter { com.bearinmind.launcher314.data.isFolderEntry(it) }
+                    .map { com.bearinmind.launcher314.data.folderEntryId(it) }
+                    .toSet()
+                topLevel.filter { it.id in ids }
+            } else topLevel
+        }
+    }
+
+    // Only apps reachable from those folders leave the grid, so an app tucked in
+    // a folder on "All" still shows on a tab it was added to.
+    val appsInVisibleFolders by remember {
+        derivedStateOf {
+            visibleFolders
+                .flatMap { com.bearinmind.launcher314.data.folderAndDescendantIds(folders, it.id) }
+                .toSet()
+                .mapNotNull { id -> folders.firstOrNull { it.id == id } }
+                .flatMap { f ->
+                    f.appPackageNames.filter {
+                        it.isNotEmpty() && !com.bearinmind.launcher314.data.isFolderEntry(it)
+                    }
+                }
+                .toSet()
+        }
+    }
+
     // Filter hidden apps and sort based on search query
     // When searching, include apps from folders so they appear in results
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(context) }
@@ -584,7 +618,7 @@ fun AppDrawerScreen(
     val filteredApps by remember {
         derivedStateOf {
             val availableApps = if (searchQuery.isBlank()) {
-                allApps.filter { it.packageName !in appsInFolders && it.packageName !in hiddenApps }
+                allApps.filter { it.packageName !in appsInVisibleFolders && it.packageName !in hiddenApps }
             } else {
                 // When searching, include all apps (even those in folders) so they appear in results
                 allApps.filter { it.packageName !in hiddenApps }
@@ -765,10 +799,12 @@ fun AppDrawerScreen(
         else Color.White.copy(alpha = 0.3f)
     }
     val drawerHideIconText = com.bearinmind.launcher314.data.getHideIconText(context)
+    var folderCustomizationVersion by remember { mutableIntStateOf(0) }
     androidx.compose.runtime.CompositionLocalProvider(
         com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides resolvedTextColor,
         com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor provides drawerFolderBorder,
-        com.bearinmind.launcher314.ui.theme.LocalHideIconText provides drawerHideIconText
+        com.bearinmind.launcher314.ui.theme.LocalHideIconText provides drawerHideIconText,
+        com.bearinmind.launcher314.ui.theme.LocalFolderCustomizationVersion provides folderCustomizationVersion
     ) {
     Box(
         modifier = Modifier
@@ -777,15 +813,15 @@ fun AppDrawerScreen(
     ) {
         // Main drawer content (always rendered)
         // During escape drag, filter the escaped app out of the source folder's
-        // preview. Nested folders don't show at top level.
-        val nestedIds = com.bearinmind.launcher314.data.nestedFolderIds(folders)
+        // preview. Only the folders belonging to the current view are shown.
+        val visibleFolderIds = visibleFolders.map { it.id }.toSet()
         val displayFolders = (if (folderEscapedApp != null && folderEscapedFromFolderId != null) {
             folders.map { f ->
                 if (f.id == folderEscapedFromFolderId) {
                     f.copy(appPackageNames = f.appPackageNames - folderEscapedApp!!.packageName)
                 } else f
             }
-        } else folders).filter { it.id !in nestedIds }
+        } else folders).filter { it.id in visibleFolderIds }
 
         // Folders follow the app sort dropdown; MANUAL falls back to alphabetical
         // on the app side too, so folders match.
@@ -825,7 +861,6 @@ fun AppDrawerScreen(
             // tab so each profile view only shows its own apps. Also hidden
             // during search (search uses a flat app list).
             folders = if (isSearching ||
-                    (drawerTabsEnabled && selectedDrawerTabId != null) ||
                     selectedProfile != com.bearinmind.launcher314.helpers.ProfileType.PERSONAL)
                 emptyList()
                 else sortedDisplayFolders.map { folder ->
@@ -915,6 +950,7 @@ fun AppDrawerScreen(
                 },
                 allFolders = folders,
                 sortFoldersWithApps = sortFoldersEnabled,
+                onFolderCustomizationChanged = { folderCustomizationVersion++ },
                 onAddToHome = onAddToHome,
                 onAddFolderToHome = onAddFolderToHome,
                 onBulkAddToFolder = { apps, folder ->
