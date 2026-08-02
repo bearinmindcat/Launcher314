@@ -163,7 +163,9 @@ fun LauncherWithDrawer(
         // interaction (the "delay after scrolling then closing"). Critical damping
         // settles straight to closed, so home frees as soon as it lands.
         val spec = if (opening)
-            spring<Float>(dampingRatio = 0.82f, stiffness = 650f)
+            // Subtle bounce: close to critically damped, so the overshoot is a
+            // small dip rather than a big springy excursion.
+            spring<Float>(dampingRatio = 0.93f, stiffness = 800f)
         else
             // Faster critically-damped close (700 -> 1200). Even with the blocker
             // dropped during close, the drawer CONTENT still covers the bottom
@@ -188,12 +190,15 @@ fun LauncherWithDrawer(
             ) == 0f
         } catch (_: Exception) { false }
 
+        // Cap the velocity carried into the OPEN spring — a violent pull otherwise
+        // overshoots far past the resting point (the "aggressive" bounce).
+        val settleVel = if (opening) velocityPxPerSec.coerceIn(-6000f, 6000f) else velocityPxPerSec
         if (animationsOff) {
             withContext(object : MotionDurationScale { override val scaleFactor = 1f }) {
-                swipeUpY.animateTo(target, spec, initialVelocity = velocityPxPerSec)
+                swipeUpY.animateTo(target, spec, initialVelocity = settleVel)
             }
         } else {
-            swipeUpY.animateTo(target, spec, initialVelocity = velocityPxPerSec)
+            swipeUpY.animateTo(target, spec, initialVelocity = settleVel)
         }
     }
 
@@ -806,6 +811,18 @@ fun LauncherWithDrawer(
                     showAppDrawer = false
                     homeRefreshTrigger++
                     coroutineScope.launch { settleDrawer(drawerRangePx, available.y) }
+                    return available
+                }
+                // Whole-PANEL mini bounce when a list fling slams into the top
+                // (not armed = the gesture was a scroll, so it must not close):
+                // give swipeUpY a small downward impulse and let the spring pull
+                // it back — the drawer itself dips, not just the app stretch.
+                if (available.y > 800f && !closeArmed && !drawerClosing && !isDrawerDragging &&
+                    swipeUpY.value <= drawerOpenSlackPx && !isDrawerSearchActive) {
+                    val impulse = (available.y * 0.06f).coerceAtMost(900f)
+                    coroutineScope.launch {
+                        swipeUpY.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 800f), initialVelocity = impulse)
+                    }
                     return available
                 }
                 return Velocity.Zero
@@ -1524,6 +1541,86 @@ fun LauncherWithDrawer(
                     }
                     .clip(RoundedCornerShape(topStart = drawerCornerRadius, topEnd = drawerCornerRadius))
                     .nestedScroll(nestedScrollConnection)
+                    // Launcher3-style close controller at the RAW POINTER level
+                    // (Initial pass — sees events BEFORE the list and its stretch
+                    // overscroll, so the stretch can never starve the close gesture
+                    // the way it starved the nested-scroll path). A quick swipe that
+                    // starts with the list at the top and moves net-downward past
+                    // slop TAKES the gesture: events are consumed (list + stretch
+                    // stop receiving) and the drawer follows the finger 1:1.
+                    // Gestures born mid-list are never taken — they scroll, hit the
+                    // top, and the stretch bounces (the Lawnchair behavior).
+                    .pointerInput(isDrawerSearchActive) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            val atTop = com.bearinmind.launcher314.ui.components.DrawerListState.isAtTopProvider()
+                            val tracker = VelocityTracker()
+                            tracker.addPointerInputChange(down)
+                            var accumX = 0f
+                            var accumY = 0f
+                            var taken = false
+                            var settled = false
+                            val slop = viewConfiguration.touchSlop
+
+                            fun settle(velY: Float) {
+                                settled = true
+                                val startY = dragShift
+                                val shouldClose = when {
+                                    velY > 600f -> true
+                                    velY < -600f -> false
+                                    else -> startY / drawerRangePx > 0.4f
+                                }
+                                if (shouldClose) {
+                                    showAppDrawer = false
+                                    homeRefreshTrigger++
+                                }
+                                val target = if (shouldClose) drawerRangePx else 0f
+                                coroutineScope.launch {
+                                    swipeUpY.snapTo(startY)
+                                    isDrawerDragging = false
+                                    settleDrawer(target, velY)
+                                }
+                            }
+
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    if (taken) {
+                                        change.consume()
+                                        settle(tracker.calculateVelocity().y)
+                                    }
+                                    break
+                                }
+                                tracker.addPointerInputChange(change)
+                                val dy = change.position.y - change.previousPosition.y
+                                val dx = change.position.x - change.previousPosition.x
+                                if (!taken) {
+                                    accumX += dx
+                                    accumY += dy
+                                    // Quick-window guard: a long-press item drag arms after
+                                    // ~400ms of stillness — never steal that. Slow deliberate
+                                    // closes still work via the nested-scroll fallback.
+                                    val quick = change.uptimeMillis - down.uptimeMillis < 350
+                                    if (atTop && quick && accumY > slop && accumY > kotlin.math.abs(accumX) &&
+                                        !isDrawerDragging && !drawerClosing && swipeUpY.value <= drawerOpenSlackPx &&
+                                        !isDrawerSearchActive &&
+                                        !com.bearinmind.launcher314.ui.components.DrawerScrollbarState.isActive
+                                    ) {
+                                        taken = true
+                                        dragShift = swipeUpY.value
+                                        isDrawerDragging = true
+                                    }
+                                }
+                                if (taken) {
+                                    change.consume()
+                                    dragShift = (dragShift + dy).coerceIn(0f, drawerRangePx)
+                                }
+                            }
+                            // Pointer stream ended without an up (cancel): settle safely.
+                            if (taken && !settled) settle(0f)
+                        }
+                    }
             ) {
                 AppDrawerScreen(
                     dismissSearchTrigger = dismissSearchTrigger,

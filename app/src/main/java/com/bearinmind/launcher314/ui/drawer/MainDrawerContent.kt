@@ -1317,15 +1317,9 @@ internal fun MainDrawerContent(
                     .fillMaxSize()
                     .onGloballyPositioned { drawerGridRootPos = it.positionInRoot() }
             ) {
-                // NO stretch overscroll on this grid: while a stretch is active it
-                // OWNS every drag — deltas feed the stretch and the scroll pipeline
-                // (and our close gesture) receives 0.0, so fast repeated swipes at
-                // the top could never close the drawer until the stretch settled.
-                // Launcher3 closes from raw MotionEvents above the list, so it's
-                // immune; our nested-scroll close is not. Hard-stop at the edges.
-                CompositionLocalProvider(
-                    androidx.compose.foundation.LocalOverscrollConfiguration provides null
-                ) {
+                // Stretch overscroll stays ON: the close gesture is taken at the
+                // RAW pointer level in LauncherWithDrawer (Initial pass), so the
+                // stretch can bounce freely without ever starving the close.
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(gridSize),
                     // Symmetric left/right insets so the icon grid is centered while
@@ -1524,7 +1518,6 @@ internal fun MainDrawerContent(
                     }
                     }
                 }
-                } // end no-overscroll CompositionLocalProvider
 
                 // Custom scrollbar indicator (Einstein Launcher style)
                 // Get scrollbar settings
