@@ -643,7 +643,30 @@ fun LauncherWithDrawer(
     // Only when fully open (swipeUpY == 0) does the list scroll normally
     val nestedScrollConnection = remember(screenHeight, isDrawerSearchActive) {
         object : NestedScrollConnection {
+            // Launcher3 close-gesture semantics (AllAppsSwipeController + SwipeDetector):
+            // - "Was the list at the top?" is sampled ONCE, when the finger lands
+            //   (synchronously — see DrawerListState). A gesture born mid-list can
+            //   NEVER close; it scrolls, hits the top, and bounces. Second swipe closes.
+            // - Direction uses NET displacement: the gesture ARMS the moment its
+            //   accumulated dy exceeds +12px. Wrong-direction movement never disarms
+            //   (a fast finger lands with a few px of upward jitter before the real
+            //   down-flick) — the detector just keeps waiting, like Launcher3's.
+            var gestureActive = false
+            var closeArmed = false
+            var pendingAtTop = false
+            var accumDy = 0f
+
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.Drag) {
+                    if (!gestureActive) {
+                        gestureActive = true
+                        pendingAtTop = com.bearinmind.launcher314.ui.components.DrawerListState.isAtTopProvider()
+                        accumDy = 0f
+                        closeArmed = false
+                    }
+                    accumDy += available.y
+                    if (!closeArmed && pendingAtTop && accumDy > 12f) closeArmed = true
+                }
                 // While the drawer is partially open / actively being dragged closed,
                 // intercept ALL vertical scroll and write the SYNCHRONOUS drag float
                 // directly (no launch{snapTo} lag — same 1:1 fix as the open drag).
@@ -694,12 +717,13 @@ fun LauncherWithDrawer(
                     dismissSearchTrigger++
                     return Offset(0f, available.y)
                 }
-                if (available.y > 0f && !isDrawerDragging && !drawerClosing && swipeUpY.value <= drawerOpenSlackPx && !isDrawerSearchActive &&
+                if (available.y > 0f && closeArmed && !isDrawerDragging && !drawerClosing && swipeUpY.value <= drawerOpenSlackPx && !isDrawerSearchActive &&
                     !com.bearinmind.launcher314.ui.components.DrawerScrollbarState.isActive && source == NestedScrollSource.Drag) {
                     // Begin the close drag synchronously from (near) fully-open — within
                     // the open-slack so a swipe-down right after opening closes it
                     // instead of waiting for the bounce to settle. Skip while already
                     // committed-closing so a lingering list-fling doesn't restart it.
+                    // closeArmed: only a gesture born at the top may close (see above).
                     // source==Drag: a list FLING overscroll must NOT start this (it leaked
                     // isDrawerDragging and froze gestures — see onPreScroll).
                     dragShift = swipeUpY.value
@@ -711,6 +735,9 @@ fun LauncherWithDrawer(
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
+                // Finger up — drag phase over. closeArmed persists for onPostFling's
+                // fling-to-close; the next touch re-samples everything.
+                gestureActive = false
                 // Close commit mirrors the OPEN rule: a fling sets direction (down
                 // closes, up reopens) regardless of distance; otherwise commit by
                 // position past 0.4. Hand the synchronous drag position to the
@@ -768,14 +795,13 @@ fun LauncherWithDrawer(
                     coroutineScope.launch { settleDrawer(target, available.y) }
                     return available
                 }
-                // FLING-TO-CLOSE (one-shot, leak-proof): the list flung to the top and
-                // couldn't consume the rest, so leftover DOWNWARD velocity arrives here.
-                // That's a "fling down to dismiss" while the drawer is open -> commit the
-                // close directly. We do NOT enter the persistent isDrawerDragging drag
-                // (that's what leaked from fling overscroll and froze gestures); this is
-                // a single settle, so nothing can stick. The slow finger drag-to-close
-                // path still works via onPostScroll/onPreScroll (source==Drag).
-                if (available.y > 1200f && !drawerClosing && swipeUpY.value <= drawerOpenSlackPx &&
+                // FLING-TO-CLOSE (one-shot, leak-proof): leftover DOWNWARD velocity
+                // while the drawer is open -> commit the close directly. We do NOT
+                // enter the persistent isDrawerDragging drag (that's what leaked from
+                // fling overscroll and froze gestures); this is a single settle, so
+                // nothing can stick. closeArmed: only a gesture born at the top may
+                // dismiss — a fling that scrolled the list up to the top bounces there.
+                if (available.y > 1200f && closeArmed && !drawerClosing && swipeUpY.value <= drawerOpenSlackPx &&
                     !isDrawerSearchActive && !com.bearinmind.launcher314.ui.components.DrawerScrollbarState.isActive) {
                     showAppDrawer = false
                     homeRefreshTrigger++

@@ -41,6 +41,18 @@ object DrawerScrollbarState {
 }
 
 /**
+ * SYNCHRONOUS "is the drawer list at the top?" check, read by the drawer's
+ * close-gesture controller when a gesture starts (Launcher3's
+ * shouldContainerScroll reads the RecyclerView position per touch event the
+ * same way). A provider on purpose: publishing a Boolean through a
+ * snapshotFlow collector lagged during fast repeated swipes, refusing closes
+ * until the user paused.
+ */
+object DrawerListState {
+    var isAtTopProvider: () -> Boolean = { true }
+}
+
+/**
  * Custom scrollbar indicator for LazyVerticalGrid.
  * Styled like Einstein Launcher's scrollbar.
  *

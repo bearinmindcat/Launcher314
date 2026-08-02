@@ -1294,6 +1294,19 @@ internal fun MainDrawerContent(
             // Scroll mode: LazyVerticalGrid with scrollbar
             val gridState = rememberLazyGridState()
 
+            // Give the close-gesture controller a SYNCHRONOUS at-top check,
+            // read at the instant a gesture starts (see DrawerListState).
+            DisposableEffect(gridState) {
+                com.bearinmind.launcher314.ui.components.DrawerListState.isAtTopProvider = {
+                    gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0
+                }
+                onDispose {
+                    // Paged mode / disposal: pages don't scroll vertically, so
+                    // the default (always at top) is correct.
+                    com.bearinmind.launcher314.ui.components.DrawerListState.isAtTopProvider = { true }
+                }
+            }
+
             // Jump back to the top when the sort changes.
             LaunchedEffect(currentSortOption, isSortAscending) {
                 gridState.scrollToItem(0)
@@ -1304,6 +1317,15 @@ internal fun MainDrawerContent(
                     .fillMaxSize()
                     .onGloballyPositioned { drawerGridRootPos = it.positionInRoot() }
             ) {
+                // NO stretch overscroll on this grid: while a stretch is active it
+                // OWNS every drag — deltas feed the stretch and the scroll pipeline
+                // (and our close gesture) receives 0.0, so fast repeated swipes at
+                // the top could never close the drawer until the stretch settled.
+                // Launcher3 closes from raw MotionEvents above the list, so it's
+                // immune; our nested-scroll close is not. Hard-stop at the edges.
+                CompositionLocalProvider(
+                    androidx.compose.foundation.LocalOverscrollConfiguration provides null
+                ) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(gridSize),
                     // Symmetric left/right insets so the icon grid is centered while
@@ -1502,6 +1524,7 @@ internal fun MainDrawerContent(
                     }
                     }
                 }
+                } // end no-overscroll CompositionLocalProvider
 
                 // Custom scrollbar indicator (Einstein Launcher style)
                 // Get scrollbar settings
