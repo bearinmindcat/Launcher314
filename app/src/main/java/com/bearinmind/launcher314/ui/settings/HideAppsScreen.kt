@@ -83,7 +83,10 @@ fun HideAppsScreen(
                     val iconPath = if (iconFile.exists()) iconFile.absolutePath else ""
                     HideAppInfo(pkg, appName, iconPath)
                 } catch (_: Exception) { null }
-            }.sortedBy { it.name.lowercase() }
+            }
+                // Multi-launcher-activity apps duplicated the package-keyed rows and crashed the LazyColumn.
+                .distinctBy { it.packageName }
+                .sortedBy { it.name.lowercase() }
             allApps = apps
             isLoading = false
         }
