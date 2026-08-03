@@ -90,7 +90,10 @@ fun AppPickerScreen(
                     val iconPath = if (iconFile.exists()) iconFile.absolutePath else ""
                     PickerAppInfo(pkg, appName, iconPath)
                 } catch (_: Exception) { null }
-            }.sortedBy { it.name.lowercase() }
+            }
+                // Same duplicate-key crash fix as HideAppsScreen.
+                .distinctBy { it.packageName }
+                .sortedBy { it.name.lowercase() }
             allApps = apps
             isLoading = false
         }
