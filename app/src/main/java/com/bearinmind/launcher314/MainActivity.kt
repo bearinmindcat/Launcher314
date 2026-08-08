@@ -104,8 +104,41 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Contact picker for the built-in Direct dial 1x1 (Launcher 314 section in Widgets)
+    private val directDialPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == RESULT_OK && uri != null) {
+            val name = com.bearinmind.launcher314.helpers.DirectDialHelper.createFromPhonePick(this, uri)
+            if (name != null) {
+                Toast.makeText(this, "Direct dial \"$name\" added!", Toast.LENGTH_SHORT).show()
+                widgetAddedTrigger.intValue++
+                // Ask for CALL_PHONE now so the first tap can call immediately.
+                if (checkSelfPermission(android.Manifest.permission.CALL_PHONE) !=
+                    android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.CALL_PHONE), REQUEST_CALL_PHONE)
+                }
+            } else {
+                Toast.makeText(this, "Couldn't add direct dial (no number or no space)", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun startDirectDialAdd() {
+        try {
+            directDialPickerLauncher.launch(
+                Intent(Intent.ACTION_PICK)
+                    .setType(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_TYPE)
+            )
+        } catch (_: Exception) {
+            Toast.makeText(this, "No contacts app available", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     companion object {
         private const val REQUEST_CONFIGURE_APPWIDGET = 9004
+        private const val REQUEST_CALL_PHONE = 9005
     }
 
     // Launch widget configure activity via AppWidgetHost (has permission for non-exported activities)
@@ -820,6 +853,10 @@ fun MainScreen(
                         activity?.onWidgetSelectedFromPicker(widget)
                         navController.popBackStackSafely() // Go back to launcher after selection
                     },
+                    onDirectDialSelected = {
+                        activity?.startDirectDialAdd()
+                        navController.popBackStackSafely()
+                    },
                     gridColumns = gridColumns,
                     gridRows = gridRows,
                     getOccupiedCells = {
@@ -963,6 +1000,10 @@ fun MainScreen(
                         },
                         onWidgetSelected = { widget ->
                             activity?.onWidgetSelectedFromPicker(widget)
+                            navController.popBackStackSafely()
+                        },
+                        onDirectDialSelected = {
+                            activity?.startDirectDialAdd()
                             navController.popBackStackSafely()
                         },
                         gridColumns = gridColumns,

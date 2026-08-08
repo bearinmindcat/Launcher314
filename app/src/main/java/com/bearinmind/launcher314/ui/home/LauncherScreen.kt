@@ -1130,6 +1130,10 @@ fun LauncherScreen(
             // load). Package install/remove is handled by its own broadcast refresh.
             if (allAvailableApps.isEmpty()) {
                 allAvailableApps = loadAvailableApps(context)
+            } else {
+                // Shortcuts can appear while live (Direct dial, pins) — refresh just them, skip the heavy re-query.
+                allAvailableApps = allAvailableApps.filterNot { it.packageName.startsWith("shortcut_") } +
+                    com.bearinmind.launcher314.data.loadShortcutApps(context)
             }
             appCustomizations = loadAppCustomizations(context)
             placedWidgets = WidgetManager.loadPlacedWidgets(context)

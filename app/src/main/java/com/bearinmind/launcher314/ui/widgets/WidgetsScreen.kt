@@ -66,6 +66,8 @@ import com.bearinmind.launcher314.data.getWidgetPaddingPercent
 import com.bearinmind.launcher314.data.setWidgetPaddingPercent
 import com.bearinmind.launcher314.data.WIDGET_MAX_CORNER_RADIUS_DP
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.Call
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
 import com.bearinmind.launcher314.ui.components.SliderConfigs
@@ -102,6 +104,7 @@ data class AppWidgetGroup(
 fun WidgetsScreen(
     onBack: () -> Unit = {},
     onWidgetSelected: (WidgetInfo) -> Unit = {},
+    onDirectDialSelected: () -> Unit = {},
     gridColumns: Int = 4,
     gridRows: Int = 5,
     getOccupiedCells: () -> Set<Int> = { emptySet() }
@@ -149,6 +152,43 @@ fun WidgetsScreen(
             }
         }
     }
+
+    // Launcher 314's own widgets — pinned at the top of the list.
+    val launcherAppLabel = remember {
+        try {
+            context.packageManager.getApplicationLabel(context.applicationInfo).toString()
+        } catch (_: Exception) { "Launcher 314" }
+    }
+    val launcherAppIcon = remember {
+        try {
+            drawableToBitmap(context.packageManager.getApplicationIcon(context.packageName))
+        } catch (_: Exception) { null }
+    }
+    // Preview shows the real Contacts app icon (CATEGORY_APP_CONTACTS — the generic pick intent resolves wrong on Samsung).
+    val contactsAppIcon = remember {
+        try {
+            val pm = context.packageManager
+            val selectorPkg = try {
+                pm.resolveActivity(
+                    android.content.Intent.makeMainSelectorActivity(
+                        android.content.Intent.ACTION_MAIN,
+                        android.content.Intent.CATEGORY_APP_CONTACTS
+                    ), 0
+                )?.activityInfo?.packageName
+            } catch (_: Exception) { null }
+            val pkg = selectorPkg ?: listOf(
+                "com.samsung.android.app.contacts",
+                "com.google.android.contacts",
+                "com.android.contacts"
+            ).firstOrNull { p -> try { pm.getApplicationInfo(p, 0); true } catch (_: Exception) { false } }
+            pkg?.let { drawableToBitmap(pm.getApplicationIcon(it)) }
+        } catch (_: Exception) { null }
+    }
+    val launcherSectionVisible = searchQuery.isBlank() ||
+        launcherAppLabel.contains(searchQuery, ignoreCase = true) ||
+        "Direct dial - Contacts".contains(searchQuery, ignoreCase = true)
+    var showDialAddDialog by remember { mutableStateOf(false) }
+    var dialNoSpace by remember { mutableStateOf(false) }
 
     // Helper function to find first available position for a widget
     fun findAvailablePosition(widgetCols: Int, widgetRows: Int): Pair<Int, Int>? {
@@ -199,6 +239,67 @@ fun WidgetsScreen(
 
     // Solid dark background for widgets screen
     val widgetsBackground = Color(0xFF121212)
+
+    // Add dialog for the built-in Direct dial 1x1 (same flow as real widgets)
+    if (showDialAddDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showDialAddDialog = false
+                dialNoSpace = false
+            },
+            title = {
+                Text(
+                    text = if (dialNoSpace) "Not Enough Space" else "Add Widget",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                if (dialNoSpace) {
+                    Text(text = "There isn't enough space on the home screen for this widget (1 × 1). Remove some apps or widgets to make room.")
+                } else {
+                    Column {
+                        Text(
+                            text = "Add \"Direct dial\" to your current screen?",
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Text(
+                            text = "Size: 1 × 1 cells",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (!dialNoSpace) {
+                    TextButton(
+                        onClick = {
+                            showDialAddDialog = false
+                            onDirectDialSelected()
+                        }
+                    ) {
+                        Text("Add to Screen")
+                    }
+                } else {
+                    TextButton(
+                        onClick = {
+                            showDialAddDialog = false
+                            dialNoSpace = false
+                        }
+                    ) {
+                        Text("OK")
+                    }
+                }
+            },
+            dismissButton = {
+                if (!dialNoSpace) {
+                    TextButton(onClick = { showDialAddDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
+    }
 
     // Add widget confirmation dialog
     if (showAddDialog && selectedWidget != null) {
@@ -536,7 +637,7 @@ fun WidgetsScreen(
                 ) {
                     CircularProgressIndicator(color = Color.White)
                 }
-            } else if (filteredAppGroups.isEmpty()) {
+            } else if (filteredAppGroups.isEmpty() && !launcherSectionVisible) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -569,6 +670,27 @@ fun WidgetsScreen(
                         bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                     )
                 ) {
+                    if (launcherSectionVisible) {
+                        item {
+                            LauncherOwnWidgetsSection(
+                                appLabel = launcherAppLabel,
+                                appIcon = launcherAppIcon,
+                                previewIcon = contactsAppIcon,
+                                isExpanded = expandedApps.contains(context.packageName),
+                                onToggleExpand = {
+                                    expandedApps = if (expandedApps.contains(context.packageName)) {
+                                        expandedApps - context.packageName
+                                    } else {
+                                        expandedApps + context.packageName
+                                    }
+                                },
+                                onDirectDialLongPress = {
+                                    dialNoSpace = findAvailablePosition(1, 1) == null
+                                    showDialAddDialog = true
+                                }
+                            )
+                        }
+                    }
                     items(filteredAppGroups) { appGroup ->
                         WidgetAppSection(
                             appGroup = appGroup,
@@ -587,6 +709,137 @@ fun WidgetsScreen(
                 }
             }
         }
+    }
+}
+
+/** Pinned section for Launcher 314's own widgets (Direct dial) — mirrors WidgetAppSection/WidgetPreviewCard styling. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LauncherOwnWidgetsSection(
+    appLabel: String,
+    appIcon: Bitmap?,
+    previewIcon: Bitmap?,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onDirectDialLongPress: () -> Unit
+) {
+    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = rememberRipple(color = Color.White),
+                    onClick = onToggleExpand
+                )
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            appIcon?.let { bitmap ->
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = appLabel,
+                    modifier = Modifier.size(32.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+            Text(
+                text = appLabel,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.87f),
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "1",
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.5f)
+            )
+        }
+
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .width(140.dp)
+                            .combinedClickable(
+                                onClick = { },
+                                onLongClick = {
+                                    hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    onDirectDialLongPress()
+                                }
+                            )
+                            .padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (previewIcon != null) {
+                                Image(
+                                    bitmap = previewIcon.asImageBitmap(),
+                                    contentDescription = "Direct dial",
+                                    modifier = Modifier.size(48.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .background(Color(0xFF2E7D32), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Call,
+                                        contentDescription = "Direct dial",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = "Direct dial - Contacts",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.87f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "1 x 1",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.5f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+
+        Divider(color = Color.White.copy(alpha = 0.1f))
     }
 }
 

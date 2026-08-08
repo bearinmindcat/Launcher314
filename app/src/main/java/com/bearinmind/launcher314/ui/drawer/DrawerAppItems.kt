@@ -329,8 +329,7 @@ internal fun FolderItem(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Folder preview - 2x2 grid of app icons (same size as regular icons for alignment)
-            // Per-folder customization (shape / outline / size) — the dialog offered
-            // these but the drawer cell never applied them (LG report).
+            // Per-folder shape / outline / size — saved by the dialog but never applied here before.
             val folderShape = drawerFolderCust?.iconShapeExp?.let { getIconShape(it) }
                 ?: iconClipShape ?: RoundedCornerShape((iconSize * 0.29f).dp)
             val folderBorderColor = drawerFolderCust?.iconTintColor?.let { c ->

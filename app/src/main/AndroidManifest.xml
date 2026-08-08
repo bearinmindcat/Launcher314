@@ -33,6 +33,9 @@
     <!-- Shortcut support -->
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
 
+    <!-- Direct dial 1x1: one-tap call (runtime, requested on add; denied -> dialer pre-filled) -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+
     <!-- Recent Apps view (issue #40). PACKAGE_USAGE_STATS is a "special" permission;
          the user grants it manually via Settings → Apps → Special access → Usage access. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"

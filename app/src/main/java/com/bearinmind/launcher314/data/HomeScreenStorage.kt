@@ -153,6 +153,20 @@ fun launchApp(context: Context, packageName: String) {
                 try {
                     val launchIntent = Intent.parseUri(lines[1], Intent.URI_INTENT_SCHEME)
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // Direct dial: ACTION_CALL needs CALL_PHONE — fall back to the pre-filled dialer without it.
+                    if (launchIntent.action == Intent.ACTION_CALL) {
+                        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                            context, android.Manifest.permission.CALL_PHONE
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        val dialFallback = Intent(Intent.ACTION_DIAL, launchIntent.data)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        try {
+                            context.startActivity(if (granted) launchIntent else dialFallback)
+                        } catch (_: SecurityException) {
+                            context.startActivity(dialFallback)
+                        }
+                        return
+                    }
                     context.startActivity(launchIntent)
                     return
                 } catch (e: Exception) {
