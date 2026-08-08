@@ -1674,8 +1674,7 @@ fun DraggableGridCell(
 
                             Spacer(modifier = Modifier.height(iconTextSpacer))
 
-                            val folderDisplayName = if (isHovered && !isDragging) "Folder"
-                                else folderCustomization?.customLabel ?: cell.folder.name
+                            val folderDisplayName = folderCustomization?.customLabel ?: cell.folder.name
                             val folderHideLabel = folderCustomization?.hideLabel ?: false ||
                                 com.bearinmind.launcher314.ui.theme.LocalHideIconText.current
                             val folderFontSize = folderCustomization?.iconTextSizePercent?.let { 12.sp * it / 100f } ?: appNameFontSize
