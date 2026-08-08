@@ -1756,7 +1756,8 @@ internal fun MainDrawerContent(
             folderName = folder.name,
             folderId = folder.id,
             currentCustomization = localAppCustomizations.customizations[folderKey],
-            globalIconSizePercent = iconSize,
+            // Baseline must be the drawer's size PERCENT, not the dp value (LG apply bug).
+            globalIconSizePercent = com.bearinmind.launcher314.data.getDrawerIconSizePercent(context),
             globalIconTextSizePercent = 100,
             globalIconShape = globalIconShapeName,
             globalIconBgColor = iconBgColor,

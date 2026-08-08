@@ -1399,7 +1399,9 @@ fun DraggableGridCell(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             // Folder preview - 2x2 grid of app icons in a rounded square
-                            val folderBoxSize = iconSize.dp
+                            // Per-folder size, same absolute-percent scale as per-app icons.
+                            val folderSizePct = folderCustomization?.iconSizePercent ?: globalIconSizePercent.toInt()
+                            val folderBoxSize = (iconSize * folderSizePct / globalIconSizePercent).dp
                             val folderCornerRadius = (iconSize * 0.29f).dp
                             // Per-folder shape override: folder customization > global shape > rounded corner
                             val effectiveFolderShapeName = folderCustomization?.iconShapeExp ?: globalIconShape
@@ -2419,7 +2421,8 @@ fun DockSlot(
                 contentAlignment = Alignment.Center
             ) {
                 // Folder 2x2 icon grid (same style as grid folder cells)
-                val folderBoxSize = iconSize.dp
+                val dockFolderSizePct = folderCustomization?.iconSizePercent ?: globalIconSizePercent.toInt()
+                val folderBoxSize = (iconSize * dockFolderSizePct / globalIconSizePercent).dp
                 val folderCornerRadius = (iconSize * 0.29f).dp
                 val folderInvalidTint = if ((isDragging && !isHoverTargetValid) || (isHovered && !isValidDropTarget)) {
                     ColorFilter.tint(Color(0xFFFF6B6B).copy(alpha = 0.6f), androidx.compose.ui.graphics.BlendMode.SrcAtop)

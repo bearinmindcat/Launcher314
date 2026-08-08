@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import com.bearinmind.launcher314.helpers.getIconShape
 import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -328,9 +329,20 @@ internal fun FolderItem(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Folder preview - 2x2 grid of app icons (same size as regular icons for alignment)
+            // Per-folder customization (shape / outline / size) — the dialog offered
+            // these but the drawer cell never applied them (LG report).
+            val folderShape = drawerFolderCust?.iconShapeExp?.let { getIconShape(it) }
+                ?: iconClipShape ?: RoundedCornerShape((iconSize * 0.29f).dp)
+            val folderBorderColor = drawerFolderCust?.iconTintColor?.let { c ->
+                val intensity = (drawerFolderCust.iconTintIntensity ?: 100) / 100f
+                Color(c).copy(alpha = intensity.coerceIn(0f, 1f))
+            } ?: com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current
+            val folderGlobalPct = remember(drawerFolderCustVersion) { com.bearinmind.launcher314.data.getDrawerIconSizePercent(drawerFolderContext) }
+            val folderSizeDp = drawerFolderCust?.iconSizePercent
+                ?.let { iconSize * it / folderGlobalPct.coerceAtLeast(1) } ?: iconSize
             BoxWithConstraints(
                 modifier = Modifier
-                    .size(iconSize.dp)
+                    .size(folderSizeDp.dp)
                     .onGloballyPositioned { coords ->
                         // Always use the final target scale (1.265f) so popup doesn't stutter during animation
                         val targetScale = 1.265f
@@ -349,9 +361,9 @@ internal fun FolderItem(
                         scaleY = scale
                         clip = false
                     }
-                    .clip(iconClipShape ?: RoundedCornerShape((iconSize * 0.29f).dp))
+                    .clip(folderShape)
                     .background(Color(0xFF1A1A1A))
-                    .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, iconClipShape ?: RoundedCornerShape((iconSize * 0.29f).dp)),
+                    .border(1.dp, folderBorderColor, folderShape),
                 contentAlignment = Alignment.Center
             ) {
                 val folderCustomIcon = com.bearinmind.launcher314.data.folderCustomIconPath(drawerFolderCust)
@@ -555,12 +567,14 @@ internal fun MiniFolderBox(
 ) {
     val miniBoxContext = LocalContext.current
     val miniBoxCustVersion = com.bearinmind.launcher314.ui.theme.LocalFolderCustomizationVersion.current
-    val customIcon = remember(folder.id, miniBoxCustVersion) {
-        com.bearinmind.launcher314.data.folderCustomIconPath(
-            com.bearinmind.launcher314.data.loadAppCustomizations(miniBoxContext)
-                .customizations["folder_${folder.id}"]
-        )
+    val miniBoxCust = remember(folder.id, miniBoxCustVersion) {
+        com.bearinmind.launcher314.data.loadAppCustomizations(miniBoxContext)
+            .customizations["folder_${folder.id}"]
     }
+    val customIcon = com.bearinmind.launcher314.data.folderCustomIconPath(miniBoxCust)
+    val miniBoxBorderColor = miniBoxCust?.iconTintColor?.let { c ->
+        Color(c).copy(alpha = ((miniBoxCust.iconTintIntensity ?: 100) / 100f).coerceIn(0f, 1f))
+    } ?: com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current
     val boxPreviewApps = remember(folder.appPackageNames, allApps) {
         val pkgs = folder.appPackageNames.filter {
             it.isNotEmpty() && !com.bearinmind.launcher314.data.isFolderEntry(it)
@@ -571,14 +585,15 @@ internal fun MiniFolderBox(
     // and sizing the interior off the request then overflows.
     BoxWithConstraints(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
         val actual = androidx.compose.ui.unit.min(maxWidth, maxHeight).coerceAtMost(size)
-        val shape = iconClipShape ?: RoundedCornerShape(actual * 0.29f)
+        val shape = miniBoxCust?.iconShapeExp?.let { getIconShape(it) }
+            ?: iconClipShape ?: RoundedCornerShape(actual * 0.29f)
         Box(
             modifier = Modifier
                 .size(actual)
                 .graphicsLayer { this.alpha = alpha }
                 .clip(shape)
                 .background(Color(0xFF1A1A1A))
-                .border(borderWidth, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, shape),
+                .border(borderWidth, miniBoxBorderColor, shape),
             contentAlignment = Alignment.Center
         ) {
             if (customIcon != null) {
