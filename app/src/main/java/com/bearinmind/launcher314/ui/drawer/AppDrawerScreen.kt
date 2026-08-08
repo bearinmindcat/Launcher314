@@ -587,6 +587,15 @@ fun AppDrawerScreen(
     // Filter hidden apps and sort based on search query
     // When searching, include apps from folders so they appear in results
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(context) }
+    // Issue #79: auto-hide home screen apps from the drawer (search / custom tabs still show them).
+    val hideHomeScreenApps = remember { com.bearinmind.launcher314.data.getHideHomeScreenApps(context) }
+    val homeScreenPkgs by remember {
+        derivedStateOf {
+            // Version read subscribes this to every home edit (derived state, not a stale capture).
+            com.bearinmind.launcher314.data.HomeScreenDataVersion.state.intValue
+            if (hideHomeScreenApps) com.bearinmind.launcher314.data.loadHomeScreenPackages(context) else emptySet()
+        }
+    }
     val isSearching by remember { derivedStateOf { searchQuery.isNotBlank() } }
     // Per-profile-type chip strip — Personal / Work / Cloned / Private,
     // Kvaesitso-style. Only types with at least one app get a chip; users
@@ -646,18 +655,23 @@ fun AppDrawerScreen(
                     }
                 }
             } else profileFiltered
+            // Issue #79: drop home screen apps from the browsing list only (tabs keep picks, search spans all).
+            val homeFiltered = if (searchQuery.isBlank() && homeScreenPkgs.isNotEmpty() &&
+                (!drawerTabsEnabled || selectedDrawerTabId == null)) {
+                tabFiltered.filter { it.packageName !in homeScreenPkgs }
+            } else tabFiltered
             // Choose the search set. Fuzzy matcher only when the user opted in;
             // otherwise the classic case-insensitive substring search. Fuzzy
             // sorts by relevance; classic keeps the user's manual sort.
             val searched = when {
-                searchQuery.isBlank() -> tabFiltered
+                searchQuery.isBlank() -> homeFiltered
                 fuzzySearchEnabled ->
                     com.bearinmind.launcher314.helpers.DrawerSearchMatcher.searchApps(
-                        tabFiltered, searchQuery, searchFuzziness,
+                        homeFiltered, searchQuery, searchFuzziness,
                         // Recency only feeds the tiebreak when the option is on.
                         if (recentFirstSearch) lastOpenedMap else emptyMap()
                     )
-                else -> tabFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
+                else -> homeFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
             }
             when {
                 // Fuzzy results are already relevance-ranked (recency baked in).

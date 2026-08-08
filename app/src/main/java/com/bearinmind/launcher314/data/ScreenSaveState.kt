@@ -505,6 +505,19 @@ fun setHideDrawerSearchBar(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_HIDE_SEARCH_BAR, enabled).apply()
 }
 
+// Auto-hides drawer apps that are already on the home screen (issue #79). Default off.
+private const val KEY_HIDE_HOME_SCREEN_APPS = "hide_home_screen_apps"
+
+fun getHideHomeScreenApps(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_HIDE_HOME_SCREEN_APPS, false)
+}
+
+fun setHideHomeScreenApps(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_HIDE_HOME_SCREEN_APPS, enabled).apply()
+}
+
 // ============================================================================
 // DOUBLE-TAP TO LOCK SCREEN
 // ============================================================================

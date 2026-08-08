@@ -103,6 +103,7 @@ fun EditDrawerSettingsScreen(
     var reverseSearchBar by remember { mutableStateOf(getReverseDrawerSearchBar(context)) }
     var hideSearchBar by remember { mutableStateOf(getHideDrawerSearchBar(context)) }
     var sortFolders by remember { mutableStateOf(getSortFoldersEnabled(context)) }
+    var hideHomeScreenApps by remember { mutableStateOf(com.bearinmind.launcher314.data.getHideHomeScreenApps(context)) }
     var autoOpenKeyboard by remember { mutableStateOf(getAutoOpenKeyboard(context)) }
     var autoLaunchSearchResult by remember { mutableStateOf(getAutoLaunchSearchResult(context)) }
 
@@ -201,6 +202,15 @@ fun EditDrawerSettingsScreen(
             title = "Hide search bar",
             checked = hideSearchBar,
             onCheckedChange = { hideSearchBar = it; setHideDrawerSearchBar(context, it) }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsToggleItem(
+            title = "Hide home screen apps",
+            subtitle = "Hides apps from drawer that are already on home screen",
+            checked = hideHomeScreenApps,
+            onCheckedChange = { hideHomeScreenApps = it; com.bearinmind.launcher314.data.setHideHomeScreenApps(context, it) }
         )
 
         Spacer(Modifier.height(8.dp))

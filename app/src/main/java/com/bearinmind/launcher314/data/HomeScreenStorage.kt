@@ -27,13 +27,30 @@ fun loadHomeScreenData(context: Context): HomeScreenData {
     }
 }
 
+/** Bumped on every home save so the drawer can re-derive home-dependent state (issue #79). */
+object HomeScreenDataVersion {
+    val state = androidx.compose.runtime.mutableIntStateOf(0)
+}
+
 fun saveHomeScreenData(context: Context, data: HomeScreenData) {
     try {
         val file = File(context.filesDir, "home_screen_data.json")
         file.writeText(Json.encodeToString(data))
+        HomeScreenDataVersion.state.intValue++
     } catch (e: Exception) {
         e.printStackTrace()
     }
+}
+
+/** Bare package names of everything on the home screen: grid, dock, and folder members. */
+fun loadHomeScreenPackages(context: Context): Set<String> {
+    val data = loadHomeScreenData(context)
+    val out = mutableSetOf<String>()
+    data.apps.forEach { out.add(it.packageName) }
+    data.dockApps.forEach { out.add(it.packageName) }
+    (data.folders.flatMap { it.appPackageNames } + data.dockFolders.flatMap { it.appPackageNames })
+        .forEach { if (it.isNotEmpty()) out.add(it.substringBefore('|')) }
+    return out
 }
 
 fun loadAvailableApps(context: Context): List<HomeAppInfo> {
