@@ -343,10 +343,14 @@ private fun liveFolder(
 private fun reflowFolderCells(
     folderCellMap: Map<Int, String>,
     allAvailableApps: List<HomeAppInfo>,
-    cellCount: Int
+    cellCount: Int,
+    customizations: AppCustomizations = AppCustomizations()
 ): Map<Int, HomeAppInfo> {
     val resolved = folderCellMap.mapNotNull { (idx, pkg) ->
-        allAvailableApps.find { it.packageName == pkg }?.let { idx to it }
+        allAvailableApps.find { it.packageName == pkg }?.let { info ->
+            // Issue #82: attach per-app customizations (hide badge etc.) — allAvailableApps carries none.
+            idx to (customizations.customizations[pkg]?.let { info.copy(customization = it) } ?: info)
+        }
     }
     val placed = resolved.filter { it.first in 0 until cellCount }.toMap().toMutableMap()
     val overflow = resolved.filter { it.first !in 0 until cellCount }.map { it.second }
@@ -7438,7 +7442,7 @@ fun LauncherScreen(
                 // opened. In-grid gaps are preserved so drag-reorder still works.
                 val folderCellCount = (folderGridColumns * folderGridRows).coerceAtLeast(1)
                 val folderCellAppMap = remember(folderCellMap, allAvailableApps, folderCellCount) {
-                    reflowFolderCells(folderCellMap, allAvailableApps, folderCellCount)
+                    reflowFolderCells(folderCellMap, allAvailableApps, folderCellCount, appCustomizations)
                 }
                 val isDraggingInFolder = draggedPkg != null && !isFolderDropAnimating
 
