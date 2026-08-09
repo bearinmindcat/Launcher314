@@ -590,6 +590,8 @@ fun AppDrawerScreen(
     // Filter hidden apps and sort based on search query
     // When searching, include apps from folders so they appear in results
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(context) }
+    // Pinned apps lead the drawer list (after folders); managed in Additional Drawer Settings.
+    val pinnedApps = remember { com.bearinmind.launcher314.data.getPinnedApps(context) }
     // Issue #79: auto-hide home screen apps from the drawer (search / custom tabs still show them).
     val hideHomeScreenApps = remember { com.bearinmind.launcher314.data.getHideHomeScreenApps(context) }
     val homeScreenPkgs by remember {
@@ -630,7 +632,8 @@ fun AppDrawerScreen(
     val filteredApps by remember {
         derivedStateOf {
             val availableApps = if (searchQuery.isBlank()) {
-                allApps.filter { it.packageName !in appsInVisibleFolders && it.packageName !in hiddenApps }
+                // Pinned apps are exempt from the folder swallow — a pin always shows at the top.
+                allApps.filter { (it.packageName !in appsInVisibleFolders || it.packageName in pinnedApps) && it.packageName !in hiddenApps }
             } else {
                 // When searching, include all apps (even those in folders) so they appear in results
                 allApps.filter { it.packageName !in hiddenApps }
@@ -649,19 +652,19 @@ fun AppDrawerScreen(
                     else profileFiltered
                 } else {
                     // "All" tab with the global "Hide added apps from all" mode on:
-                    // drop every app that belongs to any tab. Search still finds them.
+                    // drop every app that belongs to any tab (pins exempt). Search still finds them.
                     if (!hideTabbedFromAll) profileFiltered
                     else {
                         val hiddenByTabs = drawerTabs.flatMap { it.packages }.toSet()
                         if (hiddenByTabs.isEmpty()) profileFiltered
-                        else profileFiltered.filter { it.packageName !in hiddenByTabs }
+                        else profileFiltered.filter { it.packageName !in hiddenByTabs || it.packageName in pinnedApps }
                     }
                 }
             } else profileFiltered
-            // Issue #79: drop home screen apps from the browsing list only (tabs keep picks, search spans all).
+            // Issue #79: drop home screen apps from the browsing list only (pins exempt; tabs/search unaffected).
             val homeFiltered = if (searchQuery.isBlank() && homeScreenPkgs.isNotEmpty() &&
                 (!drawerTabsEnabled || selectedDrawerTabId == null)) {
-                tabFiltered.filter { it.packageName !in homeScreenPkgs }
+                tabFiltered.filter { it.packageName !in homeScreenPkgs || it.packageName in pinnedApps }
             } else tabFiltered
             // Choose the search set. Fuzzy matcher only when the user opted in;
             // otherwise the classic case-insensitive substring search. Fuzzy
@@ -676,7 +679,7 @@ fun AppDrawerScreen(
                     )
                 else -> homeFiltered.filter { app -> app.name.contains(searchQuery, ignoreCase = true) }
             }
-            when {
+            val sorted = when {
                 // Fuzzy results are already relevance-ranked (recency baked in).
                 searchQuery.isNotBlank() && fuzzySearchEnabled -> searched
                 // Search + "recently used first" (#64): most-recently-opened
@@ -695,6 +698,12 @@ fun AppDrawerScreen(
                     SortOption.MANUAL -> if (isSortAscending) searched.sortedBy { it.name.lowercase() } else searched.sortedByDescending { it.name.lowercase() }
                 }
             }
+            // Pinned apps lead the browsing list (alphabetical); sort applies to the rest, search unaffected.
+            if (searchQuery.isBlank() && pinnedApps.isNotEmpty() &&
+                (!drawerTabsEnabled || selectedDrawerTabId == null)) {
+                val (pinned, rest) = sorted.partition { it.packageName in pinnedApps }
+                pinned.sortedBy { it.name.lowercase() } + rest
+            } else sorted
         }
     }
 

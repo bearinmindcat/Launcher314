@@ -680,6 +680,35 @@ fun setHiddenApps(context: Context, hiddenApps: Set<String>) {
     prefs.edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()
 }
 
+// Drawer noise-grain intensity: % of the default overlay alpha (100 = default look, 0 = off).
+private const val KEY_DRAWER_NOISE_PERCENT = "drawer_noise_percent"
+
+fun getDrawerNoisePercent(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_DRAWER_NOISE_PERCENT, 100)
+}
+
+fun setDrawerNoisePercent(context: Context, percent: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_DRAWER_NOISE_PERCENT, percent.coerceIn(0, 100)).apply()
+}
+
+// ============================================================================
+// PINNED APPS (top of drawer)
+// ============================================================================
+
+private const val KEY_PINNED_APPS = "pinned_apps"
+
+fun getPinnedApps(context: Context): Set<String> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getStringSet(KEY_PINNED_APPS, emptySet()) ?: emptySet()
+}
+
+fun setPinnedApps(context: Context, pinnedApps: Set<String>) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putStringSet(KEY_PINNED_APPS, pinnedApps).apply()
+}
+
 // ============================================================================
 // SWIPE DOWN FOR NOTIFICATIONS
 // ============================================================================

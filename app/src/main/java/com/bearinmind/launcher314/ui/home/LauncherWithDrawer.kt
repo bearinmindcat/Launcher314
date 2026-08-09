@@ -221,7 +221,10 @@ fun LauncherWithDrawer(
 
     // Noise grain: a tiled grayscale-noise brush overlaid faintly on the
     // frosted drawer so it reads like real glass, not flat plastic blur.
-    // Generated once.
+    // Generated once. User slider scales the default 0.05 alpha (0-100%).
+    val noiseAlphaMax = remember {
+        com.bearinmind.launcher314.data.getDrawerNoisePercent(context) / 100f * 0.05f
+    }
     val noiseBrush = remember {
         val n = 128
         val px = IntArray(n * n)
@@ -1513,15 +1516,15 @@ fun LauncherWithDrawer(
             // Layer 1.6: NOISE GRAIN — faint tiled grayscale noise over the frosted
             // area. Makes the blur read as real glass instead of flat plastic.
             // Fades with the scrim; draw-phase alpha like everything else.
-            Box(
+            if (noiseAlphaMax > 0f) Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
                         alpha = if (drawerToHomeActive) {
-                            drawerToHomeFadeAlpha * 0.05f
+                            drawerToHomeFadeAlpha * noiseAlphaMax
                         } else {
                             val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
-                            ((pr - 0.117f) / 0.283f).coerceIn(0f, 1f) * 0.05f
+                            ((pr - 0.117f) / 0.283f).coerceIn(0f, 1f) * noiseAlphaMax
                         }
                     }
                     .background(noiseBrush)

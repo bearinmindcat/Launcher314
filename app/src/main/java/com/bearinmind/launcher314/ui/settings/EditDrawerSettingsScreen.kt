@@ -1,6 +1,8 @@
 package com.bearinmind.launcher314.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,7 +36,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -94,6 +98,7 @@ private fun SettingSlider(
 fun EditDrawerSettingsScreen(
     onBack: () -> Unit,
     onPreviewDrawer: () -> Unit = {},
+    onOpenPinnedApps: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var fuzzyEnabled by remember { mutableStateOf(isFuzzySearchEnabled(context)) }
@@ -105,6 +110,7 @@ fun EditDrawerSettingsScreen(
     var sortFolders by remember { mutableStateOf(getSortFoldersEnabled(context)) }
     var hideHomeScreenApps by remember { mutableStateOf(com.bearinmind.launcher314.data.getHideHomeScreenApps(context)) }
     var autoOpenKeyboard by remember { mutableStateOf(getAutoOpenKeyboard(context)) }
+    var noisePercent by remember { mutableFloatStateOf(com.bearinmind.launcher314.data.getDrawerNoisePercent(context).toFloat()) }
     var autoLaunchSearchResult by remember { mutableStateOf(getAutoLaunchSearchResult(context)) }
 
     Column(
@@ -230,6 +236,49 @@ fun EditDrawerSettingsScreen(
             checked = autoOpenKeyboard,
             onCheckedChange = { autoOpenKeyboard = it; setAutoOpenKeyboard(context, it) }
         )
+
+        // Drawer noise grain intensity — centered, title under the slider (standard slider look)
+        Spacer(Modifier.height(4.dp))
+        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 36.dp)) {
+            ThumbDragHorizontalSlider(
+                currentValue = noisePercent,
+                config = SliderConfigs.drawerNoise,
+                onValueChange = {
+                    noisePercent = it
+                    com.bearinmind.launcher314.data.setDrawerNoisePercent(context, it.roundToInt())
+                },
+                onValueChangeFinished = {}
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Pinned apps — card styled like the settings screen's "Hide apps from launcher".
+        val pinnedAppCount = com.bearinmind.launcher314.data.getPinnedApps(context).size
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onOpenPinnedApps() }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Pinned apps",
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = if (pinnedAppCount > 0) "$pinnedAppCount pinned" else "Nothing pinned",
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center
+            )
+        }
 
         Spacer(Modifier.height(16.dp))
         } // end scrollable Column

@@ -937,7 +937,8 @@ fun MainScreen(
                         if (popped) {
                             activity?.openDrawerTrigger?.let { it.intValue++ }
                         }
-                    }
+                    },
+                    onOpenPinnedApps = { navController.navigateSafely("pinned_apps") }
                 )
             }
             composable("edit_home_settings") {
@@ -958,6 +959,11 @@ fun MainScreen(
             }
             composable("hide_apps") {
                 HideAppsScreen(
+                    onBack = { navController.popBackStackSafely() }
+                )
+            }
+            composable("pinned_apps") {
+                com.bearinmind.launcher314.ui.settings.PinnedAppsScreen(
                     onBack = { navController.popBackStackSafely() }
                 )
             }
@@ -1112,7 +1118,8 @@ fun MainScreen(
                                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             context.startActivity(intent)
-                        }
+                        },
+                        onOpenPinnedApps = { navController.navigateSafely("pinned_apps") }
                     )
                 }
                 composable("icon_packs") {
@@ -1122,6 +1129,11 @@ fun MainScreen(
                 }
                 composable("hide_apps") {
                     HideAppsScreen(
+                        onBack = { navController.popBackStackSafely() }
+                    )
+                }
+                composable("pinned_apps") {
+                    com.bearinmind.launcher314.ui.settings.PinnedAppsScreen(
                         onBack = { navController.popBackStackSafely() }
                     )
                 }
