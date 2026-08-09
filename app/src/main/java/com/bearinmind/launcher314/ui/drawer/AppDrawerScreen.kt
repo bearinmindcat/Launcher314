@@ -189,6 +189,7 @@ import com.bearinmind.launcher314.data.launchApp
 fun AppDrawerScreen(
     onSearchActiveChanged: (Boolean) -> Unit = {},
     dismissSearchTrigger: Int = 0,
+    closeFolderTrigger: Int = 0,
     isDrawerFullyOpen: Boolean = false,
     onSettingsClick: () -> Unit = {},
     onAddToHome: (AppInfo) -> Unit = {},
@@ -504,6 +505,8 @@ fun AppDrawerScreen(
     LaunchedEffect(openFolder) {
         if (openFolder == null) folderNavStack = emptyList()
     }
+    // Issue #80: Home button closes an open drawer folder.
+    LaunchedEffect(closeFolderTrigger) { if (closeFolderTrigger > 0) openFolder = null }
 
     // Save folders when changed
     fun saveFolders(newFolders: List<AppFolder>) {

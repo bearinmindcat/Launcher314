@@ -744,6 +744,12 @@ private fun widgetCornerRadiusDp(perWidgetPercent: Int?, globalEnabled: Boolean,
     perWidgetPercent?.let { it / 100f * WIDGET_MAX_CORNER_RADIUS_DP }
         ?: if (globalEnabled) globalPercent / 100f * WIDGET_MAX_CORNER_RADIUS_DP else 0f
 
+/** Issue #80: open/close-request bridge so Back/Home (hosted in LauncherWithDrawer) can close the folder. */
+object HomeFolderState {
+    val open = androidx.compose.runtime.mutableStateOf(false)
+    val closeRequest = androidx.compose.runtime.mutableIntStateOf(0)
+}
+
 /**
  * LauncherScreen - A home screen with drag and drop app placement
  */
@@ -1060,7 +1066,17 @@ fun LauncherScreen(
 
     // Folder state - for creating and opening folders on home screen
     var openHomeFolder by remember { mutableStateOf<HomeFolder?>(null) }
-    LaunchedEffect(openHomeFolder) { onFolderOpenChanged(openHomeFolder != null) }
+    LaunchedEffect(openHomeFolder) {
+        onFolderOpenChanged(openHomeFolder != null)
+        // Issue #80: publish open-state and watch for Back/Home close requests (scrim-tap close path).
+        HomeFolderState.open.value = openHomeFolder != null
+        if (openHomeFolder != null) {
+            val start = HomeFolderState.closeRequest.intValue
+            snapshotFlow { HomeFolderState.closeRequest.intValue }.collect {
+                if (it != start) openHomeFolder = null
+            }
+        }
+    }
     var folderCreationHoverJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var folderCreationTargetIndex by remember { mutableStateOf<Int?>(null) }
     var showFolderCreationIndicator by remember { mutableStateOf(false) }

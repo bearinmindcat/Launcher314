@@ -366,6 +366,8 @@ fun LauncherWithDrawer(
 
     // Home button pressed: close the drawer and return to home screen
     LaunchedEffect(homeButtonTrigger) {
+        // Issue #80: also close an open home screen folder.
+        if (homeButtonTrigger > 0) HomeFolderState.closeRequest.intValue++
         if (homeButtonTrigger > 0 && showAppDrawer) {
             showAppDrawer = false
             homeRefreshTrigger++
@@ -632,6 +634,11 @@ fun LauncherWithDrawer(
 
     // Back button: drawer open → close drawer, home screen → do nothing
     BackHandler(enabled = true) {
+        // Issue #80: an open home screen folder closes first.
+        if (HomeFolderState.open.value) {
+            HomeFolderState.closeRequest.intValue++
+            return@BackHandler
+        }
         if (showAppDrawer && swipeUpY.value < drawerRangePx) {
             // Drawer is visible — close it and return to home screen
             coroutineScope.launch {
@@ -1624,6 +1631,7 @@ fun LauncherWithDrawer(
             ) {
                 AppDrawerScreen(
                     dismissSearchTrigger = dismissSearchTrigger,
+                    closeFolderTrigger = homeButtonTrigger,
                     // Background is the external scrim above (Launcher3 separates
                     // scrim fade from content fade), so the drawer paints none.
                     drawBackground = false,
