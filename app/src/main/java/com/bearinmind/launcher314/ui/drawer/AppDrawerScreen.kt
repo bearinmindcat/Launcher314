@@ -546,6 +546,17 @@ fun AppDrawerScreen(
         }
     }
 
+    // Issue #87: apply per-app renames so the drawer shows, sorts and searches by the custom label.
+    val renamedApps by remember {
+        derivedStateOf {
+            com.bearinmind.launcher314.data.AppCustomizationsVersion.state.intValue
+            val custs = com.bearinmind.launcher314.data.loadAppCustomizations(context).customizations
+            if (custs.isEmpty()) allApps else allApps.map { a ->
+                custs[a.packageName]?.customLabel?.takeIf { it.isNotEmpty() }?.let { a.copy(name = it) } ?: a
+            }
+        }
+    }
+
     // Get apps that are in folders
     val appsInFolders by remember {
         derivedStateOf {
@@ -634,10 +645,10 @@ fun AppDrawerScreen(
         derivedStateOf {
             val availableApps = if (searchQuery.isBlank()) {
                 // Pinned apps are exempt from the folder swallow — a pin always shows at the top.
-                allApps.filter { (it.packageName !in appsInVisibleFolders || it.packageName in pinnedApps) && it.packageName !in hiddenApps }
+                renamedApps.filter { (it.packageName !in appsInVisibleFolders || it.packageName in pinnedApps) && it.packageName !in hiddenApps }
             } else {
                 // When searching, include all apps (even those in folders) so they appear in results
-                allApps.filter { it.packageName !in hiddenApps }
+                renamedApps.filter { it.packageName !in hiddenApps }
             }
             // Apply profile filter unless we're searching (search spans all).
             val profileFiltered = if (searchQuery.isBlank() && hasWorkApps) {
@@ -716,7 +727,7 @@ fun AppDrawerScreen(
             if (!suggestedAppsEnabled) return@derivedStateOf emptyList<AppInfo>()
             val now = System.currentTimeMillis()
             val limit = (gridSize - 1).coerceAtLeast(1) // (drawer columns - 1) × 1 row
-            allApps.asSequence()
+            renamedApps.asSequence()
                 .filter {
                     it.profileType == com.bearinmind.launcher314.helpers.ProfileType.PERSONAL &&
                         it.packageName !in hiddenApps
@@ -894,7 +905,7 @@ fun AppDrawerScreen(
                     folder.copy(appPackageNames = folder.appPackageNames.filter { it !in hiddenApps })
                 },
             filteredApps = filteredApps,
-            allApps = allApps,
+            allApps = renamedApps,
             gridSize = gridSize,
             iconSize = iconSize,
             labelFontSize = appLabelFontSize,
@@ -1137,7 +1148,7 @@ fun AppDrawerScreen(
                         folder = currentFolder.copy(
                             appPackageNames = currentFolder.appPackageNames.filter { it !in hiddenApps }
                         ),
-                        allApps = allApps,
+                        allApps = renamedApps,
                         gridSize = gridSize,
                         iconSize = iconSize,
                         labelFontSize = appLabelFontSize,

@@ -89,10 +89,16 @@ fun loadAppCustomizations(context: Context): AppCustomizations {
     }
 }
 
+/** Bumped on every customization save so live surfaces (drawer renames) can re-derive. */
+object AppCustomizationsVersion {
+    val state = androidx.compose.runtime.mutableIntStateOf(0)
+}
+
 fun saveAppCustomizations(context: Context, data: AppCustomizations) {
     try {
         val file = File(context.filesDir, CUSTOMIZATIONS_FILE)
         file.writeText(Json.encodeToString(data))
+        AppCustomizationsVersion.state.intValue++
     } catch (e: Exception) {
         e.printStackTrace()
     }
