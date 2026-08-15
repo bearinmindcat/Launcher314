@@ -21,6 +21,12 @@ private const val ICON_SIZE = 192
  * Falls back to system icon if no icon pack is active or no icon pack icon exists.
  */
 private fun resolveIconDrawable(context: Context, packageName: String): android.graphics.drawable.Drawable {
+    // Icon-pack pick wins first — including for shortcuts (their old early-return blocked pack icons).
+    val iconPackPath = IconPackManager.resolveIconPath(context, packageName, "")
+    if (iconPackPath.isNotEmpty()) {
+        val bmp = BitmapFactory.decodeFile(iconPackPath)
+        if (bmp != null) return BitmapDrawable(context.resources, bmp)
+    }
     // Handle shortcuts (e.g., "Add to Home Screen" from browsers)
     if (packageName.startsWith("shortcut_")) {
         val iconFile = File(context.filesDir, "shortcut_icons/$packageName.png")
@@ -28,11 +34,6 @@ private fun resolveIconDrawable(context: Context, packageName: String): android.
             val bmp = BitmapFactory.decodeFile(iconFile.absolutePath)
             if (bmp != null) return BitmapDrawable(context.resources, bmp)
         }
-    }
-    val iconPackPath = IconPackManager.resolveIconPath(context, packageName, "")
-    if (iconPackPath.isNotEmpty()) {
-        val bmp = BitmapFactory.decodeFile(iconPackPath)
-        if (bmp != null) return BitmapDrawable(context.resources, bmp)
     }
     return context.packageManager.getApplicationIcon(packageName)
 }

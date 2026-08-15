@@ -698,16 +698,25 @@ fun setDrawerNoisePercent(context: Context, percent: Int) {
 // ============================================================================
 
 private const val KEY_PINNED_APPS = "pinned_apps"
+private const val KEY_PINNED_APPS_ORDER = "pinned_apps_order"
 
-fun getPinnedApps(context: Context): Set<String> {
+/** Drag-reorder pin order: package names or "folder:<id>" markers; migrates from the legacy unordered set. */
+fun getPinnedAppsOrder(context: Context): List<String> {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    return prefs.getStringSet(KEY_PINNED_APPS, emptySet()) ?: emptySet()
+    val raw = prefs.getString(KEY_PINNED_APPS_ORDER, null)
+    if (raw != null) return if (raw.isEmpty()) emptyList() else raw.split("\n")
+    return (prefs.getStringSet(KEY_PINNED_APPS, emptySet()) ?: emptySet()).sorted()
 }
 
-fun setPinnedApps(context: Context, pinnedApps: Set<String>) {
+fun setPinnedAppsOrder(context: Context, order: List<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    prefs.edit().putStringSet(KEY_PINNED_APPS, pinnedApps).apply()
+    prefs.edit()
+        .putString(KEY_PINNED_APPS_ORDER, order.joinToString("\n"))
+        .putStringSet(KEY_PINNED_APPS, order.toSet())
+        .apply()
 }
+
+fun getPinnedApps(context: Context): Set<String> = getPinnedAppsOrder(context).toSet()
 
 // ============================================================================
 // SWIPE DOWN FOR NOTIFICATIONS

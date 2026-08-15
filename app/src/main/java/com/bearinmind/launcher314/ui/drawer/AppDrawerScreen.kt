@@ -590,8 +590,9 @@ fun AppDrawerScreen(
     // Filter hidden apps and sort based on search query
     // When searching, include apps from folders so they appear in results
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(context) }
-    // Pinned apps lead the drawer list (after folders); managed in Additional Drawer Settings.
-    val pinnedApps = remember { com.bearinmind.launcher314.data.getPinnedApps(context) }
+    // Pinned apps lead the drawer list (after folders) in the user's drag order.
+    val pinnedOrder = remember { com.bearinmind.launcher314.data.getPinnedAppsOrder(context) }
+    val pinnedApps = remember { pinnedOrder.toSet() }
     // Issue #79: auto-hide home screen apps from the drawer (search / custom tabs still show them).
     val hideHomeScreenApps = remember { com.bearinmind.launcher314.data.getHideHomeScreenApps(context) }
     val homeScreenPkgs by remember {
@@ -698,11 +699,11 @@ fun AppDrawerScreen(
                     SortOption.MANUAL -> if (isSortAscending) searched.sortedBy { it.name.lowercase() } else searched.sortedByDescending { it.name.lowercase() }
                 }
             }
-            // Pinned apps lead the browsing list (alphabetical); sort applies to the rest, search unaffected.
+            // Pinned apps lead the browsing list (user's drag order); sort applies to the rest, search unaffected.
             if (searchQuery.isBlank() && pinnedApps.isNotEmpty() &&
                 (!drawerTabsEnabled || selectedDrawerTabId == null)) {
                 val (pinned, rest) = sorted.partition { it.packageName in pinnedApps }
-                pinned.sortedBy { it.name.lowercase() } + rest
+                pinned.sortedBy { pinnedOrder.indexOf(it.packageName) } + rest
             } else sorted
         }
     }

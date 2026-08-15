@@ -215,8 +215,10 @@ fun loadShortcutApps(context: Context): List<HomeAppInfo> {
                     val shortcutId = metaFile.nameWithoutExtension
                     val name = lines[0]
                     val iconFile = java.io.File(iconsDir, "$shortcutId.png")
-                    val iconPath = if (iconFile.exists()) iconFile.absolutePath
+                    val basePath = if (iconFile.exists()) iconFile.absolutePath
                         else java.io.File(context.cacheDir, "app_icons/com.android.chrome.png").absolutePath // fallback
+                    // A per-app icon-pack pick (icon_pack_cache) overrides the shortcut's own bitmap.
+                    val iconPath = IconPackManager.resolveIconPath(context, shortcutId, basePath)
                     HomeAppInfo(name = name, packageName = shortcutId, iconPath = iconPath)
                 } else null
             } catch (_: Exception) { null }

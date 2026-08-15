@@ -220,7 +220,14 @@ internal fun MainDrawerContent(
     val hideSearchBar = com.bearinmind.launcher314.data.getHideDrawerSearchBar(LocalContext.current)
     val autoHideScrollbar = com.bearinmind.launcher314.data.getAutoHideScrollbar(LocalContext.current)
     val pinnedCtx = LocalContext.current
-    val pinnedSet = remember { com.bearinmind.launcher314.data.getPinnedApps(pinnedCtx) }
+    val pinnedOrder = remember { com.bearinmind.launcher314.data.getPinnedAppsOrder(pinnedCtx) }
+    val pinnedSet = remember { pinnedOrder.toSet() }
+    // Rank in the user's drag order; unpinned items sort behind (stable).
+    val pinIndexOf = { item: Any ->
+        val marker = if (item is AppFolder) com.bearinmind.launcher314.data.folderEntry(item.id)
+            else (item as? AppInfo)?.packageName ?: ""
+        pinnedOrder.indexOf(marker).let { if (it < 0) Int.MAX_VALUE else it }
+    }
     val tabsAtBottom = isTabsAtBottom(LocalContext.current)
 
     // Track cell positions and sizes for drag overlay positioning (shared across paged/scroll modes)
@@ -972,8 +979,8 @@ internal fun MainDrawerContent(
             ) {
                 val items = mutableListOf<Any>()
                 if (searchQuery.isBlank()) {
-                    // Show all folders when not searching (pinned folders first — stable sort)
-                    items.addAll(folders.sortedByDescending { com.bearinmind.launcher314.data.folderEntry(it.id) in pinnedSet })
+                    // Show all folders when not searching (pinned folders first, in drag order — stable sort)
+                    items.addAll(folders.sortedBy(pinIndexOf))
                 } else {
                     // Only show folders that contain apps matching the search query
                     items.addAll(folders.filter { folder ->
@@ -996,12 +1003,12 @@ internal fun MainDrawerContent(
                             else -> ""
                         }
                     }
-                    // Pinned apps and folders stay in front even when folders interleave with apps.
+                    // Pinned apps and folders stay in front (drag order) even when folders interleave.
                     val (pinned, rest) = items.partition {
                         (it is AppInfo && it.packageName in pinnedSet) ||
                             (it is AppFolder && com.bearinmind.launcher314.data.folderEntry(it.id) in pinnedSet)
                     }
-                    pinned.sortedBy(nameOf) +
+                    pinned.sortedBy(pinIndexOf) +
                         if (isSortAscending) rest.sortedBy(nameOf) else rest.sortedByDescending(nameOf)
                 }
             }
@@ -1356,15 +1363,15 @@ internal fun MainDrawerContent(
                     }
                     val interleave = extraCallbacks.sortFoldersWithApps &&
                         (currentSortOption == SortOption.NAME || currentSortOption == SortOption.MANUAL)
-                    // Pinned apps and folders stay in front even when folders interleave with apps.
+                    // Pinned apps and folders stay in front (drag order) even when folders interleave.
                     val mergedItems: List<Any> = if (!interleave) {
-                        displayFolders.sortedByDescending { com.bearinmind.launcher314.data.folderEntry(it.id) in pinnedSet } + filteredApps
+                        displayFolders.sortedBy(pinIndexOf) + filteredApps
                     } else {
                         val (pinned, rest) = (displayFolders + filteredApps).partition {
                             (it is AppInfo && it.packageName in pinnedSet) ||
                                 (it is AppFolder && com.bearinmind.launcher314.data.folderEntry(it.id) in pinnedSet)
                         }
-                        pinned.sortedBy(nameOf) +
+                        pinned.sortedBy(pinIndexOf) +
                             if (isSortAscending) rest.sortedBy(nameOf) else rest.sortedByDescending(nameOf)
                     }
                     items(
