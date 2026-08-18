@@ -4,6 +4,9 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -246,6 +249,31 @@ internal fun BoxScope.SourceBadge(
     }
 }
 
+/** Issue #88 live preview: folder-popup drag state published from LauncherScreen's drag lambdas (64KB-free). */
+object FolderReorderPreview {
+    var active by androidx.compose.runtime.mutableStateOf(false)
+    var hoverIdx by androidx.compose.runtime.mutableStateOf(-1)
+    var fromIdx = -1
+    var draggedPkg: String? = null
+    var cellMap: Map<Int, String> = emptyMap()
+    var positions: Map<Int, Offset> = emptyMap()
+}
+
+/** Where this cell's app would land if the drag dropped now. Null = preview off (snap home), Zero = no shift. */
+internal fun folderReorderPreviewShift(cellIdx: Int, pkg: String?): Offset? {
+    val p = FolderReorderPreview
+    if (!p.active || pkg == null || pkg == p.draggedPkg) return null
+    val hover = p.hoverIdx
+    if (hover < 0 || hover == p.fromIdx || p.cellMap[cellIdx] != pkg || p.cellMap[hover] == null) return Offset.Zero
+    val dragged = p.draggedPkg ?: return Offset.Zero
+    val preview = com.bearinmind.launcher314.data.insertIntoFolderCellMap(p.cellMap, p.fromIdx, hover, dragged)
+    val targetIdx = preview.entries.firstOrNull { it.value == pkg }?.key ?: return Offset.Zero
+    if (targetIdx == cellIdx) return Offset.Zero
+    val from = p.positions[cellIdx] ?: return Offset.Zero
+    val to = p.positions[targetIdx] ?: return Offset.Zero
+    return to - from
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DraggableGridCell(
@@ -336,6 +364,16 @@ fun DraggableGridCell(
     val showBottomRightMarker = (row < gridRows - 1) && (column < gridColumns - 1)
     val markerHalfSize = markerHalfSizeParam
 
+    // Issue #88: slide to the would-be slot while a folder drag hovers — folder-popup cells only.
+    val isFolderPopupCell = removeLabel == "Remove from folder"
+    val reorderShift = remember { androidx.compose.animation.core.Animatable(Offset.Zero, Offset.VectorConverter) }
+    val reorderTarget = if (isFolderPopupCell)
+        folderReorderPreviewShift(index, (cell as? HomeGridCell.App)?.appInfo?.packageName) else null
+    LaunchedEffect(reorderTarget) {
+        if (reorderTarget != null) reorderShift.animateTo(reorderTarget, spring(stiffness = Spring.StiffnessMediumLow))
+        else reorderShift.snapTo(Offset.Zero)
+    }
+
     // Outer container - NO scaling here, so "+" markers stay in place
     // clip = false allows text/icons to overflow cell bounds on tablets
     Box(
@@ -354,6 +392,16 @@ fun DraggableGridCell(
         // Uses GridCellHoverIndicator from TileColorOnHover.kt
         if (isDragging && isHovered) {
             GridCellHoverIndicator(isHovered = true, markerHalfSize = markerHalfSize, cornerRadius = hoverCornerRadius)
+        }
+
+        // Issue #88 drop-slot indicator — always composed (condition drives isHovered) so the fade plays.
+        if (isFolderPopupCell) {
+            GridCellHoverIndicator(
+                isHovered = FolderReorderPreview.active && FolderReorderPreview.hoverIdx == index &&
+                    index != FolderReorderPreview.fromIdx && FolderReorderPreview.cellMap[index] != null,
+                markerHalfSize = markerHalfSize,
+                cornerRadius = hoverCornerRadius
+            )
         }
 
         // "+" marker - positioned at corner, fades in/out when dragging an app
@@ -479,6 +527,12 @@ fun DraggableGridCell(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Issue #88 preview shift — app content only ("+" markers stay put), gated so it dies the commit frame.
+                        .graphicsLayer {
+                            val s = if (FolderReorderPreview.active) reorderShift.value else Offset.Zero
+                            translationX = s.x
+                            translationY = s.y
+                        }
                         // Accessibility: merge the icon + label into ONE focusable element
                         // (announces the app name, launches on activate) so TalkBack
                         // doesn't read the icon and label as two separate nodes — applies
@@ -619,7 +673,9 @@ fun DraggableGridCell(
                     // Show hover indicator UNDERNEATH the app when something is dragged over this cell
                     // Only show blue (valid) indicator — invalid targets show red icon tint instead
                     // Suppress immediately when folder preview is about to show (no grey flicker)
-                    if (isHovered && !isDragging && isValidDropTarget && folderPreviewDraggedIconPath == null && folderPreviewProgress == 0f) {
+                    // Suppressed during folder live-reorder too — this tile travels with the shifted content.
+                    if (isHovered && !isDragging && isValidDropTarget && folderPreviewDraggedIconPath == null && folderPreviewProgress == 0f &&
+                        !(isFolderPopupCell && FolderReorderPreview.active)) {
                         GridCellHoverIndicator(
                             isHovered = true,
                             isValidDropTarget = isValidDropTarget,

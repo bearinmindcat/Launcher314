@@ -132,6 +132,24 @@ class RemoveAnimState {
     val anim = Animatable(1f)
 }
 
+/** Folder reorder (issue #88): insert at [toIdx] and shift the occupied run toward the vacated [fromIdx] — no swapping. */
+fun insertIntoFolderCellMap(cellMap: Map<Int, String>, fromIdx: Int, toIdx: Int, pkg: String): Map<Int, String> {
+    val newMap = cellMap.toMutableMap()
+    newMap.remove(fromIdx)
+    if (newMap[toIdx] != null) {
+        val step = if (toIdx > fromIdx) -1 else 1
+        var free = toIdx
+        while (newMap[free] != null) free += step
+        while (free != toIdx) {
+            newMap[free] = newMap[free - step]!!
+            newMap.remove(free - step)
+            free -= step
+        }
+    }
+    newMap[toIdx] = pkg
+    return newMap
+}
+
 // ========== Migration Helpers ==========
 
 /**

@@ -7535,6 +7535,12 @@ fun LauncherScreen(
                                                 draggedFolderCellIdx = cellIdx
                                                 dragOffset = Offset.Zero
                                                 dragOriginalFolderCellPos = folderCellPositions[cellIdx]
+                                                FolderReorderPreview.fromIdx = cellIdx
+                                                FolderReorderPreview.draggedPkg = cellApp.packageName
+                                                FolderReorderPreview.cellMap = folderCellMap
+                                                FolderReorderPreview.positions = folderCellPositions.toMap()
+                                                FolderReorderPreview.hoverIdx = -1
+                                                FolderReorderPreview.active = true
                                             }
                                         },
                                         onDrag = { delta ->
@@ -7631,6 +7637,7 @@ fun LauncherScreen(
                                                         escapedToHomeGrid = true
                                                         hoveredFolderCell = null
                                                         openHomeFolder = null
+                                                        FolderReorderPreview.active = false
                                                     }
                                                     return@DraggableGridCell
                                                 }
@@ -7639,6 +7646,7 @@ fun LauncherScreen(
                                                     dragCenter.x >= pos.x && dragCenter.x < pos.x + folderCellSize.width &&
                                                     dragCenter.y >= pos.y && dragCenter.y < pos.y + folderCellSize.height
                                                 }?.key
+                                                FolderReorderPreview.hoverIdx = hoveredFolderCell ?: -1
                                             }
                                         },
                                         onDragEnd = {
@@ -7675,19 +7683,10 @@ fun LauncherScreen(
                                                     folderDropAnimProgress.snapTo(0f)
                                                     folderDropAnimProgress.animateTo(1f, tween(durationMillis = 400, easing = FastOutSlowInEasing))
 
-                                                    // Perform the move
-                                                    val newMap = folderCellMap.toMutableMap()
-                                                    newMap.remove(fromIdx)
-                                                    val existingAtTarget = newMap[toIdx]
-                                                    if (existingAtTarget != null) {
-                                                        // Swap
-                                                        newMap[toIdx] = pkg
-                                                        newMap[fromIdx] = existingAtTarget
-                                                    } else {
-                                                        // Move to empty cell
-                                                        newMap[toIdx] = pkg
-                                                    }
+                                                    // Insert-and-shift, not swap (issue #88)
+                                                    val newMap = com.bearinmind.launcher314.data.insertIntoFolderCellMap(folderCellMap, fromIdx, toIdx, pkg)
                                                     folderCellMap = newMap
+                                                    FolderReorderPreview.active = false
                                                     saveFolderCellMap(newMap)
 
                                                     // Reset
@@ -7704,6 +7703,7 @@ fun LauncherScreen(
                                                     folderDropTargetOffset = Offset.Zero
                                                     isFolderDropAnimating = true
                                                     hoveredFolderCell = null
+                                                    FolderReorderPreview.hoverIdx = -1
 
                                                     folderDropScope.launch {
                                                         folderDropAnimProgress.snapTo(0f)
@@ -7713,6 +7713,7 @@ fun LauncherScreen(
                                                         dragOffset = Offset.Zero
                                                         dragOriginalFolderCellPos = null
                                                         isFolderDropAnimating = false
+                                                        FolderReorderPreview.active = false
                                                     }
                                                 } else {
                                                     draggedPkg = null
@@ -7720,6 +7721,7 @@ fun LauncherScreen(
                                                     dragOffset = Offset.Zero
                                                     dragOriginalFolderCellPos = null
                                                     hoveredFolderCell = null
+                                                    FolderReorderPreview.active = false
                                                 }
                                             }
                                         },

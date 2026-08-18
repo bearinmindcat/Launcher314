@@ -3,7 +3,9 @@ package com.bearinmind.launcher314.ui.drawer
 import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -383,6 +385,13 @@ internal fun FolderContentScreen(
                                     mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)
                                 }
 
+                                // Issue #88: slide to the would-be slot while a drag hovers (same preview as home folders).
+                                val reorderShift = remember { androidx.compose.animation.core.Animatable(Offset.Zero, Offset.VectorConverter) }
+                                val reorderTarget = com.bearinmind.launcher314.ui.home.folderReorderPreviewShift(cellIdx, folderCellMap[cellIdx])
+                                LaunchedEffect(reorderTarget) {
+                                    if (reorderTarget != null) reorderShift.animateTo(reorderTarget, spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
+                                    else reorderShift.snapTo(Offset.Zero)
+                                }
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
@@ -437,6 +446,14 @@ internal fun FolderContentScreen(
                                                                         dragOffset = Offset.Zero
                                                                         dragOriginalCellPos = cellPositions[cellIdx]
                                                                         lastDragPosition = change.position
+                                                                        com.bearinmind.launcher314.ui.home.FolderReorderPreview.let { p ->
+                                                                            p.fromIdx = cellIdx
+                                                                            p.draggedPkg = currentCellApp.packageName
+                                                                            p.cellMap = folderCellMap
+                                                                            p.positions = cellPositions.toMap()
+                                                                            p.hoverIdx = -1
+                                                                            p.active = true
+                                                                        }
                                                                     }
 
                                                                     if (dragStarted && draggedCellIdx == cellIdx) {
@@ -474,6 +491,7 @@ internal fun FolderContentScreen(
                                                                                     escapedToDrawer = true
                                                                                     hoveredCell = null
                                                                                     dragOverHeader = false
+                                                                                    com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                                                     // Cell is already invisible (isDragged alpha=0) and
                                                                                     // folder overlay is fading out — no need to modify cellMap
                                                                                     // here (would crash: layout node removed mid-gesture)
@@ -483,6 +501,7 @@ internal fun FolderContentScreen(
                                                                                         dragCenter.x >= pos.x && dragCenter.x < pos.x + cellSize.width &&
                                                                                         dragCenter.y >= pos.y && dragCenter.y < pos.y + cellSize.height
                                                                                     }?.key
+                                                                                    com.bearinmind.launcher314.ui.home.FolderReorderPreview.hoverIdx = hoveredCell ?: -1
                                                                                 }
                                                                             }
                                                                         }
@@ -498,6 +517,7 @@ internal fun FolderContentScreen(
                                                                             dragOffset = Offset.Zero
                                                                             dragOriginalCellPos = null
                                                                             hoveredCell = null
+                                                                            com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                                             currentOnEscapeDragEnd()
                                                                             break
                                                                         }
@@ -526,17 +546,10 @@ internal fun FolderContentScreen(
                                                                                     1f,
                                                                                     tween(400, easing = FastOutSlowInEasing)
                                                                                 )
-                                                                                // Perform swap/move
-                                                                                val newMap = folderCellMap.toMutableMap()
-                                                                                newMap.remove(fromIdx)
-                                                                                val existingAtTarget = newMap[toIdx]
-                                                                                if (existingAtTarget != null) {
-                                                                                    newMap[toIdx] = droppedPkg
-                                                                                    newMap[fromIdx] = existingAtTarget
-                                                                                } else {
-                                                                                    newMap[toIdx] = droppedPkg
-                                                                                }
+                                                                                // Insert-and-shift, not swap (issue #88)
+                                                                                val newMap = com.bearinmind.launcher314.data.insertIntoFolderCellMap(folderCellMap, fromIdx, toIdx, droppedPkg)
                                                                                 folderCellMap = newMap
+                                                                                com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                                                 saveCellMap(newMap)
 
                                                                                 draggedPkg = null
@@ -552,6 +565,7 @@ internal fun FolderContentScreen(
                                                                                 dropTargetOffset = Offset.Zero
                                                                                 isDropAnimating = true
                                                                                 hoveredCell = null
+                                                                                com.bearinmind.launcher314.ui.home.FolderReorderPreview.hoverIdx = -1
 
                                                                                 folderScope.launch {
                                                                                     dropAnimProgress.snapTo(0f)
@@ -564,6 +578,7 @@ internal fun FolderContentScreen(
                                                                                     dragOffset = Offset.Zero
                                                                                     dragOriginalCellPos = null
                                                                                     isDropAnimating = false
+                                                                                    com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                                                 }
                                                                             } else {
                                                                                 draggedPkg = null
@@ -572,6 +587,7 @@ internal fun FolderContentScreen(
                                                                                 dragOriginalCellPos = null
                                                                                 hoveredCell = null
                                                                                 dragOverHeader = false
+                                                                                com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                                             }
                                                                         }
                                                                     }
@@ -579,6 +595,7 @@ internal fun FolderContentScreen(
                                                                 }
                                                             }
                                                         } catch (e: Exception) {
+                                                            com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                             if (escapedToDrawer) {
                                                                 escapedToDrawer = false
                                                                 currentOnEscapeDragEnd()
@@ -640,14 +657,12 @@ internal fun FolderContentScreen(
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    // Hover indicator (shown when dragging over this cell, including the original position)
-                                    if (isDraggingInFolder && hoveredCell == cellIdx) {
-                                        GridCellHoverIndicator(
-                                            isHovered = true,
-                                            markerHalfSize = markerHalfSize,
-                                            cornerRadius = hoverCornerRadius
-                                        )
-                                    }
+                                    // Hover indicator — always composed (condition drives isHovered) so the fade plays.
+                                    GridCellHoverIndicator(
+                                        isHovered = isDraggingInFolder && hoveredCell == cellIdx,
+                                        markerHalfSize = markerHalfSize,
+                                        cornerRadius = hoverCornerRadius
+                                    )
 
                                     // "+" marker at bottom-right corner (interior intersections only)
                                     val showBottomRightMarker = (row < gridRows - 1) && (col < gridColumns - 1)
@@ -678,6 +693,12 @@ internal fun FolderContentScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
+                                                // Issue #88 preview shift — app content only ("+" markers stay put).
+                                                .graphicsLayer {
+                                                    val s = if (com.bearinmind.launcher314.ui.home.FolderReorderPreview.active) reorderShift.value else Offset.Zero
+                                                    translationX = s.x
+                                                    translationY = s.y
+                                                }
                                                 .padding(markerHalfSize)
                                                 .graphicsLayer {
                                                     clip = false
