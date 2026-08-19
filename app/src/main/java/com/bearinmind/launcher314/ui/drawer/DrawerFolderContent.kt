@@ -94,6 +94,8 @@ internal fun FolderContentScreen(
     // Sub-folders (issue #71): tap opens, long-press menu un-nests.
     onOpenSubFolder: (AppFolder) -> Unit = {},
     onRemoveSubFolder: (String) -> Unit = {},
+    // Drop on an app's CENTER makes a sub-folder of the two (dragged, target).
+    onCreateSubFolder: (String, String) -> Unit = { _, _ -> },
     isFolderMenuExpanded: Boolean = false,
     onFolderMenuExpandedChange: (Boolean) -> Unit = {},
     onAddToHome: (AppInfo) -> Unit = {},
@@ -190,6 +192,9 @@ internal fun FolderContentScreen(
     var hoveredCell by remember { mutableStateOf<Int?>(null) }
     val cellPositions = remember { mutableStateMapOf<Int, Offset>() }
     var cellSize by remember { mutableStateOf(IntSize.Zero) }
+    // Launcher3's fold zone: within 0.55x icon size of an occupied cell's center = make/join a sub-folder.
+    var folderCreateTargetCell by remember { mutableStateOf<Int?>(null) }
+    val folderCreateRadiusPx = with(density) { (iconSize * 0.55f).dp.toPx() }
     // Drop animation
     var isDropAnimating by remember { mutableStateOf(false) }
     val dropAnimProgress = remember { Animatable(0f) }
@@ -452,6 +457,7 @@ internal fun FolderContentScreen(
                                                                             p.cellMap = folderCellMap
                                                                             p.positions = cellPositions.toMap()
                                                                             p.hoverIdx = -1
+                                                                            p.pendingHover = -1
                                                                             p.active = true
                                                                         }
                                                                     }
@@ -490,6 +496,7 @@ internal fun FolderContentScreen(
                                                                                 if (dragCenter.y < headerBottomY && currentCellApp != null) {
                                                                                     escapedToDrawer = true
                                                                                     hoveredCell = null
+                                                                                    folderCreateTargetCell = null
                                                                                     dragOverHeader = false
                                                                                     com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                                                     // Cell is already invisible (isDragged alpha=0) and
@@ -497,11 +504,23 @@ internal fun FolderContentScreen(
                                                                                     // here (would crash: layout node removed mid-gesture)
                                                                                     currentOnEscapeToDrawer(currentCellApp, dragCenter)
                                                                                 } else {
-                                                                                    hoveredCell = cellPositions.entries.firstOrNull { (_, pos) ->
+                                                                                    val hovered = cellPositions.entries.firstOrNull { (_, pos) ->
                                                                                         dragCenter.x >= pos.x && dragCenter.x < pos.x + cellSize.width &&
                                                                                         dragCenter.y >= pos.y && dragCenter.y < pos.y + cellSize.height
                                                                                     }?.key
-                                                                                    com.bearinmind.launcher314.ui.home.FolderReorderPreview.hoverIdx = hoveredCell ?: -1
+                                                                                    var createTarget: Int? = null
+                                                                                    if (hovered != null && hovered != draggedCellIdx && folderCellMap[hovered] != null) {
+                                                                                        val pos = cellPositions[hovered]
+                                                                                        if (pos != null) {
+                                                                                            val center = Offset(pos.x + cellSize.width / 2f, pos.y + cellSize.height / 2f)
+                                                                                            val dist = (dragCenter - center).getDistance()
+                                                                                            if (dist < folderCreateRadiusPx) createTarget = hovered
+                                                                                            Log.d("FoldZone", "hover=$hovered dist=$dist radius=$folderCreateRadiusPx cell=${cellSize.width}x${cellSize.height} create=${createTarget != null}")
+                                                                                        }
+                                                                                    }
+                                                                                    folderCreateTargetCell = createTarget
+                                                                                    hoveredCell = if (createTarget != null) null else hovered
+                                                                                    com.bearinmind.launcher314.ui.home.FolderReorderPreview.updateHover(hoveredCell)
                                                                                 }
                                                                             }
                                                                         }
@@ -517,6 +536,7 @@ internal fun FolderContentScreen(
                                                                             dragOffset = Offset.Zero
                                                                             dragOriginalCellPos = null
                                                                             hoveredCell = null
+                                                                            folderCreateTargetCell = null
                                                                             com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                                             currentOnEscapeDragEnd()
                                                                             break
@@ -525,8 +545,39 @@ internal fun FolderContentScreen(
                                                                         val fromIdx = draggedCellIdx
                                                                         val toIdx = hoveredCell
                                                                         val originalPos = dragOriginalCellPos
+                                                                        val createIdx = folderCreateTargetCell
+                                                                        val createEntry = createIdx?.let { folderCellMap[it] }
 
-                                                                        if (fromIdx != null && toIdx != null && fromIdx != toIdx &&
+                                                                        if (createIdx != null && createEntry != null && fromIdx != null &&
+                                                                            droppedPkg != null && originalPos != null && !isDropAnimating
+                                                                        ) {
+                                                                            // Center drop: fold into a sub-folder (new, or join an existing one).
+                                                                            val targetPos = cellPositions[createIdx]
+                                                                            dropStartOffset = dragOffset
+                                                                            dropTargetOffset = if (targetPos != null) {
+                                                                                Offset(targetPos.x - originalPos.x, targetPos.y - originalPos.y)
+                                                                            } else Offset.Zero
+                                                                            isDropAnimating = true
+                                                                            hoveredCell = null
+                                                                            folderCreateTargetCell = null
+
+                                                                            folderScope.launch {
+                                                                                dropAnimProgress.snapTo(0f)
+                                                                                dropAnimProgress.animateTo(1f, tween(400, easing = FastOutSlowInEasing))
+                                                                                if (com.bearinmind.launcher314.data.isFolderEntry(createEntry)) {
+                                                                                    folders.firstOrNull { it.id == com.bearinmind.launcher314.data.folderEntryId(createEntry) }
+                                                                                        ?.let { onMoveToFolder(droppedPkg, it) }
+                                                                                } else {
+                                                                                    onCreateSubFolder(droppedPkg, createEntry)
+                                                                                }
+                                                                                draggedPkg = null
+                                                                                draggedCellIdx = null
+                                                                                dragOffset = Offset.Zero
+                                                                                dragOriginalCellPos = null
+                                                                                isDropAnimating = false
+                                                                                com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
+                                                                            }
+                                                                        } else if (fromIdx != null && toIdx != null && fromIdx != toIdx &&
                                                                             droppedPkg != null && originalPos != null && !isDropAnimating
                                                                         ) {
                                                                             // Animate to target cell
@@ -586,6 +637,7 @@ internal fun FolderContentScreen(
                                                                                 dragOffset = Offset.Zero
                                                                                 dragOriginalCellPos = null
                                                                                 hoveredCell = null
+                                                                                folderCreateTargetCell = null
                                                                                 dragOverHeader = false
                                                                                 com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
                                                                             }
@@ -596,6 +648,7 @@ internal fun FolderContentScreen(
                                                             }
                                                         } catch (e: Exception) {
                                                             com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
+                                                            folderCreateTargetCell = null
                                                             if (escapedToDrawer) {
                                                                 escapedToDrawer = false
                                                                 currentOnEscapeDragEnd()
@@ -664,6 +717,22 @@ internal fun FolderContentScreen(
                                         cornerRadius = hoverCornerRadius
                                     )
 
+                                    // Fold ring for center-hovered EXISTING sub-folders (app targets show the mini preview instead).
+                                    val ringAlpha by animateFloatAsState(
+                                        targetValue = if (folderCreateTargetCell == cellIdx &&
+                                            folderCellMap[cellIdx]?.let { com.bearinmind.launcher314.data.isFolderEntry(it) } == true) 1f else 0f,
+                                        animationSpec = tween(120),
+                                        label = "foldRing_$cellIdx"
+                                    )
+                                    if (ringAlpha > 0f) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size((iconSize * 1.25f).dp)
+                                                .graphicsLayer { alpha = ringAlpha }
+                                                .border(2.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape((iconSize * 0.36f).dp))
+                                        )
+                                    }
+
                                     // "+" marker at bottom-right corner (interior intersections only)
                                     val showBottomRightMarker = (row < gridRows - 1) && (col < gridColumns - 1)
                                     val markerAlpha by animateFloatAsState(
@@ -720,6 +789,13 @@ internal fun FolderContentScreen(
                                                 } else null
                                                 val displayPath = shapedPath ?: cellApp.iconPath
                                                 val isShaped = shapedPath != null
+                                                // Center-hover morph: the target icon cross-fades into a mini
+                                                // sub-folder preview of the two apps (same look as folder icons).
+                                                val foldProgress by animateFloatAsState(
+                                                    targetValue = if (folderCreateTargetCell == cellIdx && draggedPkg != null) 1f else 0f,
+                                                    animationSpec = tween(200),
+                                                    label = "foldPreview_$cellIdx"
+                                                )
                                                 Box(
                                                     modifier = Modifier
                                                         .size(iconSize.dp)
@@ -750,8 +826,23 @@ internal fun FolderContentScreen(
                                                         contentScale = if (isShaped) ContentScale.Fit else if (iconClipShape != null) ContentScale.Crop else ContentScale.Fit,
                                                         modifier = Modifier
                                                             .matchParentSize()
+                                                            .graphicsLayer { alpha = 1f - foldProgress }
                                                             .then(if (!isShaped && iconClipShape != null) Modifier.clip(iconClipShape) else Modifier)
                                                     )
+                                                    if (foldProgress > 0f) {
+                                                        val previewSubFolder = remember(cellApp.packageName, draggedPkg) {
+                                                            AppFolder(name = "", appPackageNames = listOf(cellApp.packageName, draggedPkg ?: ""))
+                                                        }
+                                                        MiniFolderBox(
+                                                            folder = previewSubFolder,
+                                                            allApps = allApps,
+                                                            size = iconSize.dp,
+                                                            iconClipShape = iconClipShape,
+                                                            iconBgColor = iconBgColor,
+                                                            globalIconShapeName = globalIconShapeName,
+                                                            alpha = foldProgress
+                                                        )
+                                                    }
                                                     // Press / flash dim overlay — same alpha math as
                                                     // home-screen folder cells, scoped to the icon so
                                                     // the label below doesn't flash with it.

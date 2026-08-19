@@ -347,9 +347,12 @@ private fun reflowFolderCells(
     customizations: AppCustomizations = AppCustomizations()
 ): Map<Int, HomeAppInfo> {
     val resolved = folderCellMap.mapNotNull { (idx, pkg) ->
-        allAvailableApps.find { it.packageName == pkg }?.let { info ->
+        // "folder:" markers survive as synthetic entries (buildFolderPopupCell renders them as sub-folders).
+        val info = allAvailableApps.find { it.packageName == pkg }
+            ?: if (com.bearinmind.launcher314.data.isFolderEntry(pkg)) HomeAppInfo(name = "", packageName = pkg, iconPath = "") else null
+        info?.let { i ->
             // Issue #82: attach per-app customizations (hide badge etc.) — allAvailableApps carries none.
-            idx to (customizations.customizations[pkg]?.let { info.copy(customization = it) } ?: info)
+            idx to (customizations.customizations[pkg]?.let { i.copy(customization = it) } ?: i)
         }
     }
     val placed = resolved.filter { it.first in 0 until cellCount }.toMap().toMutableMap()
@@ -752,6 +755,8 @@ private fun widgetCornerRadiusDp(perWidgetPercent: Int?, globalEnabled: Boolean,
 object HomeFolderState {
     val open = androidx.compose.runtime.mutableStateOf(false)
     val closeRequest = androidx.compose.runtime.mutableIntStateOf(0)
+    // Sub-folder navigation: parent wrappers pushed on open, popped by Back (one level per press).
+    var navStack: List<HomeFolder> = emptyList()
 }
 
 /**
@@ -1074,10 +1079,20 @@ fun LauncherScreen(
         onFolderOpenChanged(openHomeFolder != null)
         // Issue #80: publish open-state and watch for Back/Home close requests (scrim-tap close path).
         HomeFolderState.open.value = openHomeFolder != null
+        if (openHomeFolder == null) HomeFolderState.navStack = emptyList()
         if (openHomeFolder != null) {
             val start = HomeFolderState.closeRequest.intValue
             snapshotFlow { HomeFolderState.closeRequest.intValue }.collect {
-                if (it != start) openHomeFolder = null
+                if (it != start) {
+                    // Back steps OUT of a sub-folder first; closes only from the top level.
+                    val parent = HomeFolderState.navStack.lastOrNull()
+                    if (parent != null) {
+                        HomeFolderState.navStack = HomeFolderState.navStack.dropLast(1)
+                        openHomeFolder = parent
+                    } else {
+                        openHomeFolder = null
+                    }
+                }
             }
         }
     }
@@ -7462,11 +7477,7 @@ fun LauncherScreen(
                                 val cellApp = resolveFolderCellApp(folderCellAppMap, cellIdx, draggedPkg, draggedFolderCellIdx, allAvailableApps)
                                 val isDragged = cellApp != null && draggedPkg == cellApp.packageName
 
-                                val folderGridCell: HomeGridCell = if (cellApp != null) {
-                                    HomeGridCell.App(cellApp, cellIdx)
-                                } else {
-                                    HomeGridCell.Empty
-                                }
+                                val folderGridCell = com.bearinmind.launcher314.data.buildFolderPopupCell(cellApp, cellIdx, homeFolders, allAvailableApps, appCustomizations)
 
                                 // Open/close morph for this cell. Preview
                                 // slots (0..3, with an app) fly from the
@@ -7537,9 +7548,12 @@ fun LauncherScreen(
                                                 dragOriginalFolderCellPos = folderCellPositions[cellIdx]
                                                 FolderReorderPreview.fromIdx = cellIdx
                                                 FolderReorderPreview.draggedPkg = cellApp.packageName
+                                                FolderReorderPreview.draggedIconPath = cellApp.iconPath
                                                 FolderReorderPreview.cellMap = folderCellMap
                                                 FolderReorderPreview.positions = folderCellPositions.toMap()
                                                 FolderReorderPreview.hoverIdx = -1
+                                                FolderReorderPreview.pendingHover = -1
+                                                FolderReorderPreview.createIdx = -1
                                                 FolderReorderPreview.active = true
                                             }
                                         },
@@ -7579,7 +7593,8 @@ fun LauncherScreen(
                                                                 if (f.id == folder.id) f.copy(appPackageNames = f.appPackageNames.map { if (it == cellApp.packageName) "" else it }.dropLastWhile { it.isEmpty() }) else f
                                                             }
                                                             val updatedDF = updatedDFs.find { it.id == folder.id }
-                                                            if (updatedDF != null && updatedDF.appPackageNames.count { it.isNotEmpty() } <= 1) {
+                                                            if (updatedDF != null && updatedDF.appPackageNames.count { it.isNotEmpty() } <= 1 &&
+                                                                updatedDF.appPackageNames.none { com.bearinmind.launcher314.data.isFolderEntry(it) }) {
                                                                 val remainingPkg = updatedDF.appPackageNames.firstOrNull { it.isNotEmpty() }
                                                                 if (remainingPkg != null) {
                                                                     dockApps = dockApps + DockApp(remainingPkg, updatedDF.position, page = updatedDF.page)
@@ -7595,7 +7610,8 @@ fun LauncherScreen(
                                                                 } else f
                                                             }
                                                             val updated = updatedFolders.find { it.id == folder.id }
-                                                            if (updated != null && updated.appPackageNames.count { it.isNotEmpty() } <= 1) {
+                                                            if (updated != null && updated.appPackageNames.count { it.isNotEmpty() } <= 1 &&
+                                                        updated.appPackageNames.none { com.bearinmind.launcher314.data.isFolderEntry(it) }) {
                                                                 val remainingPkg = updated.appPackageNames.firstOrNull { it.isNotEmpty() }
                                                                 if (remainingPkg != null) {
                                                                     homeApps = homeApps + HomeScreenApp(
@@ -7638,15 +7654,30 @@ fun LauncherScreen(
                                                         hoveredFolderCell = null
                                                         openHomeFolder = null
                                                         FolderReorderPreview.active = false
+                                                        FolderReorderPreview.createIdx = -1
                                                     }
                                                     return@DraggableGridCell
                                                 }
 
-                                                hoveredFolderCell = folderCellPositions.entries.firstOrNull { (_, pos) ->
+                                                val hoveredRaw = folderCellPositions.entries.firstOrNull { (_, pos) ->
                                                     dragCenter.x >= pos.x && dragCenter.x < pos.x + folderCellSize.width &&
                                                     dragCenter.y >= pos.y && dragCenter.y < pos.y + folderCellSize.height
                                                 }?.key
-                                                FolderReorderPreview.hoverIdx = hoveredFolderCell ?: -1
+                                                // Launcher3 fold zone: within 0.55x icon of an occupied cell's center = sub-folder.
+                                                var createT = -1
+                                                val dPkgNow = draggedPkg
+                                                if (hoveredRaw != null && hoveredRaw != draggedFolderCellIdx && folderCellMap[hoveredRaw] != null &&
+                                                    dPkgNow != null && !com.bearinmind.launcher314.data.isFolderEntry(dPkgNow)) {
+                                                    val tp = folderCellPositions[hoveredRaw]
+                                                    if (tp != null) {
+                                                        val tc = Offset(tp.x + folderCellSize.width / 2f, tp.y + folderCellSize.height / 2f)
+                                                        val radius = with(folderDensity) { (folderIconSizeDp * 0.55f).dp.toPx() }
+                                                        if ((dragCenter - tc).getDistance() < radius) createT = hoveredRaw
+                                                    }
+                                                }
+                                                FolderReorderPreview.createIdx = createT
+                                                hoveredFolderCell = if (createT >= 0) null else hoveredRaw
+                                                FolderReorderPreview.updateHover(hoveredFolderCell)
                                             }
                                         },
                                         onDragEnd = {
@@ -7666,8 +7697,37 @@ fun LauncherScreen(
                                             val toIdx = hoveredFolderCell
                                             val originalPos = dragOriginalFolderCellPos
                                             val pkg = draggedPkg
+                                            val createIdx2 = FolderReorderPreview.createIdx
+                                            val createEntry = if (createIdx2 >= 0) folderCellMap[createIdx2] else null
 
-                                            if (fromIdx != null && toIdx != null && fromIdx != toIdx && pkg != null && originalPos != null && !isFolderDropAnimating) {
+                                            if (createEntry != null && fromIdx != null && pkg != null && originalPos != null && !isFolderDropAnimating) {
+                                                // Center drop: fold into a sub-folder (new, or join an existing one).
+                                                val targetPos = folderCellPositions[createIdx2]
+                                                folderDropStartOffset = dragOffset
+                                                folderDropTargetOffset = if (targetPos != null) {
+                                                    Offset(targetPos.x - originalPos.x, targetPos.y - originalPos.y)
+                                                } else Offset.Zero
+                                                isFolderDropAnimating = true
+                                                hoveredFolderCell = null
+                                                FolderReorderPreview.createIdx = -1
+
+                                                folderDropScope.launch {
+                                                    folderDropAnimProgress.snapTo(0f)
+                                                    folderDropAnimProgress.animateTo(1f, tween(durationMillis = 400, easing = FastOutSlowInEasing))
+                                                    val (nh, nd, reopened) = com.bearinmind.launcher314.data.foldIntoSubFolder(
+                                                        homeFolders, dockFolders, folder, pkg, createEntry
+                                                    )
+                                                    if (folder.page == -1) saveDockFolders(nd)
+                                                    saveHomeFolders(nh)
+                                                    openHomeFolder = reopened
+                                                    draggedPkg = null
+                                                    draggedFolderCellIdx = null
+                                                    dragOffset = Offset.Zero
+                                                    dragOriginalFolderCellPos = null
+                                                    isFolderDropAnimating = false
+                                                    FolderReorderPreview.active = false
+                                                }
+                                            } else if (fromIdx != null && toIdx != null && fromIdx != toIdx && pkg != null && originalPos != null && !isFolderDropAnimating) {
                                                 // Compute drop animation target
                                                 val targetPos = folderCellPositions[toIdx]
                                                 val targetOffset = if (targetPos != null) {
@@ -7704,6 +7764,7 @@ fun LauncherScreen(
                                                     isFolderDropAnimating = true
                                                     hoveredFolderCell = null
                                                     FolderReorderPreview.hoverIdx = -1
+                                                    FolderReorderPreview.createIdx = -1
 
                                                     folderDropScope.launch {
                                                         folderDropAnimProgress.snapTo(0f)
@@ -7722,19 +7783,38 @@ fun LauncherScreen(
                                                     dragOriginalFolderCellPos = null
                                                     hoveredFolderCell = null
                                                     FolderReorderPreview.active = false
+                                                    FolderReorderPreview.createIdx = -1
                                                 }
                                             }
                                         },
                                         onTap = {
                                             if (cellApp != null && draggedPkg == null) {
-                                                openHomeFolder = null
-                                                launchApp(context, cellApp.packageName, cellApp.userSerial)
+                                                if (com.bearinmind.launcher314.data.isFolderEntry(cellApp.packageName)) {
+                                                    val subId = com.bearinmind.launcher314.data.folderEntryId(cellApp.packageName)
+                                                    homeFolders.firstOrNull { it.id == subId }?.let { sub ->
+                                                        HomeFolderState.navStack = HomeFolderState.navStack + folder
+                                                        openHomeFolder = sub
+                                                    }
+                                                } else {
+                                                    openHomeFolder = null
+                                                    launchApp(context, cellApp.packageName, cellApp.userSerial)
+                                                }
                                             }
                                         },
                                         onLongPress = { /* no-op for folder empty cells */ },
                                         onRemove = {
                                             if (cellApp != null) {
-                                                if (isDockFolder) {
+                                                if (com.bearinmind.launcher314.data.isFolderEntry(cellApp.packageName)) {
+                                                    // Un-nest: sub-folder returns to the first empty grid cell.
+                                                    val (nh, nd, reopened) = com.bearinmind.launcher314.data.unnestSubFolder(
+                                                        homeFolders, dockFolders, homeApps, folder,
+                                                        com.bearinmind.launcher314.data.folderEntryId(cellApp.packageName),
+                                                        gridColumns, gridRows
+                                                    )
+                                                    if (isDockFolder) saveDockFolders(nd)
+                                                    saveHomeFolders(nh)
+                                                    openHomeFolder = reopened
+                                                } else if (isDockFolder) {
                                                     val updatedDFs = dockFolders.map { f ->
                                                         if (f.id == folder.id) {
                                                             f.copy(appPackageNames = f.appPackageNames.map { if (it == cellApp.packageName) "" else it }.dropLastWhile { it.isEmpty() })
@@ -7760,7 +7840,8 @@ fun LauncherScreen(
                                                         } else f
                                                     }
                                                     val updated = updatedFolders.find { it.id == folder.id }
-                                                    if (updated != null && updated.appPackageNames.count { it.isNotEmpty() } <= 1) {
+                                                    if (updated != null && updated.appPackageNames.count { it.isNotEmpty() } <= 1 &&
+                                                        updated.appPackageNames.none { com.bearinmind.launcher314.data.isFolderEntry(it) }) {
                                                         val remainingPkg = updated.appPackageNames.firstOrNull { it.isNotEmpty() }
                                                         if (remainingPkg != null) {
                                                             homeApps = homeApps + HomeScreenApp(

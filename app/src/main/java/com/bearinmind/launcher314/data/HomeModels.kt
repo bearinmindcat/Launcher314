@@ -132,6 +132,106 @@ class RemoveAnimState {
     val anim = Animatable(1f)
 }
 
+// ========== Home Sub-Folders (nested via "folder:<id>" markers; nested folders live at page = -2) ==========
+
+/** Popup cell resolver: "folder:" markers become Folder cells (sub-folders), apps become App cells. */
+fun buildFolderPopupCell(
+    cellApp: HomeAppInfo?,
+    cellIdx: Int,
+    homeFolders: List<HomeFolder>,
+    allAvailableApps: List<HomeAppInfo>,
+    customizations: AppCustomizations
+): HomeGridCell {
+    if (cellApp == null) return HomeGridCell.Empty
+    if (isFolderEntry(cellApp.packageName)) {
+        val sub = homeFolders.firstOrNull { it.id == folderEntryId(cellApp.packageName) }
+            ?: return HomeGridCell.Empty
+        val name = customizations.customizations["folder_${sub.id}"]?.customLabel ?: sub.name
+        val previews = sub.appPackageNames.filter { it.isNotEmpty() && !isFolderEntry(it) }
+            .take(4).mapNotNull { pkg -> allAvailableApps.firstOrNull { it.packageName == pkg } }
+        return HomeGridCell.Folder(sub.copy(name = name), previews, cellIdx)
+    }
+    return HomeGridCell.App(cellApp, cellIdx)
+}
+
+/** Center-drop commit: fold [draggedPkg] with [targetEntry] (app → new sub-folder at the target slot;
+ *  "folder:" entry → join it). Returns (homeFolders, dockFolders, reopened parent wrapper). */
+fun foldIntoSubFolder(
+    homeFolders: List<HomeFolder>,
+    dockFolders: List<DockFolder>,
+    parent: HomeFolder,
+    draggedPkg: String,
+    targetEntry: String
+): Triple<List<HomeFolder>, List<DockFolder>, HomeFolder> {
+    val isDock = parent.page == -1
+    var newHome = homeFolders
+    val joinId = if (isFolderEntry(targetEntry)) folderEntryId(targetEntry) else null
+    val replacement = if (joinId != null) targetEntry else {
+        val newSub = HomeFolder(name = "Folder", position = -2, page = -2,
+            appPackageNames = listOf(targetEntry, draggedPkg))
+        newHome = newHome + newSub
+        folderEntry(newSub.id)
+    }
+    if (joinId != null) {
+        newHome = newHome.map { f ->
+            if (f.id == joinId) f.copy(appPackageNames = f.appPackageNames + draggedPkg) else f
+        }
+    }
+    fun remap(entries: List<String>): List<String> = entries
+        .map { if (it == targetEntry) replacement else it }
+        .map { if (it == draggedPkg) "" else it }
+        .dropLastWhile { it.isEmpty() }
+    return if (isDock) {
+        val newDock = dockFolders.map { f -> if (f.id == parent.id) f.copy(appPackageNames = remap(f.appPackageNames)) else f }
+        val df = newDock.first { it.id == parent.id }
+        Triple(newHome, newDock, HomeFolder(id = df.id, name = df.name, position = -1, page = -1, appPackageNames = df.appPackageNames))
+    } else {
+        newHome = newHome.map { f -> if (f.id == parent.id) f.copy(appPackageNames = remap(f.appPackageNames)) else f }
+        Triple(newHome, dockFolders, newHome.first { it.id == parent.id })
+    }
+}
+
+/** Un-nest: strip the sub-folder's marker from [parent] and restore it to the first empty grid cell. */
+fun unnestSubFolder(
+    homeFolders: List<HomeFolder>,
+    dockFolders: List<DockFolder>,
+    homeApps: List<HomeScreenApp>,
+    parent: HomeFolder,
+    subFolderId: String,
+    gridColumns: Int,
+    gridRows: Int
+): Triple<List<HomeFolder>, List<DockFolder>, HomeFolder?> {
+    val marker = folderEntry(subFolderId)
+    val isDock = parent.page == -1
+    var newHome = homeFolders
+    var newDock = dockFolders
+    if (isDock) {
+        newDock = dockFolders.map { f ->
+            if (f.id == parent.id) f.copy(appPackageNames = f.appPackageNames.map { if (it == marker) "" else it }.dropLastWhile { it.isEmpty() }) else f
+        }
+    } else {
+        newHome = newHome.map { f ->
+            if (f.id == parent.id) f.copy(appPackageNames = f.appPackageNames.map { if (it == marker) "" else it }.dropLastWhile { it.isEmpty() }) else f
+        }
+    }
+    // First truly empty cell across pages (apps + visible folders considered).
+    val totalCells = gridColumns * gridRows
+    var target: Pair<Int, Int>? = null
+    for (page in 0..10) {
+        val occupied = homeApps.filter { it.page == page }.map { it.position }.toSet() +
+            newHome.filter { it.page == page }.map { it.position }.toSet()
+        val empty = (0 until totalCells).firstOrNull { it !in occupied }
+        if (empty != null) { target = page to empty; break }
+    }
+    val (tPage, tPos) = target ?: (0 to 0)
+    newHome = newHome.map { f -> if (f.id == subFolderId) f.copy(position = tPos, page = tPage) else f }
+    val reopened = if (isDock) {
+        newDock.firstOrNull { it.id == parent.id }
+            ?.let { HomeFolder(id = it.id, name = it.name, position = -1, page = -1, appPackageNames = it.appPackageNames) }
+    } else newHome.firstOrNull { it.id == parent.id }
+    return Triple(newHome, newDock, reopened)
+}
+
 /** Folder reorder (issue #88): insert at [toIdx] and shift the occupied run toward the vacated [fromIdx] — no swapping. */
 fun insertIntoFolderCellMap(cellMap: Map<Int, String>, fromIdx: Int, toIdx: Int, pkg: String): Map<Int, String> {
     val newMap = cellMap.toMutableMap()

@@ -1199,6 +1199,18 @@ fun AppDrawerScreen(
                             saveFolders(folders.map { if (it.id == updatedFolder.id) updatedFolder else it })
                             openFolder = updatedFolder
                         },
+                        onCreateSubFolder = { draggedPkg, targetPkg ->
+                            // Center drop on an app: fold both into a new sub-folder at the target's slot.
+                            val newSub = AppFolder(name = "Folder", appPackageNames = listOf(targetPkg, draggedPkg))
+                            val updatedFolder = currentFolder.copy(
+                                appPackageNames = currentFolder.appPackageNames
+                                    .map { if (it == targetPkg) com.bearinmind.launcher314.data.folderEntry(newSub.id) else it }
+                                    .map { if (it == draggedPkg) "" else it }
+                                    .dropLastWhile { it.isEmpty() }
+                            )
+                            saveFolders(folders.map { if (it.id == updatedFolder.id) updatedFolder else it } + newSub)
+                            openFolder = updatedFolder
+                        },
                         onMoveToFolder = { packageName, targetFolder ->
                             // Remove from current folder
                             val updatedCurrentFolder = currentFolder.copy(

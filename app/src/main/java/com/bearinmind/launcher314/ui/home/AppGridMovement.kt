@@ -253,10 +253,31 @@ internal fun BoxScope.SourceBadge(
 object FolderReorderPreview {
     var active by androidx.compose.runtime.mutableStateOf(false)
     var hoverIdx by androidx.compose.runtime.mutableStateOf(-1)
+    // Center-hover fold target (home popup): -1 = none. Drives the sub-folder morph cue.
+    var createIdx by androidx.compose.runtime.mutableStateOf(-1)
     var fromIdx = -1
     var draggedPkg: String? = null
+    var draggedIconPath: String? = null
     var cellMap: Map<Int, String> = emptyMap()
     var positions: Map<Int, Offset> = emptyMap()
+    var pendingHover = -1
+    private var pendingSince = 0L
+
+    /** Launcher3's reorder alarm: icons only shift after the drag RESTS on a slot for 250ms
+     *  (folding stays instant), so sliding across an icon's center never chases it away. */
+    fun updateHover(cellIdx: Int?) {
+        val target = cellIdx ?: -1
+        if (target == hoverIdx) { pendingHover = -1; return }
+        if (target == -1) { hoverIdx = -1; pendingHover = -1; return }
+        val now = android.os.SystemClock.uptimeMillis()
+        if (target != pendingHover) {
+            pendingHover = target
+            pendingSince = now
+        } else if (now - pendingSince >= 250L) {
+            hoverIdx = target
+            pendingHover = -1
+        }
+    }
 }
 
 /** Where this cell's app would land if the drag dropped now. Null = preview off (snap home), Zero = no shift. */
@@ -368,7 +389,8 @@ fun DraggableGridCell(
     val isFolderPopupCell = removeLabel == "Remove from folder"
     val reorderShift = remember { androidx.compose.animation.core.Animatable(Offset.Zero, Offset.VectorConverter) }
     val reorderTarget = if (isFolderPopupCell)
-        folderReorderPreviewShift(index, (cell as? HomeGridCell.App)?.appInfo?.packageName) else null
+        folderReorderPreviewShift(index, (cell as? HomeGridCell.App)?.appInfo?.packageName
+            ?: if (cell is HomeGridCell.Folder) FolderReorderPreview.cellMap[index] else null) else null
     LaunchedEffect(reorderTarget) {
         if (reorderTarget != null) reorderShift.animateTo(reorderTarget, spring(stiffness = Spring.StiffnessMediumLow))
         else reorderShift.snapTo(Offset.Zero)
@@ -402,6 +424,21 @@ fun DraggableGridCell(
                 markerHalfSize = markerHalfSize,
                 cornerRadius = hoverCornerRadius
             )
+            // Fold ring for center-hovered EXISTING sub-folders (app targets morph instead).
+            val subRingAlpha by animateFloatAsState(
+                targetValue = if (FolderReorderPreview.active && FolderReorderPreview.createIdx == index &&
+                    cell is HomeGridCell.Folder) 1f else 0f,
+                animationSpec = tween(120),
+                label = "subFoldRing"
+            )
+            if (subRingAlpha > 0f) {
+                Box(
+                    modifier = Modifier
+                        .size((iconSize * 1.25f).dp)
+                        .graphicsLayer { alpha = subRingAlpha }
+                        .border(2.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape((iconSize * 0.36f).dp))
+                )
+            }
         }
 
         // "+" marker - positioned at corner, fades in/out when dragging an app
@@ -654,27 +691,31 @@ fun DraggableGridCell(
                             }
                         }
                 ) {
+                    // Center-hover in a folder popup rides the same app-over-app fold morph (home sub-folders).
+                    val popupFoldPath = if (isFolderPopupCell && FolderReorderPreview.active &&
+                        FolderReorderPreview.createIdx == index) FolderReorderPreview.draggedIconPath else null
+                    val previewDrivePath = folderPreviewDraggedIconPath ?: popupFoldPath
                     // Folder creation preview animation progress
                     // Remember last non-null icon path so fade-out can still render the preview
                     var lastDraggedIconPath by remember { mutableStateOf<String?>(null) }
-                    if (folderPreviewDraggedIconPath != null) {
-                        lastDraggedIconPath = folderPreviewDraggedIconPath
+                    if (previewDrivePath != null) {
+                        lastDraggedIconPath = previewDrivePath
                     }
                     val folderPreviewProgress by animateFloatAsState(
-                        targetValue = if (folderPreviewDraggedIconPath != null) 1f else 0f,
+                        targetValue = if (previewDrivePath != null) 1f else 0f,
                         animationSpec = tween(durationMillis = 300),
                         label = "folderPreviewProgress",
                         finishedListener = { value ->
                             if (value == 0f) lastDraggedIconPath = null
                         }
                     )
-                    val effectiveDraggedIconPath = folderPreviewDraggedIconPath ?: lastDraggedIconPath
+                    val effectiveDraggedIconPath = previewDrivePath ?: lastDraggedIconPath
 
                     // Show hover indicator UNDERNEATH the app when something is dragged over this cell
                     // Only show blue (valid) indicator — invalid targets show red icon tint instead
                     // Suppress immediately when folder preview is about to show (no grey flicker)
                     // Suppressed during folder live-reorder too — this tile travels with the shifted content.
-                    if (isHovered && !isDragging && isValidDropTarget && folderPreviewDraggedIconPath == null && folderPreviewProgress == 0f &&
+                    if (isHovered && !isDragging && isValidDropTarget && previewDrivePath == null && folderPreviewProgress == 0f &&
                         !(isFolderPopupCell && FolderReorderPreview.active)) {
                         GridCellHoverIndicator(
                             isHovered = true,

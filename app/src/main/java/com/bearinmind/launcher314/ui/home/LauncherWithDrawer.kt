@@ -369,8 +369,11 @@ fun LauncherWithDrawer(
 
     // Home button pressed: close the drawer and return to home screen
     LaunchedEffect(homeButtonTrigger) {
-        // Issue #80: also close an open home screen folder.
-        if (homeButtonTrigger > 0) HomeFolderState.closeRequest.intValue++
+        // Issue #80: also close an open home screen folder (fully — Home never steps out level by level).
+        if (homeButtonTrigger > 0) {
+            HomeFolderState.navStack = emptyList()
+            HomeFolderState.closeRequest.intValue++
+        }
         if (homeButtonTrigger > 0 && showAppDrawer) {
             showAppDrawer = false
             homeRefreshTrigger++
