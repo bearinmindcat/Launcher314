@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInFull
 import androidx.compose.material.icons.outlined.Home
@@ -1170,6 +1171,14 @@ fun LauncherScreen(
                 allAvailableApps = allAvailableApps.filterNot { it.packageName.startsWith("shortcut_") } +
                     com.bearinmind.launcher314.data.loadShortcutApps(context)
             }
+            // Issue #92: sweep ghost rows for packages that no longer resolve — they render as empty
+            // cells but still block drops (things "don't want to move" onto them).
+            val knownPkgs = allAvailableApps.map { it.packageName }.toSet()
+            val swept = data.apps.filter { it.packageName in knownPkgs }
+            if (swept.size != data.apps.size) {
+                homeApps = swept
+                saveHomeScreenData(context, data.copy(apps = swept))
+            }
             appCustomizations = loadAppCustomizations(context)
             placedWidgets = WidgetManager.loadPlacedWidgets(context)
             isLoading = false
@@ -1521,8 +1530,13 @@ fun LauncherScreen(
                     appCustomizations.customizations[it.packageName]?.detachedFromGrid != true
             }
             if (targetOccupied) {
-                android.util.Log.w("FolderDrop", "handleDrop: target position $toIndex on page $toPage already occupied, aborting move")
-                return
+                // Issue #92: toCell RENDERS empty, so any row here is a stale ghost (uninstalled app,
+                // interrupted move). Heal it and take the cell instead of bouncing the drop back.
+                android.util.Log.w("FolderDrop", "handleDrop: clearing stale ghost row(s) at $toIndex page $toPage")
+                updatedApps.removeAll {
+                    it.position == toIndex && it.page == toPage &&
+                        appCustomizations.customizations[it.packageName]?.detachedFromGrid != true
+                }
             }
 
             // Remove app from old position and page (only the attached entry —
@@ -4035,6 +4049,27 @@ fun LauncherScreen(
                                                             // (Widget slideshow toggle + interval moved
                                                             // into the Customize popup below, alongside
                                                             // the text size + spacing sliders.)
+
+                                                            // Issue #91: reopen the provider's config screen (rescues widgets stuck blank).
+                                                            val widgetCanConfigure = remember(widget.appWidgetId) {
+                                                                android.appwidget.AppWidgetManager.getInstance(context)
+                                                                    .getAppWidgetInfo(widget.appWidgetId)?.configure != null
+                                                            }
+                                                            if (widgetCanConfigure) {
+                                                                DropdownMenuItem(
+                                                                    text = { Text("Configure") },
+                                                                    onClick = {
+                                                                        showWidgetMenu = false
+                                                                        (context as? com.bearinmind.launcher314.MainActivity)?.reconfigureWidget(widget.appWidgetId)
+                                                                    },
+                                                                    leadingIcon = {
+                                                                        Icon(
+                                                                            imageVector = Icons.Outlined.Settings,
+                                                                            contentDescription = null
+                                                                        )
+                                                                    }
+                                                                )
+                                                            }
 
                                                             // Customize option — opens the per-widget
                                                             // customize popup (text size + spacing),

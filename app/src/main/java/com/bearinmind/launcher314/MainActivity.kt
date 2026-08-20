@@ -141,11 +141,27 @@ class MainActivity : ComponentActivity() {
         private const val REQUEST_CALL_PHONE = 9005
     }
 
+    // Issue #91: re-open a placed widget's config screen (fixes widgets stuck blank from before).
+    private var reconfiguringWidget = false
+    fun reconfigureWidget(appWidgetId: Int) {
+        reconfiguringWidget = true
+        launchWidgetConfigure(appWidgetId)
+    }
+
     // Launch widget configure activity via AppWidgetHost (has permission for non-exported activities)
     private fun launchWidgetConfigure(appWidgetId: Int) {
         try {
+            // Issue #91: on Android 14+ the config launch rides a PendingIntent, which is blocked
+            // unless background activity starts are explicitly allowed — without this the config
+            // screen never opens and instantly returns CANCELED (widget lands blank).
+            val options = if (android.os.Build.VERSION.SDK_INT >= 34) {
+                android.app.ActivityOptions.makeBasic()
+                    .setPendingIntentBackgroundActivityStartMode(
+                        android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    ).toBundle()
+            } else null
             WidgetManager.getAppWidgetHost()?.startAppWidgetConfigureActivityForResult(
-                this, appWidgetId, 0, REQUEST_CONFIGURE_APPWIDGET, null
+                this, appWidgetId, 0, REQUEST_CONFIGURE_APPWIDGET, options
             )
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Failed to launch widget configure", e)
@@ -159,6 +175,12 @@ class MainActivity : ComponentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_CONFIGURE_APPWIDGET) {
             android.util.Log.d("MainActivity", "Widget configure result: resultCode=$resultCode (OK=${RESULT_OK}, CANCELED=${RESULT_CANCELED})")
+            if (reconfiguringWidget) {
+                // Reconfigure of an already-placed widget — just refresh, never re-add.
+                reconfiguringWidget = false
+                widgetAddedTrigger.intValue++
+                return
+            }
             if (resultCode == RESULT_OK) {
                 pendingWidgetInfo?.let { widget ->
                     addWidgetToHomeScreen(widget)
