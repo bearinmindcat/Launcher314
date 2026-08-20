@@ -760,6 +760,14 @@ object HomeFolderState {
     var navStack: List<HomeFolder> = emptyList()
 }
 
+/** Home-button presses (LauncherWithDrawer bumps it) — drives return-to-default-page (issue #73). */
+object HomePressSignal {
+    val state = androidx.compose.runtime.mutableIntStateOf(0)
+    // Where the press happened: set before bumping (MainActivity + LauncherWithDrawer).
+    var launcherWasForeground = false
+    var drawerWasOpen = false
+}
+
 /**
  * LauncherScreen - A home screen with drag and drop app placement
  */
@@ -1069,6 +1077,22 @@ fun LauncherScreen(
     // of always defaulting to page 0.
     LaunchedEffect(pagerState.currentPage) {
         prefs.edit().putInt("launcher_current_page", pagerState.currentPage).apply()
+    }
+    LaunchedEffect(Unit) {
+        // Issue #73: Home press while ON the home screen returns to page 1 (Launcher3 feel). From the
+        // drawer / another app the page is kept — unless the toggle forces the chosen default page.
+        snapshotFlow { HomePressSignal.state.intValue }.collect { v ->
+            if (v > 0) {
+                val toggleOn = com.bearinmind.launcher314.data.getReturnToDefaultPage(context)
+                val onHomeScreen = HomePressSignal.launcherWasForeground && !HomePressSignal.drawerWasOpen
+                if (toggleOn || onHomeScreen) {
+                    val target = if (toggleOn) {
+                        (com.bearinmind.launcher314.data.getDefaultHomePage(context) - 1).coerceIn(0, totalPages - 1)
+                    } else 0
+                    if (pagerState.currentPage != target) pagerState.animateScrollToPage(target)
+                }
+            }
+        }
     }
 
     var removingLastDot by remember { mutableStateOf(false) }

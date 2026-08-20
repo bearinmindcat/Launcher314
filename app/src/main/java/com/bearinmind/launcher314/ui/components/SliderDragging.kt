@@ -803,6 +803,17 @@ object SliderConfigs {
         labelSuffix = "%"
     )
 
+    val defaultHomePage = HorizontalSliderConfig(
+        minValue = 1f,
+        maxValue = 9f,
+        tickValues = (1..9).toList(),
+        labeledTickValues = (1..9).toList(),
+        snapTickValues = (1..9).toList(),
+        showMinorTicks = false,
+        label = "Default page",
+        labelSuffix = ""
+    )
+
     val drawerNoise = HorizontalSliderConfig(
         minValue = 0f,
         maxValue = 100f,

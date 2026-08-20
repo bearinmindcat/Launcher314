@@ -638,6 +638,11 @@ class MainActivity : ComponentActivity() {
             // Home button pressed while already in launcher mode:
             // Signal Compose to return to home screen and close drawer
             isHomeLaunch && isLauncherMode -> {
+                // STARTED (still visible) = the press happened while on the launcher — the system may
+                // pause us before delivering the home intent, so RESUMED is too strict. Coming back
+                // from an app the launcher was fully stopped, so this reads false there.
+                com.bearinmind.launcher314.ui.home.HomePressSignal.launcherWasForeground =
+                    lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
                 homeButtonTrigger.intValue++
             }
             // Home button pressed but activity is in non-launcher mode:

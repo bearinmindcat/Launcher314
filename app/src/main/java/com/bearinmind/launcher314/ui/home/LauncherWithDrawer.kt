@@ -373,6 +373,8 @@ fun LauncherWithDrawer(
         if (homeButtonTrigger > 0) {
             HomeFolderState.navStack = emptyList()
             HomeFolderState.closeRequest.intValue++
+            HomePressSignal.drawerWasOpen = showAppDrawer
+            HomePressSignal.state.intValue++
         }
         if (homeButtonTrigger > 0 && showAppDrawer) {
             showAppDrawer = false

@@ -1665,6 +1665,36 @@ fun EditHomeScreenSettingsScreen(
                     .verticalScroll(settingsScroll)
             ) {
                 HomeScreenGestureSettings(onPickAppForGesture = onPickAppForGesture)
+
+                Spacer(Modifier.height(8.dp))
+
+                // Return to default page (issue #73)
+                var returnToDefault by remember { mutableStateOf(com.bearinmind.launcher314.data.getReturnToDefaultPage(context)) }
+                var defaultPage by remember { mutableFloatStateOf(com.bearinmind.launcher314.data.getDefaultHomePage(context).toFloat()) }
+                SettingsToggleItem(
+                    title = "Return to home screen",
+                    subtitle = "Launcher always returns to home screen",
+                    checked = returnToDefault,
+                    onCheckedChange = {
+                        returnToDefault = it
+                        com.bearinmind.launcher314.data.setReturnToDefaultPage(context, it)
+                    }
+                )
+                if (returnToDefault) {
+                    Spacer(Modifier.height(4.dp))
+                    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 36.dp)) {
+                        com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider(
+                            currentValue = defaultPage,
+                            config = com.bearinmind.launcher314.ui.components.SliderConfigs.defaultHomePage,
+                            onValueChange = {
+                                defaultPage = it
+                                com.bearinmind.launcher314.data.setDefaultHomePage(context, Math.round(it))
+                            },
+                            onValueChangeFinished = {}
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(16.dp))
             }
 

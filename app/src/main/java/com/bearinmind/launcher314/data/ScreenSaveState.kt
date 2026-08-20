@@ -680,6 +680,30 @@ fun setHiddenApps(context: Context, hiddenApps: Set<String>) {
     prefs.edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()
 }
 
+// Return-to-default-page (issue #73): snap to a chosen page whenever the launcher comes home. Default off.
+private const val KEY_RETURN_DEFAULT_PAGE = "return_default_page"
+private const val KEY_DEFAULT_HOME_PAGE = "default_home_page"
+
+fun getReturnToDefaultPage(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_RETURN_DEFAULT_PAGE, false)
+}
+
+fun setReturnToDefaultPage(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_RETURN_DEFAULT_PAGE, enabled).apply()
+}
+
+fun getDefaultHomePage(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_DEFAULT_HOME_PAGE, 1)
+}
+
+fun setDefaultHomePage(context: Context, page: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_DEFAULT_HOME_PAGE, page.coerceAtLeast(1)).apply()
+}
+
 // Drawer noise-grain intensity: % of the default overlay alpha (100 = default look, 0 = off).
 private const val KEY_DRAWER_NOISE_PERCENT = "drawer_noise_percent"
 
