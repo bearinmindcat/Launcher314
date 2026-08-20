@@ -7491,7 +7491,9 @@ fun LauncherScreen(
                 // 2x2 preview (which compacts) yet vanishes when the folder is
                 // opened. In-grid gaps are preserved so drag-reorder still works.
                 val folderCellCount = (folderGridColumns * folderGridRows).coerceAtLeast(1)
-                val folderCellAppMap = remember(folderCellMap, allAvailableApps, folderCellCount) {
+                // Third key folds in the customizations version so Apply INSIDE the popup shows live (issue #82).
+                val folderCellAppMap = remember(folderCellMap, allAvailableApps,
+                    folderCellCount * 100000 + com.bearinmind.launcher314.data.AppCustomizationsVersion.state.intValue) {
                     reflowFolderCells(folderCellMap, allAvailableApps, folderCellCount, appCustomizations)
                 }
                 val isDraggingInFolder = draggedPkg != null && !isFolderDropAnimating
