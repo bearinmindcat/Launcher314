@@ -394,8 +394,13 @@ internal fun FolderContentScreen(
                                 val reorderShift = remember { androidx.compose.animation.core.Animatable(Offset.Zero, Offset.VectorConverter) }
                                 val reorderTarget = com.bearinmind.launcher314.ui.home.folderReorderPreviewShift(cellIdx, folderCellMap[cellIdx])
                                 LaunchedEffect(reorderTarget) {
-                                    if (reorderTarget != null) reorderShift.animateTo(reorderTarget, spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
-                                    else reorderShift.snapTo(Offset.Zero)
+                                    if (reorderTarget != null) {
+                                        // Launcher3 ripple: cells closest to the hovered slot start first.
+                                        if (reorderTarget != Offset.Zero && com.bearinmind.launcher314.ui.home.FolderReorderPreview.hoverIdx >= 0) {
+                                            kotlinx.coroutines.delay(kotlin.math.abs(cellIdx - com.bearinmind.launcher314.ui.home.FolderReorderPreview.hoverIdx).coerceAtMost(8) * 22L)
+                                        }
+                                        reorderShift.animateTo(reorderTarget, tween(230, easing = FastOutSlowInEasing))
+                                    } else reorderShift.snapTo(Offset.Zero)
                                 }
                                 Box(
                                     modifier = Modifier
@@ -512,10 +517,15 @@ internal fun FolderContentScreen(
                                                                                     if (hovered != null && hovered != draggedCellIdx && folderCellMap[hovered] != null) {
                                                                                         val pos = cellPositions[hovered]
                                                                                         if (pos != null) {
-                                                                                            val center = Offset(pos.x + cellSize.width / 2f, pos.y + cellSize.height / 2f)
+                                                                                            // Icon-center anchor + L3-style hysteretic exit at 0.8x.
+                                                                                            val center = Offset(
+                                                                                                pos.x + cellSize.width / 2f,
+                                                                                                pos.y + cellSize.height / 2f - with(density) { 10.dp.toPx() }
+                                                                                            )
                                                                                             val dist = (dragCenter - center).getDistance()
-                                                                                            if (dist < folderCreateRadiusPx) createTarget = hovered
-                                                                                            Log.d("FoldZone", "hover=$hovered dist=$dist radius=$folderCreateRadiusPx cell=${cellSize.width}x${cellSize.height} create=${createTarget != null}")
+                                                                                            val exitR = folderCreateRadiusPx * (0.8f / 0.55f)
+                                                                                            val wasTarget = folderCreateTargetCell == hovered
+                                                                                            if (dist < folderCreateRadiusPx || (wasTarget && dist < exitR)) createTarget = hovered
                                                                                         }
                                                                                     }
                                                                                     folderCreateTargetCell = createTarget
@@ -560,6 +570,7 @@ internal fun FolderContentScreen(
                                                                             isDropAnimating = true
                                                                             hoveredCell = null
                                                                             folderCreateTargetCell = null
+                                                                            com.bearinmind.launcher314.ui.home.FolderReorderPreview.foldingDrop = true
 
                                                                             folderScope.launch {
                                                                                 dropAnimProgress.snapTo(0f)
@@ -576,6 +587,7 @@ internal fun FolderContentScreen(
                                                                                 dragOriginalCellPos = null
                                                                                 isDropAnimating = false
                                                                                 com.bearinmind.launcher314.ui.home.FolderReorderPreview.active = false
+                                                                                com.bearinmind.launcher314.ui.home.FolderReorderPreview.foldingDrop = false
                                                                             }
                                                                         } else if (fromIdx != null && toIdx != null && fromIdx != toIdx &&
                                                                             droppedPkg != null && originalPos != null && !isDropAnimating
@@ -1108,9 +1120,11 @@ internal fun FolderContentScreen(
                                 .zIndex(1000f)
                                 .padding(markerHalfSize)
                                 .graphicsLayer {
-                                    scaleX = boxScale
-                                    scaleY = boxScale
-                                    alpha = boxAlpha
+                                    // Fold drop: the held icon absorbs (shrinks + fades) into the target.
+                                    val fp = if (com.bearinmind.launcher314.ui.home.FolderReorderPreview.foldingDrop && isDropAnimating) dropAnimProgress.value else 0f
+                                    scaleX = boxScale - (boxScale - 0.4f) * fp
+                                    scaleY = boxScale - (boxScale - 0.4f) * fp
+                                    alpha = boxAlpha * (1f - 0.5f * fp)
                                     clip = false
                                 },
                             contentAlignment = Alignment.Center

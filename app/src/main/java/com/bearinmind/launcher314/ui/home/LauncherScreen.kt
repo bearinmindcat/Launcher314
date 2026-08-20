@@ -7663,16 +7663,22 @@ fun LauncherScreen(
                                                     dragCenter.x >= pos.x && dragCenter.x < pos.x + folderCellSize.width &&
                                                     dragCenter.y >= pos.y && dragCenter.y < pos.y + folderCellSize.height
                                                 }?.key
-                                                // Launcher3 fold zone: within 0.55x icon of an occupied cell's center = sub-folder.
+                                                // Launcher3 fold zone: 0.55x icon around the ICON center, hysteretic exit at 0.8x.
                                                 var createT = -1
                                                 val dPkgNow = draggedPkg
                                                 if (hoveredRaw != null && hoveredRaw != draggedFolderCellIdx && folderCellMap[hoveredRaw] != null &&
                                                     dPkgNow != null && !com.bearinmind.launcher314.data.isFolderEntry(dPkgNow)) {
                                                     val tp = folderCellPositions[hoveredRaw]
                                                     if (tp != null) {
-                                                        val tc = Offset(tp.x + folderCellSize.width / 2f, tp.y + folderCellSize.height / 2f)
-                                                        val radius = with(folderDensity) { (folderIconSizeDp * 0.55f).dp.toPx() }
-                                                        if ((dragCenter - tc).getDistance() < radius) createT = hoveredRaw
+                                                        val tc = Offset(
+                                                            tp.x + folderCellSize.width / 2f,
+                                                            tp.y + folderCellSize.height / 2f - with(folderDensity) { 10.dp.toPx() }
+                                                        )
+                                                        val d = (dragCenter - tc).getDistance()
+                                                        val enter = with(folderDensity) { (folderIconSizeDp * 0.55f).dp.toPx() }
+                                                        val exit = with(folderDensity) { (folderIconSizeDp * 0.8f).dp.toPx() }
+                                                        val wasTarget = FolderReorderPreview.createIdx == hoveredRaw
+                                                        if (d < enter || (wasTarget && d < exit)) createT = hoveredRaw
                                                     }
                                                 }
                                                 FolderReorderPreview.createIdx = createT
@@ -7710,6 +7716,7 @@ fun LauncherScreen(
                                                 isFolderDropAnimating = true
                                                 hoveredFolderCell = null
                                                 FolderReorderPreview.createIdx = -1
+                                                FolderReorderPreview.foldingDrop = true
 
                                                 folderDropScope.launch {
                                                     folderDropAnimProgress.snapTo(0f)
@@ -7726,6 +7733,7 @@ fun LauncherScreen(
                                                     dragOriginalFolderCellPos = null
                                                     isFolderDropAnimating = false
                                                     FolderReorderPreview.active = false
+                                                    FolderReorderPreview.foldingDrop = false
                                                 }
                                             } else if (fromIdx != null && toIdx != null && fromIdx != toIdx && pkg != null && originalPos != null && !isFolderDropAnimating) {
                                                 // Compute drop animation target
@@ -7921,9 +7929,11 @@ fun LauncherScreen(
                         .graphicsLayer {
                             translationX = appLeft
                             translationY = appTop
-                            scaleX = boxScale
-                            scaleY = boxScale
-                            alpha = boxAlpha
+                            // Fold drop: the held icon absorbs (shrinks + fades) into the target.
+                            val fp = if (FolderReorderPreview.foldingDrop && isFolderDropAnimating) folderDropAnimProgress.value else 0f
+                            scaleX = boxScale - (boxScale - 0.4f) * fp
+                            scaleY = boxScale - (boxScale - 0.4f) * fp
+                            alpha = boxAlpha * (1f - 0.5f * fp)
                             clip = false
                         },
                     contentAlignment = Alignment.Center

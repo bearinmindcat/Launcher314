@@ -255,6 +255,8 @@ object FolderReorderPreview {
     var hoverIdx by androidx.compose.runtime.mutableStateOf(-1)
     // Center-hover fold target (home popup): -1 = none. Drives the sub-folder morph cue.
     var createIdx by androidx.compose.runtime.mutableStateOf(-1)
+    // True while a fold-drop animates: the held icon absorbs (shrinks) into the target.
+    var foldingDrop by androidx.compose.runtime.mutableStateOf(false)
     var fromIdx = -1
     var draggedPkg: String? = null
     var draggedIconPath: String? = null
@@ -392,8 +394,13 @@ fun DraggableGridCell(
         folderReorderPreviewShift(index, (cell as? HomeGridCell.App)?.appInfo?.packageName
             ?: if (cell is HomeGridCell.Folder) FolderReorderPreview.cellMap[index] else null) else null
     LaunchedEffect(reorderTarget) {
-        if (reorderTarget != null) reorderShift.animateTo(reorderTarget, spring(stiffness = Spring.StiffnessMediumLow))
-        else reorderShift.snapTo(Offset.Zero)
+        if (reorderTarget != null) {
+            // Launcher3 ripple: cells closest to the hovered slot start first.
+            if (reorderTarget != Offset.Zero && FolderReorderPreview.hoverIdx >= 0) {
+                kotlinx.coroutines.delay(kotlin.math.abs(index - FolderReorderPreview.hoverIdx).coerceAtMost(8) * 22L)
+            }
+            reorderShift.animateTo(reorderTarget, tween(230, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        } else reorderShift.snapTo(Offset.Zero)
     }
 
     // Outer container - NO scaling here, so "+" markers stay in place
