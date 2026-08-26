@@ -775,6 +775,17 @@ internal fun loopedPageCount(loop: Boolean, real: Int) =
 internal fun loopedInitialPage(loop: Boolean, real: Int, logical: Int) =
     if (loop && real >= 2) (HOME_LOOP_BASE / 2) * real + logical else logical
 
+/** Global widget prefs as one holder (keeps LauncherScreen off the 64KB ceiling). */
+internal class WidgetPrefState(context: android.content.Context) {
+    val padding = androidx.compose.runtime.mutableIntStateOf(getWidgetPaddingPercent(context))
+    val fontScale = androidx.compose.runtime.mutableIntStateOf(com.bearinmind.launcher314.data.getWidgetFontScalePercent(context))
+    val rounded = androidx.compose.runtime.mutableStateOf(getWidgetRoundedCornersEnabled(context))
+    val cornerRadius = androidx.compose.runtime.mutableIntStateOf(getWidgetCornerRadiusPercent(context))
+}
+
+@Composable
+internal fun rememberWidgetPrefState(context: android.content.Context) = remember { WidgetPrefState(context) }
+
 /** Pager creation + loop re-anchoring in one place (keeps LauncherScreen off the 64KB ceiling). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -925,14 +936,15 @@ fun LauncherScreen(
     // Edge scroll zone in pixels (proportional to screen width)
     val edgeScrollZonePx = with(density) { edgeScrollZone.toPx() }
 
-    // Home screen apps
-    var homeApps by remember { mutableStateOf<List<HomeScreenApp>>(emptyList()) }
-    var dockApps by remember { mutableStateOf<List<DockApp>>(emptyList()) }
-    var dockFolders by remember { mutableStateOf<List<DockFolder>>(emptyList()) }
-    var homeFolders by remember { mutableStateOf<List<HomeFolder>>(emptyList()) }
+    // Home screen apps — seeded synchronously so a cold start's first frame is the real home, not a blank/spinner (issue #93)
+    val initialHomeData = remember { loadHomeScreenData(appContext) }
+    var homeApps by remember { mutableStateOf(initialHomeData.apps) }
+    var dockApps by remember { mutableStateOf(initialHomeData.dockApps) }
+    var dockFolders by remember { mutableStateOf(initialHomeData.dockFolders) }
+    var homeFolders by remember { mutableStateOf(initialHomeData.folders) }
     var allAvailableApps by remember { mutableStateOf<List<HomeAppInfo>>(emptyList()) }
     val hiddenApps = remember { com.bearinmind.launcher314.data.getHiddenApps(appContext) }
-    var appCustomizations by remember { mutableStateOf(AppCustomizations()) }
+    var appCustomizations by remember { mutableStateOf(loadAppCustomizations(appContext)) }
     // Detached-icon edit mode — lives at LauncherScreen scope (not per-page) so
     // the HorizontalPager's userScrollEnabled can lock pager swipes while a
     // detached icon is being edited, and so only ONE icon across all pages can
@@ -949,15 +961,16 @@ fun LauncherScreen(
     var customizingApp by remember { mutableStateOf<HomeAppInfo?>(null) }
     var customizingFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.HomeFolder?>(null) }
     var customizingDockFolder by remember { mutableStateOf<com.bearinmind.launcher314.data.DockFolder?>(null) }
-    var placedWidgets by remember { mutableStateOf<List<PlacedWidget>>(emptyList()) }
+    var placedWidgets by remember { mutableStateOf(WidgetManager.loadPlacedWidgets(appContext)) }
     // Per-widget refresh counter — bump after WidgetManager.recreateWidgetView() so
     // WidgetHostView re-fetches the new view instance from cache.
     var widgetViewRefreshKeys by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
-    var globalWidgetPaddingPercent by remember { mutableIntStateOf(getWidgetPaddingPercent(appContext)) }
-    var globalWidgetFontScalePercent by remember { mutableIntStateOf(com.bearinmind.launcher314.data.getWidgetFontScalePercent(appContext)) }
-    var widgetRoundedCornersEnabled by remember { mutableStateOf(getWidgetRoundedCornersEnabled(appContext)) }
-    var widgetCornerRadiusPercent by remember { mutableIntStateOf(getWidgetCornerRadiusPercent(appContext)) }
-    var isLoading by remember { mutableStateOf(true) }
+    val widgetPrefs = rememberWidgetPrefState(appContext)
+    var globalWidgetPaddingPercent by widgetPrefs.padding
+    var globalWidgetFontScalePercent by widgetPrefs.fontScale
+    var widgetRoundedCornersEnabled by widgetPrefs.rounded
+    var widgetCornerRadiusPercent by widgetPrefs.cornerRadius
+    var isLoading by remember { mutableStateOf(false) }
 
     // Edit mode and drag state
     var isEditMode by remember { mutableStateOf(false) }
@@ -1237,7 +1250,14 @@ fun LauncherScreen(
             // Issue #92: sweep ghost rows for packages that no longer resolve — they render as empty
             // cells but still block drops (things "don't want to move" onto them).
             val knownPkgs = allAvailableApps.map { it.packageName }.toSet()
-            val swept = data.apps.filter { it.packageName in knownPkgs }
+            // Sweep only rows whose package is individually confirmed gone — a flaky broad query must never wipe real rows (the save below is permanent).
+            val pm = context.packageManager
+            val swept = data.apps.filter { row ->
+                row.packageName in knownPkgs ||
+                    row.packageName.startsWith("folder:") ||
+                    (!row.packageName.startsWith("shortcut_") &&
+                        runCatching { pm.getPackageInfo(row.packageName, 0) }.isSuccess)
+            }
             if (swept.size != data.apps.size) {
                 homeApps = swept
                 saveHomeScreenData(context, data.copy(apps = swept))
