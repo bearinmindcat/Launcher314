@@ -121,7 +121,9 @@ fun handleEdgeScrollDetection(
     setHoveringLeft(inLeftZone)
     setHoveringRight(inRightZone)
 
-    return if (inLeftZone && currentPage > 0) {
+    // Bounds check the logical page; drags never wrap, so edge-hold stops at the ring's real ends.
+    val logicalPage = currentPage.mod(totalPages.coerceAtLeast(1))
+    return if (inLeftZone && logicalPage > 0) {
         if (currentJob == null || currentJob.isActive != true) {
             scope.launch {
                 delay(EDGE_SCROLL_DELAY_MS)
@@ -131,7 +133,7 @@ fun handleEdgeScrollDetection(
                 setSuppressed(false)
             }
         } else currentJob
-    } else if (inRightZone && currentPage < totalPages - 1) {
+    } else if (inRightZone && logicalPage < totalPages - 1) {
         if (currentJob == null || currentJob.isActive != true) {
             scope.launch {
                 delay(EDGE_SCROLL_DELAY_MS)

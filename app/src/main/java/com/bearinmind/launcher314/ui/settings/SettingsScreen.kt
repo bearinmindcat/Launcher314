@@ -1695,6 +1695,30 @@ fun EditHomeScreenSettingsScreen(
                     }
                 }
 
+                Spacer(Modifier.height(8.dp))
+
+                var infiniteHome by remember { mutableStateOf(com.bearinmind.launcher314.data.getInfiniteScrollHome(context)) }
+                var infiniteDock by remember { mutableStateOf(com.bearinmind.launcher314.data.getInfiniteScrollDock(context)) }
+                SettingsToggleItem(
+                    title = "Infinite scrolling",
+                    subtitle = "Seamlessly swipe between the first and last home pages",
+                    checked = infiniteHome,
+                    onCheckedChange = {
+                        infiniteHome = it
+                        com.bearinmind.launcher314.data.setInfiniteScrollHome(context, it)
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+                SettingsToggleItem(
+                    title = "Infinite dock scrolling",
+                    subtitle = "Seamlessly swipe between the first and last dock pages",
+                    checked = infiniteDock,
+                    onCheckedChange = {
+                        infiniteDock = it
+                        com.bearinmind.launcher314.data.setInfiniteScrollDock(context, it)
+                    }
+                )
+
                 Spacer(Modifier.height(16.dp))
             }
 

@@ -768,6 +768,42 @@ object HomePressSignal {
     var drawerWasOpen = false
 }
 
+// Infinite scroll (issue #73): pseudo-infinite pager. LOGICAL pages stay 0..N-1 everywhere outside the pager.
+internal const val HOME_LOOP_BASE = 1000
+internal fun loopedPageCount(loop: Boolean, real: Int) =
+    if (loop && real >= 2) HOME_LOOP_BASE * real else real
+internal fun loopedInitialPage(loop: Boolean, real: Int, logical: Int) =
+    if (loop && real >= 2) (HOME_LOOP_BASE / 2) * real + logical else logical
+
+/** Pager creation + loop re-anchoring in one place (keeps LauncherScreen off the 64KB ceiling). */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun rememberLoopedPagerState(loop: Boolean, real: Int, initialLogical: Int): androidx.compose.foundation.pager.PagerState {
+    val state = rememberPagerState(
+        initialPage = loopedInitialPage(loop, real, initialLogical.coerceIn(0, (real - 1).coerceAtLeast(0))),
+        pageCount = { loopedPageCount(loop, real) }
+    )
+    LaunchedEffect(real) {
+        if (loop && real >= 2) {
+            state.scrollToPage(loopedInitialPage(true, real, state.currentPage.mod(real)))
+        }
+    }
+    return state
+}
+
+/** Animate to a LOGICAL page, taking the short way around the ring when looping. */
+@OptIn(ExperimentalFoundationApi::class)
+internal suspend fun androidx.compose.foundation.pager.PagerState.animateToLogical(
+    real: Int,
+    target: Int,
+    spec: androidx.compose.animation.core.AnimationSpec<Float>? = null
+) {
+    val n = real.coerceAtLeast(1)
+    val cur = currentPage
+    val raw = if (pageCount > n) cur + (((target - cur.mod(n) + n / 2).mod(n)) - n / 2) else target
+    if (spec != null) animateScrollToPage(raw, animationSpec = spec) else animateScrollToPage(raw)
+}
+
 /**
  * LauncherScreen - A home screen with drag and drop app placement
  */
@@ -1064,8 +1100,9 @@ fun LauncherScreen(
     // Page state (persisted via SharedPreferences)
     val prefs = remember { context.getSharedPreferences("launcher_prefs", Context.MODE_PRIVATE) }
     var totalPages by remember { mutableIntStateOf(prefs.getInt("launcher_total_pages", 1)) }
-    val pagerState = rememberPagerState(pageCount = { totalPages })
-    val currentPage by remember { derivedStateOf { pagerState.currentPage } }
+    val loopHome = remember { com.bearinmind.launcher314.data.getInfiniteScrollHome(context) }
+    val pagerState = rememberLoopedPagerState(loopHome, totalPages, prefs.getInt("launcher_current_page", 0))
+    val currentPage by remember { derivedStateOf { pagerState.currentPage.mod(totalPages.coerceAtLeast(1)) } }
     // Expose pager settle state so the drawer swipe gesture can claim a vertical
     // swipe immediately during a page settle (see HomePagerSwipeState).
     LaunchedEffect(pagerState.isScrollInProgress) {
@@ -1076,7 +1113,7 @@ fun LauncherScreen(
     // can land the widget on the page the user is actually viewing instead
     // of always defaulting to page 0.
     LaunchedEffect(pagerState.currentPage) {
-        prefs.edit().putInt("launcher_current_page", pagerState.currentPage).apply()
+        prefs.edit().putInt("launcher_current_page", pagerState.currentPage.mod(totalPages.coerceAtLeast(1))).apply()
     }
     LaunchedEffect(Unit) {
         // Issue #73: Home press while ON the home screen returns to page 1 (Launcher3 feel). From the
@@ -1089,7 +1126,9 @@ fun LauncherScreen(
                     val target = if (toggleOn) {
                         (com.bearinmind.launcher314.data.getDefaultHomePage(context) - 1).coerceIn(0, totalPages - 1)
                     } else 0
-                    if (pagerState.currentPage != target) pagerState.animateScrollToPage(target)
+                    if (pagerState.currentPage.mod(totalPages.coerceAtLeast(1)) != target) {
+                        pagerState.animateToLogical(totalPages, target)
+                    }
                 }
             }
         }
@@ -1289,7 +1328,8 @@ fun LauncherScreen(
 
     // Build grid cells for a specific page
     val totalCells = gridColumns * gridRows
-    fun buildGridCellsForPage(page: Int): List<HomeGridCell> {
+    fun buildGridCellsForPage(pageRaw: Int): List<HomeGridCell> {
+        val page = pageRaw.mod(totalPages.coerceAtLeast(1))
         val cells = MutableList<HomeGridCell>(totalCells) { HomeGridCell.Empty }
 
         // Place widgets for this specific page (only primary widget per stack, sorted by stackOrder)
@@ -1375,7 +1415,7 @@ fun LauncherScreen(
     LaunchedEffect(pagerState.currentPage, widgetResizeState.isResizing) {
         if (!widgetResizeState.isResizing) return@LaunchedEffect
         val resizingPage = resizingWidgetFresh?.page ?: return@LaunchedEffect
-        if (pagerState.currentPage != resizingPage) {
+        if (pagerState.currentPage.mod(totalPages.coerceAtLeast(1)) != resizingPage) {
             hoveredWidgetCells = emptySet()
             widgetOriginalCells = emptySet()
             currentResizeDimensions = null
@@ -1405,7 +1445,7 @@ fun LauncherScreen(
             val targetCells = getWidgetTargetCells(widget, targetCol, targetRow, gridColumns, gridRows)
             hoveredWidgetCells = targetCells
             val draggedSid = widget.stackId
-            val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage && (draggedSid == null || it.stackId != draggedSid) }
+            val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) && (draggedSid == null || it.stackId != draggedSid) }
             val hoveringOverWidget = otherWidgets.any { other ->
                 val otherCells = mutableSetOf<Int>()
                 for (r in other.startRow until other.startRow + other.rowSpan) {
@@ -1415,7 +1455,7 @@ fun LauncherScreen(
                 }
                 targetCells.any { otherCells.contains(it) }
             }
-            val atOriginal = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage == widget.page
+            val atOriginal = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) == widget.page
             isWidgetOverWidget = hoveringOverWidget && !atOriginal
             isWidgetDropTargetValid = if (hoveringOverWidget && !atOriginal) true
                 else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
@@ -1808,10 +1848,11 @@ fun LauncherScreen(
         isHoveringLeftEdge = false
         isHoveringRightEdge = false
         edgeIndicatorSuppressed = false
-        val intendedPage = pagerState.targetPage
+        val intendedPageRaw = pagerState.targetPage
+        val intendedPage = intendedPageRaw.mod(totalPages.coerceAtLeast(1))
         edgeScrollJob?.cancel()
         edgeScrollJob = null
-        dropScope.launch { pagerState.scrollToPage(intendedPage) }
+        dropScope.launch { pagerState.scrollToPage(intendedPageRaw) }
 
         // Handle folder-sourced drag drop (with animation)
         if (dragFromFolderApp != null) {
@@ -1954,7 +1995,7 @@ fun LauncherScreen(
                 showFolderCreationIndicator = false
                 // Scroll back to source page if page changed
                 if (dragSourcePage != intendedPage) {
-                    dropScope.launch { pagerState.animateScrollToPage(dragSourcePage) }
+                    dropScope.launch { pagerState.animateToLogical(totalPages, dragSourcePage) }
                 }
             }
             return
@@ -2097,7 +2138,7 @@ fun LauncherScreen(
                 isEditMode = false
                 // Scroll back to source page if page changed
                 if (dragSourcePage != intendedPage) {
-                    dropScope.launch { pagerState.animateScrollToPage(dragSourcePage) }
+                    dropScope.launch { pagerState.animateToLogical(totalPages, dragSourcePage) }
                 }
             } else {
                 dropStartOffset = dragOffset
@@ -2112,9 +2153,9 @@ fun LauncherScreen(
                     coroutineScope {
                         if (scrollBackPage != null) {
                             launch {
-                                pagerState.animateScrollToPage(
-                                    scrollBackPage,
-                                    animationSpec = tween(300, easing = FastOutSlowInEasing)
+                                pagerState.animateToLogical(
+                                    totalPages, scrollBackPage,
+                                    spec = tween(300, easing = FastOutSlowInEasing)
                                 )
                             }
                         }
@@ -2154,7 +2195,7 @@ fun LauncherScreen(
             isEditMode = false
             // Scroll back to source page if page changed
             if (dragSourcePage != intendedPage) {
-                dropScope.launch { pagerState.animateScrollToPage(dragSourcePage) }
+                dropScope.launch { pagerState.animateToLogical(totalPages, dragSourcePage) }
             }
         }
     }
@@ -2173,7 +2214,8 @@ fun LauncherScreen(
             isWidgetOverWidget = false
             return
         }
-        val dropPage = pagerState.targetPage
+        val dropPageRaw = pagerState.targetPage
+        val dropPage = dropPageRaw.mod(totalPages.coerceAtLeast(1))
 
         val widgetCenter = widgetDragState.startPosition + widgetDragState.dragOffset
         val finalTarget = calculateWidgetDropTargetFromCenter(
@@ -2225,9 +2267,9 @@ fun LauncherScreen(
                 isWidgetDropAnimating = true
                 coroutineScope {
                     launch {
-                        pagerState.animateScrollToPage(
-                            widgetDragSourcePage,
-                            animationSpec = tween(300, easing = FastOutSlowInEasing)
+                        pagerState.animateToLogical(
+                            totalPages, widgetDragSourcePage,
+                            spec = tween(300, easing = FastOutSlowInEasing)
                         )
                     }
                     launch {
@@ -2248,7 +2290,7 @@ fun LauncherScreen(
         }
 
         // Valid drop OR invalid same-page drop: snap pager and animate overlay
-        dropScope.launch { pagerState.scrollToPage(dropPage) }
+        dropScope.launch { pagerState.scrollToPage(dropPageRaw) }
 
         // Calculate overlay-based target: animate the bitmap overlay from current
         // screen position to the target cell position (or stacking target's origin)
@@ -2484,7 +2526,7 @@ fun LauncherScreen(
     fun performExternalDrop() {
         val item = externalDragItemState ?: return cleanupExternalDrag()
         val originalPos = dragOriginalCellPos ?: return cleanupExternalDrag()
-        val intendedPage = pagerState.targetPage
+        val intendedPage = pagerState.targetPage.mod(totalPages.coerceAtLeast(1))
         val targetGridCell = hoveredGridCell
         val targetDockSlot = hoveredDockSlot
         edgeScrollJob?.cancel()
@@ -2733,7 +2775,7 @@ fun LauncherScreen(
                                     hoveredWidgetCells = targetCells
 
                                     val draggedSid2 = widget.stackId
-                                    val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage && (draggedSid2 == null || it.stackId != draggedSid2) }
+                                    val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) && (draggedSid2 == null || it.stackId != draggedSid2) }
                                     val hoveringOverWidget = otherWidgets.any { other ->
                                         val otherCells = mutableSetOf<Int>()
                                         for (r in other.startRow until other.startRow + other.rowSpan) {
@@ -2743,7 +2785,7 @@ fun LauncherScreen(
                                         }
                                         targetCells.any { otherCells.contains(it) }
                                     }
-                                    val atOriginal2 = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage == widget.page
+                                    val atOriginal2 = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) == widget.page
                                     isWidgetOverWidget = hoveringOverWidget && !atOriginal2
                                     isWidgetDropTargetValid = if (hoveringOverWidget && !atOriginal2) true
                                         else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
@@ -2890,7 +2932,7 @@ fun LauncherScreen(
                     // for a committed rightward drag on page 0, so leftward paging,
                     // vertical swipes, and the drawer gesture are unaffected.
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    if (pagerState.currentPage != 0) return@awaitEachGesture
+                    if (pagerState.currentPage.mod(totalPages.coerceAtLeast(1)) != 0) return@awaitEachGesture
                     if (gestureUiCallbacks == null) return@awaitEachGesture
                     // Bail if the touch starts inside the dock — the dock has its
                     // own HorizontalPager for paging dock items and we don't want
@@ -2934,7 +2976,7 @@ fun LauncherScreen(
                                 kotlin.math.abs(dy) > kotlin.math.abs(dx)) {
                                 return@awaitEachGesture
                             }
-                            if (pagerState.currentPage != 0) return@awaitEachGesture
+                            if (pagerState.currentPage.mod(totalPages.coerceAtLeast(1)) != 0) return@awaitEachGesture
                             if (dx > touchSlop) {
                                 committed = true
                                 change.consume()
@@ -3028,7 +3070,8 @@ fun LauncherScreen(
                         // icon is in edit mode, or when widgets are being
                         // manipulated.
                         userScrollEnabled = draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged && !isStackSwipeActive && editingPackageName == null
-                    ) { page ->
+                    ) { pageRaw ->
+                    val page = pageRaw.mod(totalPages.coerceAtLeast(1))
                     // Build this page's cells ONCE per page (memoized) — NOT once per
                     // cell. buildGridCellsForPage does linear scans over ALL installed
                     // apps; it was being called inside the inner cell loop, i.e. ~gridSize²
@@ -3085,7 +3128,7 @@ fun LauncherScreen(
                                     // - Widget drop target (hoveredWidgetCells) — but NOT during widget-over-widget (stacking)
                                     //   and only on the correct page (drag target page or resize widget's page)
                                     val widgetHoverPage = if (widgetResizeState.isResizing) resizingWidgetPage
-                                        else pagerState.targetPage
+                                        else pagerState.targetPage.mod(totalPages.coerceAtLeast(1))
                                     val isHovered = hoveredGridCell == index ||
                                                     (hoveredWidgetCells.contains(index) && !isWidgetOverWidget && page == widgetHoverPage)
                                     // Any item dragging includes both apps and widgets
@@ -3282,7 +3325,7 @@ fun LauncherScreen(
                                                 // so the root-level handler can continue tracking.
                                                 val pagerScrolling = pagerState.isScrollInProgress ||
                                                     (edgeScrollJob?.isActive == true)
-                                                val pageChanged = pagerState.targetPage != dragSourcePage
+                                                val pageChanged = pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) != dragSourcePage
                                                 if ((pagerScrolling || pageChanged) && draggedItemIndex != null) {
                                                     dragContinuedAfterPageSwitch = true
                                                 } else {
@@ -3609,7 +3652,7 @@ fun LauncherScreen(
                                                                             } catch (_: Exception) {}
 
                                                                             // Start widget drag mode
-                                                                            widgetDragSourcePage = pagerState.currentPage
+                                                                            widgetDragSourcePage = currentPage
                                                                             widgetDragState = WidgetDragState(
                                                                                 draggedWidget = widget,
                                                                                 dragOffset = Offset.Zero,
@@ -3663,7 +3706,7 @@ fun LauncherScreen(
 
                                                                                 // Check if hovering over another widget (for stacking)
                                                                                 val draggedSid3 = widget.stackId
-                                                                                val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage && (draggedSid3 == null || it.stackId != draggedSid3) }
+                                                                                val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) && (draggedSid3 == null || it.stackId != draggedSid3) }
                                                                                 val hoveringOverWidget = otherWidgets.any { other ->
                                                                                     val otherCells = mutableSetOf<Int>()
                                                                                     for (r in other.startRow until other.startRow + other.rowSpan) {
@@ -3673,7 +3716,7 @@ fun LauncherScreen(
                                                                                     }
                                                                                     targetCells.any { otherCells.contains(it) }
                                                                                 }
-                                                                                val atOriginal3 = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage == widget.page
+                                                                                val atOriginal3 = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) == widget.page
                                                                                 isWidgetOverWidget = hoveringOverWidget && !atOriginal3
 
                                                                                 // Check if placement is valid on the current target page
@@ -3690,7 +3733,7 @@ fun LauncherScreen(
                                                                         if (localDragStarted && widgetDragState.draggedWidget?.appWidgetId == widget.appWidgetId) {
                                                                             val pagerScrolling = pagerState.isScrollInProgress ||
                                                                                 (widgetEdgeScrollJob?.isActive == true)
-                                                                            val pageChanged = pagerState.targetPage != widgetDragSourcePage
+                                                                            val pageChanged = pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) != widgetDragSourcePage
                                                                             if (pagerScrolling || pageChanged) {
                                                                                 // Page transition in progress — keep drag alive,
                                                                                 // root handler will continue tracking
@@ -3710,7 +3753,7 @@ fun LauncherScreen(
                                                                 if (localDragStarted && widgetDragState.draggedWidget != null) {
                                                                     val pagerScrolling = pagerState.isScrollInProgress ||
                                                                         (widgetEdgeScrollJob?.isActive == true)
-                                                                    val pageChanged = pagerState.targetPage != widgetDragSourcePage
+                                                                    val pageChanged = pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) != widgetDragSourcePage
                                                                     if (pagerScrolling || pageChanged) {
                                                                         widgetDragContinuedAfterPageSwitch = true
                                                                     } else {
@@ -5727,9 +5770,10 @@ fun LauncherScreen(
 
             // Dock bar at bottom — wrapped in a HorizontalPager when there are multiple
             // dock pages. Styled like the widget stack (chrome appears on swipe + dots).
-            val dockPagerState = rememberPagerState(initialPage = 0, pageCount = { dockPagesCount })
+            val loopDock = remember { com.bearinmind.launcher314.data.getInfiniteScrollDock(context) }
+            val dockPagerState = rememberLoopedPagerState(loopDock, dockPagesCount, 0)
             // Expose for drag-drop logic so new dock items use the current page.
-            currentDockPage = dockPagerState.currentPage
+            currentDockPage = dockPagerState.currentPage.mod(dockPagesCount.coerceAtLeast(1))
 
             // Chrome (dim background + border) appears while swiping the dock pager,
             // identical animation profile to the widget stack chrome.
@@ -5790,7 +5834,8 @@ fun LauncherScreen(
                     // Disable swipe when an item is being dragged so dock-page swipes
                     // don't fight with drag-and-drop.
                     userScrollEnabled = dockPagesCount > 1 && draggedItemIndex == null && !isDropAnimating && !externalDragActive && !isWidgetBeingDragged
-                ) { dockPage ->
+                ) { dockPageRaw ->
+                val dockPage = dockPageRaw.mod(dockPagesCount.coerceAtLeast(1))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -6213,7 +6258,7 @@ fun LauncherScreen(
                                     .size(dockDotSize)
                                     .clip(CircleShape)
                                     .background(
-                                        if (dockPagerState.currentPage == dotIndex)
+                                        if (currentDockPage == dotIndex)
                                             dockDotColor.copy(alpha = 0.9f)
                                         else dockDotColor.copy(alpha = 0.3f)
                                     )
@@ -6229,8 +6274,8 @@ fun LauncherScreen(
         EdgeScrollIndicators(
             hoveringLeft = isHoveringLeftEdge && !edgeIndicatorSuppressed && pagerState.currentPage == pagerState.targetPage,
             hoveringRight = isHoveringRightEdge && !edgeIndicatorSuppressed && pagerState.currentPage == pagerState.targetPage,
-            showLeft = pagerState.currentPage > 0,
-            showRight = pagerState.currentPage < totalPages - 1,
+            showLeft = currentPage > 0,
+            showRight = currentPage < totalPages - 1,
             gridHPaddingPx = with(density) { gridHPadding.toPx() },
             screenWidthPx = screenWidthPx,
             modifier = Modifier.zIndex(500f)
@@ -8269,7 +8314,7 @@ fun LauncherScreen(
                                 // so removing a middle page silently did
                                 // nothing visible (apps still rendered at
                                 // their original page index).
-                                val pageToRemove = pagerState.currentPage
+                                val pageToRemove = pagerState.currentPage.mod(totalPages.coerceAtLeast(1))
                                 val targetAfter = (pageToRemove - 1).coerceAtLeast(0)
                                 // Cosmetic scroll-away, on its OWN job. If the user
                                 // swipes during it the scroll is cancelled — but the
@@ -8281,7 +8326,7 @@ fun LauncherScreen(
                                 // stayed swipeable and popped back (Issue: phantom
                                 // re-added screen).
                                 dropScope.launch {
-                                    try { pagerState.animateScrollToPage(targetAfter) }
+                                    try { pagerState.animateToLogical(totalPages, targetAfter) }
                                     catch (_: kotlinx.coroutines.CancellationException) {}
                                 }
                                 dropScope.launch {

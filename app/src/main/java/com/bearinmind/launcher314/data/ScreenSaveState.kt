@@ -704,6 +704,30 @@ fun setDefaultHomePage(context: Context, page: Int) {
     prefs.edit().putInt(KEY_DEFAULT_HOME_PAGE, page.coerceAtLeast(1)).apply()
 }
 
+// Infinite scrolling (issue #73)
+private const val KEY_INFINITE_SCROLL_HOME = "infinite_scroll_home"
+private const val KEY_INFINITE_SCROLL_DOCK = "infinite_scroll_dock"
+
+fun getInfiniteScrollHome(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_INFINITE_SCROLL_HOME, false)
+}
+
+fun setInfiniteScrollHome(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_INFINITE_SCROLL_HOME, enabled).apply()
+}
+
+fun getInfiniteScrollDock(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_INFINITE_SCROLL_DOCK, false)
+}
+
+fun setInfiniteScrollDock(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_INFINITE_SCROLL_DOCK, enabled).apply()
+}
+
 // Drawer noise-grain intensity: % of the default overlay alpha (100 = default look, 0 = off).
 private const val KEY_DRAWER_NOISE_PERCENT = "drawer_noise_percent"
 
