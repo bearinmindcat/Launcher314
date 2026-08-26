@@ -1249,9 +1249,17 @@ fun LauncherScreen(
             }
             // Issue #92: sweep ghost rows for packages that no longer resolve — they render as empty
             // cells but still block drops (things "don't want to move" onto them).
-            val knownPkgs = allAvailableApps.map { it.packageName }.toSet()
-            // Sweep only rows whose package is individually confirmed gone — a flaky broad query must never wipe real rows (the save below is permanent).
+            var knownPkgs = allAvailableApps.map { it.packageName }.toSet()
             val pm = context.packageManager
+            // Issue #61: a referenced package missing from the list but still installed means the list is stale (installed after first load) — re-query so the icon renders without a launcher restart.
+            val referenced = (data.apps.map { it.packageName } + data.dockApps.map { it.packageName } +
+                data.folders.flatMap { it.appPackageNames } + data.dockFolders.flatMap { it.appPackageNames })
+                .filter { !it.startsWith("shortcut_") && !it.startsWith("folder:") }
+            if (referenced.any { it !in knownPkgs && runCatching { pm.getPackageInfo(it, 0) }.isSuccess }) {
+                allAvailableApps = loadAvailableApps(context)
+                knownPkgs = allAvailableApps.map { it.packageName }.toSet()
+            }
+            // Sweep only rows whose package is individually confirmed gone — a flaky broad query must never wipe real rows (the save below is permanent).
             val swept = data.apps.filter { row ->
                 row.packageName in knownPkgs ||
                     row.packageName.startsWith("folder:") ||
