@@ -91,7 +91,7 @@ import kotlinx.coroutines.withContext
  *  brighter background; "Pick image" passes selected=false because it's
  *  an action, not a persistent mode. */
 @Composable
-private fun IconModeChip(
+internal fun IconModeChip(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
@@ -1713,6 +1713,10 @@ fun AppCustomizeDialog(
             PerAppIconPackPicker(
                 context = context,
                 packageName = appInfo.packageName,
+                applyDrawable = { packPkg, drawableName ->
+                    com.bearinmind.launcher314.helpers.IconPackManager
+                        .applyIconPackDrawableToApp(context, appInfo.packageName, packPkg, drawableName)
+                },
                 onIconApplied = { path, packName ->
                     customIconPath = path.ifEmpty { null }
                     selectedIconPackName = packName
@@ -1731,9 +1735,10 @@ fun AppCustomizeDialog(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PerAppIconPackPicker(
+internal fun PerAppIconPackPicker(
     context: Context,
-    packageName: String,
+    packageName: String?,
+    applyDrawable: (packPackage: String, drawableName: String) -> Boolean,
     onIconApplied: (path: String, packName: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1754,8 +1759,7 @@ private fun PerAppIconPackPicker(
             targetPackageName = packageName,
             onIconPicked = { drawableName ->
                 scope.launch(Dispatchers.IO) {
-                    val applied = com.bearinmind.launcher314.helpers.IconPackManager
-                        .applyIconPackDrawableToApp(context, packageName, activePack.packageName, drawableName)
+                    val applied = applyDrawable(activePack.packageName, drawableName)
                     withContext(Dispatchers.Main) {
                         if (applied) {
                             android.widget.Toast.makeText(
@@ -1839,7 +1843,7 @@ private fun PerAppIconPackPicker(
                 )
             ) {
                 // System Icons (default) — reset to system icon for this app
-                if (showSystemIcons) {
+                if (showSystemIcons && packageName != null) {
                     item {
                         Row(
                             modifier = Modifier
@@ -1996,7 +2000,7 @@ private fun PerAppIconPackPicker(
 private fun IconPackDrawableGrid(
     context: Context,
     pack: com.bearinmind.launcher314.helpers.IconPackManager.IconPackInfo,
-    targetPackageName: String,
+    targetPackageName: String?,
     onIconPicked: (drawableName: String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -2011,8 +2015,10 @@ private fun IconPackDrawableGrid(
         withContext(Dispatchers.IO) {
             val list = com.bearinmind.launcher314.helpers.IconPackManager
                 .getIconPackDrawables(context, pack.packageName)
-            val match = com.bearinmind.launcher314.helpers.IconPackManager
-                .findMatchingDrawableName(context, pack.packageName, targetPackageName)
+            val match = targetPackageName?.let {
+                com.bearinmind.launcher314.helpers.IconPackManager
+                    .findMatchingDrawableName(context, pack.packageName, it)
+            }
             withContext(Dispatchers.Main) {
                 drawables = list
                 suggested = match

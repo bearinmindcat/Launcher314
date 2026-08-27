@@ -116,6 +116,8 @@ fun FolderCustomizeDialog(
     var customIconPath by remember { mutableStateOf(currentCustomization?.customIconPath) }
     // Busts Coil's cache when the same folder_<id>.png path is overwritten.
     var customIconVersion by remember { mutableStateOf(0) }
+    var showIconSourceChooser by remember { mutableStateOf(false) }
+    var showIconPackBrowser by remember { mutableStateOf(false) }
 
     // Gallery picker: crop to square, 192x192, save to folder_<id>.png.
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -296,11 +298,7 @@ fun FolderCustomizeDialog(
                             modifier = Modifier
                                 .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    imagePickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                }
+                                .clickable { showIconSourceChooser = true }
                                 .padding(horizontal = 6.dp, vertical = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -695,6 +693,78 @@ fun FolderCustomizeDialog(
                     showFontScreen = false
                 },
                 initialFontId = selectedFontId
+            )
+        }
+    }
+
+    if (showIconSourceChooser) {
+        Dialog(onDismissRequest = { showIconSourceChooser = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF252525),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
+            ) {
+                Column(modifier = Modifier.padding(start = 24.dp, top = 20.dp, end = 24.dp, bottom = 16.dp)) {
+                    Text(
+                        text = "Change icon",
+                        color = Color(0xFFE2E2E2),
+                        fontSize = 20.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    IconModeChip(
+                        label = "Choose a picture",
+                        selected = false,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        showIconSourceChooser = false
+                        imagePickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    IconModeChip(
+                        label = "Choose from an icon pack",
+                        selected = false,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        showIconSourceChooser = false
+                        showIconPackBrowser = true
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    androidx.compose.material3.Divider(color = Color(0xFF444444), thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { showIconSourceChooser = false },
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDDDDDD)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Cancel", fontSize = 14.sp) }
+                }
+            }
+        }
+    }
+
+    if (showIconPackBrowser) {
+        Dialog(
+            onDismissRequest = { showIconPackBrowser = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            PerAppIconPackPicker(
+                context = context,
+                packageName = null,
+                applyDrawable = { packPkg, drawableName ->
+                    val outFile = File(getCustomIconsDir(context), "folder_$folderId.png")
+                    val ok = com.bearinmind.launcher314.helpers.IconPackManager
+                        .saveIconPackDrawableToFile(context, packPkg, drawableName, outFile)
+                    if (ok) customIconPath = outFile.absolutePath
+                    ok
+                },
+                onIconApplied = { _, _ ->
+                    customIconVersion++
+                    showIconPackBrowser = false
+                },
+                onDismiss = { showIconPackBrowser = false }
             )
         }
     }

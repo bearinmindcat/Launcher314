@@ -436,6 +436,19 @@ object IconPackManager {
         return true
     }
 
+    fun saveIconPackDrawableToFile(
+        context: Context,
+        packPackage: String,
+        drawableName: String,
+        outFile: File
+    ): Boolean {
+        val drawable = loadIconPackDrawable(context, packPackage, drawableName) ?: return false
+        val bitmap = drawableToBitmap(drawable)
+        saveBitmapToFile(bitmap, outFile)
+        bitmap.recycle()
+        return true
+    }
+
     /** Drop every generated (shaped / tinted) icon for one package. */
     fun clearDerivedIconCaches(context: Context, packageName: String) {
         listOf("app_icons").forEach { dir ->
