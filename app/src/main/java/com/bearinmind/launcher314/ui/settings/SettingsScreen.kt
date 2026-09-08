@@ -480,8 +480,7 @@ fun SettingsScreen(
                             val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
                             if (text != null && BackupManager.importAll(context, text)) {
                                 Toast.makeText(context, "Backup restored — restarting…", Toast.LENGTH_SHORT).show()
-                                // Hard restart so every screen reloads from the
-                                // restored prefs + data files.
+                                // Hard restart so every screen reloads from the restored prefs + data files.
                                 val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
                                 launch?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                                 context.startActivity(launch)

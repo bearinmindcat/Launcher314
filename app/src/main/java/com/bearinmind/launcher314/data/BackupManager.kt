@@ -5,22 +5,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/**
- * Backup / restore of launcher settings + customizations to a single .json file.
- *
- * Captures:
- *  - All settings SharedPreferences (typed key/value), and
- *  - The launcher's JSON data files (home-screen layout, drawer folders,
- *    per-app customizations) embedded verbatim.
- *
- * NOT captured (binary / device-specific — they gracefully fall back on the
- * target): custom icon images, wallpaper images, imported font files, shortcut
- * icons, and live widget host IDs (placed-widget metadata IS restored, but a
- * widget's appWidgetId is device-specific, so widgets may need re-adding after
- * a restore on a different device or a reinstall).
- */
+/** Backup / restore to one .json: all settings prefs, the launcher's JSON data files, and (since v2) custom icon images as base64. NOT captured (device-specific): wallpaper images, imported fonts, shortcut icons, live widget appWidgetIds. */
 object BackupManager {
-    private const val BACKUP_VERSION = 1
+    private const val BACKUP_VERSION = 2
     private const val APP_TAG = "Launcher314"
 
     // Settings SharedPreferences files to back up.
@@ -37,6 +24,12 @@ object BackupManager {
         "home_screen_data.json", // apps, folders, dock layout, pages
         "drawer_data.json",      // drawer folders
         "app_customizations.json" // per-app icons/labels/colors/shapes/sizes/fonts
+    )
+
+    // Icon image dirs embedded as base64 (small 192px PNGs) — issue #97.
+    private fun iconDirs(context: Context) = mapOf(
+        "custom_icons" to getCustomIconsDir(context),
+        "icon_pack_cache" to File(context.cacheDir, "icon_pack_cache")
     )
 
     /** Serialize everything to a pretty-printed JSON string. */
@@ -80,13 +73,22 @@ object BackupManager {
         }
         root.put("files", filesRoot)
 
+        val iconsRoot = JSONObject()
+        for ((tag, dir) in iconDirs(context)) {
+            val obj = JSONObject()
+            dir.listFiles()?.filter { it.isFile }?.forEach { f ->
+                try {
+                    obj.put(f.name, android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP))
+                } catch (_: Exception) { }
+            }
+            if (obj.length() > 0) iconsRoot.put(tag, obj)
+        }
+        root.put("icons", iconsRoot)
+
         return root.toString(2)
     }
 
-    /**
-     * Restore from a backup JSON string. Returns true on success. Overwrites
-     * current settings. Caller should restart the launcher afterwards.
-     */
+    /** Restore from a backup JSON string — overwrites current settings; caller restarts the launcher after. */
     fun importAll(context: Context, json: String): Boolean {
         val root = try { JSONObject(json) } catch (_: Exception) { return false }
         // Guard against importing an unrelated JSON file.
@@ -116,7 +118,8 @@ object BackupManager {
                         }
                     }
                 }
-                editor.apply()
+                // commit(), not apply() — the caller kills the process right after, which would drop async writes (issue #97).
+                editor.commit()
             }
         }
 
@@ -128,6 +131,22 @@ object BackupManager {
                 try {
                     File(context.filesDir, name).writeText(content)
                 } catch (_: Exception) { /* skip this file, keep going */ }
+            }
+        }
+
+        val iconsRoot = root.optJSONObject("icons")
+        if (iconsRoot != null) {
+            for ((tag, dir) in iconDirs(context)) {
+                val obj = iconsRoot.optJSONObject(tag) ?: continue
+                if (!dir.exists()) dir.mkdirs()
+                val names = obj.keys()
+                while (names.hasNext()) {
+                    val name = names.next()
+                    if (name.contains('/') || name.contains('\\') || name.startsWith("..")) continue
+                    try {
+                        File(dir, name).writeBytes(android.util.Base64.decode(obj.optString(name), android.util.Base64.NO_WRAP))
+                    } catch (_: Exception) { /* skip this icon, keep going */ }
+                }
             }
         }
 
