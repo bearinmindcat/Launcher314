@@ -552,6 +552,36 @@ fun SettingsScreen(
 
             Divider(color = Color.Gray.copy(alpha = 0.2f))
 
+            // Experimental Section — staging area for features being tried out.
+            SettingsSection(title = "Experimental") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 8.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { }
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Experimental Settings",
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "use at own risk",
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            Divider(color = Color.Gray.copy(alpha = 0.2f))
+
             // Developer Information Section
             SettingsSection(title = "Development Information") {
                 SettingsClickableItem(
