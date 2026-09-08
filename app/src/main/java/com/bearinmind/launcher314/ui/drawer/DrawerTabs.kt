@@ -415,7 +415,8 @@ internal fun DrawerTabRow(
     val haptics = rememberHapticFeedback()
 
     val outline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f)
-    val fillSelected = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    // Inverted active chip (issue #99): light pill + dark label, inactive labels dimmed.
+    val fillSelected = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f)
     val labelColor = MaterialTheme.colorScheme.onSurface
     val chipShape = RoundedCornerShape(50)
 
@@ -458,13 +459,13 @@ internal fun DrawerTabRow(
                 }
                 .clip(chipShape)
                 .background(if (selected) fillSelected else Color.Transparent, chipShape)
-                .border(1.dp, outline, chipShape)
+                .border(1.dp, if (selected) Color.Transparent else outline, chipShape)
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(horizontal = 14.dp, vertical = 6.dp)
         ) {
             Text(
                 text = label,
-                color = labelColor,
+                color = if (selected) Color(0xFF121212) else labelColor.copy(alpha = 0.65f),
                 fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
