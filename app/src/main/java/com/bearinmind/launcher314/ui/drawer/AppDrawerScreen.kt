@@ -522,6 +522,16 @@ fun AppDrawerScreen(
         saveDrawerData(context, DrawerData(folders = newFolders))
     }
 
+    // Issue #77: a folder created while a custom tab is selected is assigned to that tab so it appears in place.
+    fun assignFolderToCurrentTab(folderId: String) {
+        val tabId = selectedDrawerTabId ?: return
+        val updated = drawerTabs.map { t ->
+            if (t.id == tabId) t.copy(packages = t.packages + com.bearinmind.launcher314.data.folderEntry(folderId)) else t
+        }
+        drawerTabs = updated
+        saveDrawerTabs(context, updated)
+    }
+
     // Delete a folder and strip any parent's reference to it; its own
     // sub-folders return to top level.
     fun deleteFolder(folderId: String) {
@@ -686,7 +696,16 @@ fun AppDrawerScreen(
                     // drop every app that belongs to any tab (pins exempt). Search still finds them.
                     if (!hideTabbedFromAll) profileFiltered
                     else {
-                        val hiddenByTabs = drawerTabs.flatMap { it.packages }.toSet()
+                        // Issue #77: apps inside folders assigned to tabs leave "All" too, not just direct tab entries.
+                        val hiddenByTabs = drawerTabs.flatMap { t ->
+                            t.packages.flatMap { p ->
+                                if (com.bearinmind.launcher314.data.isFolderEntry(p)) {
+                                    com.bearinmind.launcher314.data.folderAndDescendantIds(folders, com.bearinmind.launcher314.data.folderEntryId(p))
+                                        .mapNotNull { id -> folders.firstOrNull { f -> f.id == id } }
+                                        .flatMap { f -> f.appPackageNames.filterNot { com.bearinmind.launcher314.data.isFolderEntry(it) } }
+                                } else listOf(p)
+                            }
+                        }.toSet()
                         if (hiddenByTabs.isEmpty()) profileFiltered
                         else profileFiltered.filter { it.packageName !in hiddenByTabs || it.packageName in pinnedApps }
                     }
@@ -974,6 +993,7 @@ fun AppDrawerScreen(
                         appPackageNames = apps.map { it.packageName }
                     )
                     saveFolders(folders + newFolder)
+                    assignFolderToCurrentTab(newFolder.id)
                 },
                 onFolderPositioned = { folderId, position ->
                     folderPositions = folderPositions + (folderId to position)
@@ -1628,6 +1648,7 @@ fun AppDrawerScreen(
                     appPackageNames = appsToMoveToNewFolder.map { it.packageName }
                 )
                 saveFolders(folders + newFolder)
+                assignFolderToCurrentTab(newFolder.id)
                 showCreateFolderDialog = false
                 appsToMoveToNewFolder = emptyList()
                 clearSelectionTrigger++
