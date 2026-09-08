@@ -476,6 +476,9 @@ internal fun DrawerTabRow(
     // Chip row style prefs — re-read when the drawer is recreated after a trip to Settings.
     val tabAlignment = remember { getTabAlignment(tabRowContext) }
     val showCounts = remember { isShowTabCounts(tabRowContext) }
+    // Issue #104: chip counts show what the tab RENDERS — stored lists keep uninstalled/hidden entries.
+    val hiddenPkgs = remember { com.bearinmind.launcher314.data.getHiddenApps(tabRowContext) }
+    val installedPkgs = remember(allApps) { allApps.map { it.packageName }.toSet() }
     val hidePlus = remember { isHidePlusChip(tabRowContext) }
     val chipScroll = rememberScrollState()
 
@@ -599,7 +602,12 @@ internal fun DrawerTabRow(
             // key(tab.id): identity-stable so a reorder MOVES the node instead of recreating it.
             key(tab.id) {
                 // No lock glyph on the drawer chip — keep it looking like a normal tab.
-                val baseLabel = if (showCounts) "${tab.name} (${tab.packages.size})" else tab.name
+                val baseLabel = if (showCounts) {
+                    val visible = tab.packages.count {
+                        com.bearinmind.launcher314.data.isFolderEntry(it) || (it in installedPkgs && it !in hiddenPkgs)
+                    }
+                    "${tab.name} ($visible)"
+                } else tab.name
                 val isDragging = tab.id == draggingId
                 val isSettling = tab.id == settlingId
                 val isEditingThis = editingTab?.id == tab.id || unlockingTab?.id == tab.id

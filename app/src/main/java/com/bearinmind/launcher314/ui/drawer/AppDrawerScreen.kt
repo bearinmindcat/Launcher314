@@ -545,8 +545,21 @@ fun AppDrawerScreen(
             }
             val apps = getInstalledApps(context)
             com.bearinmind.launcher314.data.DrawerAppCache.update(context, apps)
+            // Issue #104: prune tab entries whose package is individually confirmed gone — stored lists drift as apps get uninstalled.
+            val pm = context.packageManager
+            val installedNow = apps.map { it.packageName }.toSet()
+            val prunedTabs = drawerTabs.map { tab ->
+                tab.copy(packages = tab.packages.filter { p ->
+                    com.bearinmind.launcher314.data.isFolderEntry(p) || p in installedNow ||
+                        runCatching { pm.getPackageInfo(p, 0) }.isSuccess
+                })
+            }
             withContext(Dispatchers.Main) {
                 allApps = apps
+                if (prunedTabs != drawerTabs) {
+                    drawerTabs = prunedTabs
+                    saveDrawerTabs(context, prunedTabs)
+                }
                 isLoading = false
             }
         }
