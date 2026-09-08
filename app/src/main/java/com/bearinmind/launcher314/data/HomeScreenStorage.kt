@@ -54,10 +54,7 @@ fun loadHomeScreenPackages(context: Context): Set<String> {
 }
 
 fun loadAvailableApps(context: Context): List<HomeAppInfo> {
-    // LauncherApps-based enumeration so work-profile / managed-profile /
-    // cloned-profile apps are included. The legacy PackageManager path only
-    // returned apps from the personal user. Each entry carries its
-    // `userSerial` so the launch path can route to the right profile.
+    // LauncherApps enumeration includes work/managed/cloned-profile apps; each entry carries its userSerial so launches route to the right profile.
     val activities = com.bearinmind.launcher314.helpers.LauncherAppsHelper.enumerateAllApps(context)
 
     return activities
@@ -80,8 +77,7 @@ fun loadAvailableApps(context: Context): List<HomeAppInfo> {
                 null
             }
         }
-        // De-dupe on (pkg, user) so the same app from the same profile only
-        // appears once — but a work copy of the same app stays distinct.
+        // De-dupe on (pkg, user) — same profile appears once, a work copy stays distinct.
         .distinctBy { it.packageName to it.userSerial }
         .sortedBy { it.name.lowercase() } + loadShortcutApps(context)
 }
@@ -109,13 +105,7 @@ fun saveBitmapToFile(bitmap: Bitmap, file: File) {
     }
 }
 
-/**
- * Launch by package name with optional `userSerial` to target a specific user
- * profile. `userSerial == null` → personal profile (legacy behavior). Routes
- * non-personal launches through [com.bearinmind.launcher314.helpers.LauncherAppsHelper.startApp]
- * which uses `LauncherApps.startMainActivity` — required for work-profile
- * apps. `getLaunchIntentForPackage` silently fails for them.
- */
+/** Launch by package with optional userSerial (null = personal profile); non-personal launches route through LauncherApps.startMainActivity — getLaunchIntentForPackage silently fails for work-profile apps. */
 fun launchApp(context: Context, packageName: String, userSerial: Long?) {
     // Record recency for drawer-search "recently used first" ranking (issue #64).
     recordAppOpened(context, packageName, userSerial)
@@ -125,15 +115,21 @@ fun launchApp(context: Context, packageName: String, userSerial: Long?) {
                 .startApp(context, packageName, userSerial)) {
             return
         }
-        // Fall through to the legacy path if startApp returned false (app
-        // gone, profile gone). The legacy path will also fail gracefully.
+        // Fall through to the legacy path if startApp failed (app or profile gone).
     }
     launchApp(context, packageName)
 }
 
 fun launchApp(context: Context, packageName: String) {
-    // Recency for search ranking (idempotent if already recorded by the 3-arg
-    // overload above — same key, essentially the same timestamp).
+    // Own icon opens launcher settings — launching ourselves in launcher mode was a visible no-op (issue #98).
+    if (packageName == context.packageName) {
+        context.startActivity(android.content.Intent(context, com.bearinmind.launcher314.MainActivity::class.java).apply {
+            putExtra("navigate_to", "settings")
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+        return
+    }
+    // Recency for search ranking (idempotent with the 3-arg overload's record).
     recordAppOpened(context, packageName, null)
     // Handle shortcuts (e.g., "Add to Home Screen" from Brave/Firefox/Chrome)
     if (packageName.startsWith("shortcut_")) {
@@ -141,8 +137,7 @@ fun launchApp(context: Context, packageName: String) {
         if (metaFile.exists()) {
             val lines = metaFile.readLines()
 
-            // Preferred path: PinItemRequest shortcuts are launched via LauncherApps.startShortcut().
-            // Meta format (modern): name, "", publisherPackage, publisherShortcutId, userSerial
+            // PinItemRequest shortcuts launch via LauncherApps.startShortcut(); modern meta: name, "", publisherPackage, publisherShortcutId, userSerial.
             if (lines.size >= 4 && lines[2].isNotBlank() && lines[3].isNotBlank()) {
                 try {
                     val launcherApps = context.getSystemService(android.content.pm.LauncherApps::class.java)
@@ -164,8 +159,7 @@ fun launchApp(context: Context, packageName: String) {
                 }
             }
 
-            // Legacy path: shortcuts saved via INSTALL_SHORTCUT broadcast had the
-            // intent URI on line 1.
+            // Legacy path: INSTALL_SHORTCUT-broadcast shortcuts keep the intent URI on line 1.
             if (lines.size >= 2 && lines[1].isNotBlank()) {
                 try {
                     val launchIntent = Intent.parseUri(lines[1], Intent.URI_INTENT_SCHEME)
