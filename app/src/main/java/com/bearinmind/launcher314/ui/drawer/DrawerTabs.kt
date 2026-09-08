@@ -23,6 +23,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -99,21 +103,13 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 
-/**
- * Drawer tabs — user-defined categories shown as a chip row at the top of the
- * app drawer (Neo Launcher style; requested via Lawnchair #3147/#5275-style
- * asks). "All" is always first and shows everything; each custom tab shows
- * only the apps assigned to it. Tap a chip to switch, long-press a custom
- * chip to rename / edit its apps / delete it, "+" to create one.
- */
+/** Drawer tabs — user categories as a chip row in the drawer (Neo style). "All" is always first; tap to switch, long-press a custom chip to edit, "+" to create. */
 @Serializable
 data class DrawerTab(
     val id: String,
     val name: String,
     val packages: List<String> = emptyList(),
-    // Locked tabs require the user's password before their contents can be
-    // viewed or the tab edited (privacy tab). The password is stored only as a
-    // SHA-256 hash, never in plaintext.
+    // Locked tabs require the user's password (stored only as a SHA-256 hash) before viewing or editing.
     val locked: Boolean = false,
     val passwordHash: String? = null
 )
@@ -125,10 +121,7 @@ fun hashTabPassword(password: String): String {
     return bytes.joinToString("") { "%02x".format(it) }
 }
 
-/**
- * Set-password dialog: type the password twice to lock a tab. onConfirm gets
- * the SHA-256 hash; the caller stores it and flips locked = true.
- */
+/** Set-password dialog: type it twice; onConfirm gets the SHA-256 hash, the caller stores it with locked = true. */
 @Composable
 fun SetTabPasswordDialog(onConfirm: (hash: String) -> Unit, onDismiss: () -> Unit) {
     var pw1 by remember { mutableStateOf("") }
@@ -157,8 +150,7 @@ fun SetTabPasswordDialog(onConfirm: (hash: String) -> Unit, onDismiss: () -> Uni
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth()
                 )
-                // Reserved fixed-height slot so showing the error never resizes
-                // the dialog card.
+                // Reserved fixed-height slot so the error never resizes the dialog card.
                 Box(modifier = Modifier.height(16.dp), contentAlignment = Alignment.CenterStart) {
                     if (mismatch) {
                         Text("Passwords don't match", color = Color(0xFFFF6B6B), fontSize = 11.sp)
@@ -181,10 +173,7 @@ fun SetTabPasswordDialog(onConfirm: (hash: String) -> Unit, onDismiss: () -> Uni
     }
 }
 
-/**
- * Unlock prompt: type the tab's password. Calls onSuccess when the hash
- * matches. Legacy locked tabs with no stored password fall through to success.
- */
+/** Unlock prompt: onSuccess when the hash matches; legacy locked tabs with no stored password fall through. */
 @Composable
 fun UnlockTabDialog(tab: DrawerTab, onSuccess: () -> Unit, onDismiss: () -> Unit) {
     var pw by remember { mutableStateOf("") }
@@ -242,9 +231,7 @@ fun setDrawerTabsEnabled(context: Context, enabled: Boolean) {
         .edit().putBoolean(KEY_TABS_ENABLED, enabled).apply()
 }
 
-// Global "Hide added apps from all" mode: apps that belong to any tab are
-// hidden from the All tab, and already-tabbed apps can't be added to a second
-// tab (they're removed from other tabs' pickers). Search still spans everything.
+// "Hide added apps from all": tabbed apps leave the All tab and can only live in one tab; search still spans everything.
 private const val KEY_HIDE_TABBED_FROM_ALL = "drawer_tabs_hide_from_all"
 
 fun isHideTabbedAppsFromAll(context: Context): Boolean {
@@ -270,8 +257,7 @@ fun setTabsAtBottom(context: Context, enabled: Boolean) {
         .edit().putBoolean(KEY_TABS_AT_BOTTOM, enabled).apply()
 }
 
-// Swipe horizontally on the drawer grid to move between tabs (Neo/Nova style).
-// Only active in scroll mode — paged mode already owns horizontal swipes.
+// Swipe horizontally between tabs (Neo/Nova style) — scroll mode only, paged mode owns horizontal swipes.
 private const val KEY_SWIPE_TABS = "drawer_tabs_swipe"
 
 fun isSwipeTabsEnabled(context: Context): Boolean {
@@ -284,16 +270,14 @@ fun setSwipeTabsEnabled(context: Context, enabled: Boolean) {
         .edit().putBoolean(KEY_SWIPE_TABS, enabled).apply()
 }
 
-// Chip row style: alignment (0 = Left, 1 = Center, 2 = Right), app count on
-// each chip, and whether the "+" chip is shown in the drawer at all.
+// Chip row style: alignment, per-chip app count, and whether the "+" chip shows.
 private const val KEY_CENTER_CHIPS = "drawer_tabs_center_chips" // legacy bool, migrated
 private const val KEY_TAB_ALIGNMENT = "drawer_tabs_alignment"     // legacy 3-way 0/1/2
 private const val KEY_TAB_ALIGNMENT_LR = "drawer_tabs_align_lr"   // 2-way: 0 = Left, 1 = Right
 private const val KEY_SHOW_COUNTS = "drawer_tabs_show_counts"
 private const val KEY_HIDE_PLUS = "drawer_tabs_hide_plus"
 
-// Alignment is now Left (0) / Right (1) only — Center was removed. Legacy values
-// migrate once into the new key: old Right (2) -> Right (1); old Left/Center -> Left (0).
+// Alignment is Left (0) / Right (1) only — legacy 3-way values migrate once (old Right 2 -> 1, else Left).
 fun getTabAlignment(context: Context): Int {
     val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     if (prefs.contains(KEY_TAB_ALIGNMENT_LR)) {
@@ -348,6 +332,21 @@ fun getSelectedDrawerTabId(context: Context): String? {
         .getString(KEY_SELECTED_TAB, null)
 }
 
+// Default tab the drawer opens on (issue #96): null = last used, "" = All, else a tab id.
+private const val KEY_DEFAULT_TAB = "drawer_default_tab"
+
+fun getDefaultDrawerTabId(context: Context): String? {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getString(KEY_DEFAULT_TAB, null)
+}
+
+fun setDefaultDrawerTabId(context: Context, id: String?) {
+    return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit().apply {
+            if (id == null) remove(KEY_DEFAULT_TAB) else putString(KEY_DEFAULT_TAB, id)
+        }.apply()
+}
+
 fun setSelectedDrawerTabId(context: Context, id: String?) {
     context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         .edit().apply {
@@ -355,12 +354,7 @@ fun setSelectedDrawerTabId(context: Context, id: String?) {
         }.apply()
 }
 
-/**
- * Shared end-of-gesture handling for a tab drag: a real drag (moved) commits the
- * reordered list; a hold-in-place (not moved) opens the tab editor (or the unlock
- * prompt for a locked tab). Called from BOTH onDragEnd and onDragCancel because
- * the chip's own click can turn an "end" into a "cancel".
- */
+/** Tab-drag end handling: moved commits the reorder, hold-in-place opens the editor — called from BOTH onDragEnd and onDragCancel (a chip click can turn an end into a cancel). */
 private fun finishTabDrag(
     id: String?,
     moved: Boolean,
@@ -379,13 +373,7 @@ private fun finishTabDrag(
     }
 }
 
-/**
- * Smoothly animates a child to its new placement when the layout reshuffles
- * (the official Compose `animatePlacement` recipe). Used so the non-dragged tab
- * chips slide aside instead of snapping when a chip is dragged past them. When
- * [animate] is false (the chip currently being dragged) it snaps instead, so it
- * can follow the finger via its own translation without a competing animation.
- */
+/** Official Compose animatePlacement recipe — chips slide to new slots on reshuffle; [animate] false lets the dragged chip snap and follow the finger. */
 private fun Modifier.animatePlacement(animate: Boolean): Modifier = composed {
     val scope = rememberCoroutineScope()
     var targetOffset by remember { mutableStateOf(IntOffset.Zero) }
@@ -408,10 +396,7 @@ private fun Modifier.animatePlacement(animate: Boolean): Modifier = composed {
         }
 }
 
-/**
- * The chip row: [All] [tab] [tab] ... [+]. Self-contained — hosts its own
- * create/edit dialog state so MainDrawerContent only needs one call site.
- */
+/** The chip row: [All] [tab] [tab] ... [+] — self-contained, hosts its own create/edit dialog state. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun DrawerTabRow(
@@ -434,9 +419,7 @@ internal fun DrawerTabRow(
     val labelColor = MaterialTheme.colorScheme.onSurface
     val chipShape = RoundedCornerShape(50)
 
-    // Per-chip layout (offset px, width px), written by each chip as it's placed
-    // and read by the auto-scroll effect below to keep the active chip's label
-    // on-screen when tabs are switched by swiping (issue #62).
+    // Per-chip (offset, width), read by the auto-scroll effect to keep the active chip on-screen (issue #62).
     val chipPositions = remember { mutableStateMapOf<String, Pair<Int, Int>>() }
 
     @Composable
@@ -446,9 +429,7 @@ internal fun DrawerTabRow(
         positionKey: String,
         onClick: () -> Unit,
         onLongClick: (() -> Unit)? = null,
-        // Drag-to-reorder visuals (custom tabs only): a follow-the-finger
-        // horizontal offset and a "lifted" highlight. The gesture itself lives on
-        // the row, not here.
+        // Drag-to-reorder visuals (custom tabs only) — the gesture itself lives on the row, not here.
         translationX: Float = 0f,
         lifted: Boolean = false
     ) {
@@ -459,15 +440,12 @@ internal fun DrawerTabRow(
         )
         Box(
             modifier = Modifier
-                // Record this chip's offset + width (in the scroll content's
-                // coordinate space) so the row can auto-scroll it into view when
-                // it becomes the active tab (issue #62).
+                // Record this chip's offset + width so the row can auto-scroll it into view (issue #62).
                 .onGloballyPositioned { coords ->
                     chipPositions[positionKey] = coords.positionInParent().x.roundToInt() to coords.size.width
                 }
                 .zIndex(if (lifted) 1f else 0f)
-                // Slide into place when the row reshuffles; the dragged chip snaps
-                // (animate = false) so it can follow the finger cleanly instead.
+                // Slide into place on reshuffle; the dragged chip snaps (animate = false) to follow the finger.
                 .animatePlacement(animate = !lifted)
                 .graphicsLayer {
                     this.translationX = translationX
@@ -494,17 +472,13 @@ internal fun DrawerTabRow(
         }
     }
 
-    // Chip row style prefs — re-read when the drawer recomposes after a trip
-    // to Settings (the drawer composition is recreated on return).
+    // Chip row style prefs — re-read when the drawer is recreated after a trip to Settings.
     val tabAlignment = remember { getTabAlignment(tabRowContext) }
     val showCounts = remember { isShowTabCounts(tabRowContext) }
     val hidePlus = remember { isHidePlusChip(tabRowContext) }
     val chipScroll = rememberScrollState()
 
-    // Drag-to-reorder state. liveTabs is a working copy shuffled during a drag and
-    // committed on drop. These must be STABLE holders: the row's pointerInput never
-    // restarts, so a remember(tabs) would leave it reading a stale list (newly
-    // added tabs invisible to it).
+    // Drag-to-reorder state — STABLE holders: the row's pointerInput never restarts, so remember(tabs) would go stale.
     var draggingId by remember { mutableStateOf<String?>(null) }
     val liveTabsState = remember { mutableStateOf(tabs) }
     LaunchedEffect(tabs) { if (draggingId == null) liveTabsState.value = tabs }
@@ -526,9 +500,7 @@ internal fun DrawerTabRow(
 
     val chipAlignment = if (tabAlignment == 1) Alignment.End else Alignment.Start
 
-    // Called on drop / cancel: spring the dragged chip from where the finger let
-    // go back into its slot (nice settle, like the EQ app), then commit the new
-    // order or open the editor.
+    // On drop / cancel: spring the chip back into its slot, then commit the order or open the editor.
     val releaseDrag = {
         val id = draggingId
         if (id != null) {
@@ -546,11 +518,7 @@ internal fun DrawerTabRow(
         dragMoved = false
     }
 
-    // The strip is ALWAYS horizontally scrollable. The inner row is forced to be
-    // at least the viewport width, so Center/Right alignment still applies while
-    // the chips fit, yet the row grows (enabling scroll) once they overflow. That
-    // is what lets the active chip auto-scroll into view in Center/Right modes
-    // too — not just Left (issue #62).
+    // Always-scrollable strip; inner row min-width = viewport so alignment holds until chips overflow (issue #62).
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -558,8 +526,7 @@ internal fun DrawerTabRow(
     ) {
         val viewportWidthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
 
-        // When the selected tab changes (tap OR swipe gesture), centre it in the
-        // viewport so its label is always visible.
+        // When the selected tab changes (tap or swipe), centre it in the viewport.
         LaunchedEffect(selectedKey, selectedPos, viewportWidthPx, draggingId) {
             if (draggingId != null) return@LaunchedEffect   // don't fight a reorder drag
             val pos = selectedPos ?: return@LaunchedEffect
@@ -573,11 +540,7 @@ internal fun DrawerTabRow(
             modifier = Modifier
                 .horizontalScroll(chipScroll)
                 .widthIn(min = maxWidth)
-                // ONE long-press-drag gesture on the whole row (not per-chip), so
-                // reordering the chips can't tear down the in-flight gesture. This
-                // is how standard reorderable lists work. It picks up whichever
-                // custom tab the finger is over, then shuffles liveTabs live and
-                // commits on drop.
+                // ONE long-press-drag gesture on the whole row (not per-chip) so reordering can't tear down the in-flight gesture; shuffles liveTabs live, commits on drop.
                 .pointerInput(Unit) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { offset ->
@@ -618,11 +581,7 @@ internal fun DrawerTabRow(
                                 liveTabs = rebuilt
                             }
                         },
-                        // onDragEnd and onDragCancel do the SAME thing: a real drag
-                        // commits the new order, a hold-in-place opens the editor.
-                        // (The chip's own click can consume the finger-up and turn an
-                        // end into a cancel, so both must handle the "edit" case or
-                        // the customize menu never shows.)
+                        // Same handling for onDragEnd and onDragCancel — a chip click can turn an end into a cancel, so both must handle the edit case.
                         onDragEnd = { releaseDrag() },
                         onDragCancel = { releaseDrag() }
                     )
@@ -636,18 +595,14 @@ internal fun DrawerTabRow(
             onClick = { onTabSelected(null) }
         )
         liveTabs.forEach { tab ->
-            // key(tab.id): identity-stable so a reorder MOVES the existing node
-            // (carrying its placement-animation state) instead of recreating it.
+            // key(tab.id): identity-stable so a reorder MOVES the node instead of recreating it.
             key(tab.id) {
                 // No lock glyph on the drawer chip — keep it looking like a normal tab.
                 val baseLabel = if (showCounts) "${tab.name} (${tab.packages.size})" else tab.name
                 val isDragging = tab.id == draggingId
                 val isSettling = tab.id == settlingId
                 val isEditingThis = editingTab?.id == tab.id || unlockingTab?.id == tab.id
-                // Follow the FINGER'S MOVEMENT from where it grabbed, not the finger's
-                // absolute position — so on long-press the chip stays exactly in place
-                // (offset 0) and only moves once the finger moves. Formula stays
-                // continuous across reshuffles: rendered pos = grabSlot + fingerDelta.
+                // Follow the finger's MOVEMENT from the grab point (rendered pos = grabSlot + fingerDelta), continuous across reshuffles.
                 val slotLeft = (chipPositions[tab.id]?.first ?: 0).toFloat()
                 val translation = when {
                     isDragging -> (dragInitialSlotLeft + (dragFingerX - dragStartX)) - slotLeft
@@ -659,11 +614,9 @@ internal fun DrawerTabRow(
                     selected = selectedTabId == tab.id,
                     positionKey = tab.id,
                     onClick = { onTabSelected(tab.id) },
-                    // No onLongClick — the row-level gesture owns long-press (drag to
-                    // reorder, or hold-in-place to edit).
+                    // No onLongClick — the row-level gesture owns long-press.
                     translationX = translation,
-                    // Stay enlarged while dragging, while springing back, AND while
-                    // this tab's editor is open — then shrink smoothly.
+                    // Stay enlarged while dragging, springing back, or while this tab's editor is open.
                     lifted = isDragging || isSettling || isEditingThis
                 )
             }
@@ -713,9 +666,7 @@ internal fun DrawerTabRow(
     }
 }
 
-/**
- * Create/edit a tab: name it and tick the apps that belong in it.
- */
+/** Create/edit a tab: name it and tick the apps that belong in it. */
 @Composable
 private fun DrawerTabEditDialog(
     tab: DrawerTab,
@@ -723,8 +674,7 @@ private fun DrawerTabEditDialog(
     onSave: (DrawerTab) -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
-    // Packages that belong to OTHER tabs while "Hide added apps from all" is
-    // on — removed from this picker so an app can only live in one tab.
+    // Packages in OTHER tabs while "Hide added apps from all" is on — removed so an app lives in one tab.
     excludedPackages: Set<String> = emptySet(),
     // Top-level drawer folders, assignable to the tab as "folder:<id>" entries.
     allFolders: List<AppFolder> = emptyList()
@@ -747,8 +697,7 @@ private fun DrawerTabEditDialog(
         passwordHash = if (locked) passwordHash else null
     )
 
-    // Attempt the save. If the tab is LOCKED and something changed, require the
-    // password once more before committing (edits to a private tab are gated).
+    // Saving a LOCKED tab's changes requires the password once more.
     fun attemptSave() {
         val edited = buildTab()
         val changed = edited != tab
@@ -929,10 +878,7 @@ private fun DrawerTabEditDialog(
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                // Delete / Cancel / Save — each in an equal-weight slot and CENTERED
-                // within it, so the three button centers are evenly spaced (gaps vary
-                // with button width, but it reads homogenous). For a new tab there's
-                // no Delete, so Cancel/Save split the width evenly.
+                // Delete / Cancel / Save in equal-weight centered slots; a new tab has no Delete.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -1010,10 +956,7 @@ private fun DrawerTabEditDialog(
     }
 }
 
-/**
- * Confirm-delete dialog matching DeviceAudioEQ's preset-delete popup: outlined
- * #252525 card, title + message, divider, equal-width Delete/Cancel buttons.
- */
+/** Confirm-delete dialog matching DeviceAudioEQ's preset-delete popup. */
 @Composable
 fun ConfirmDeleteDialog(
     message: String,
@@ -1059,11 +1002,7 @@ fun ConfirmDeleteDialog(
     }
 }
 
-/**
- * Full-screen tab manager, opened from Settings → Drawer Tabs → "Manage Tab
- * Settings". Same CRUD as the in-drawer chips (list tabs, tap to edit,
- * create, delete) for people who prefer a settings-style entry point.
- */
+/** Full-screen tab manager (Settings → Drawer Tabs → "Manage Tab Settings") — same CRUD as the in-drawer chips. */
 @Composable
 fun ManageDrawerTabsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -1081,6 +1020,15 @@ fun ManageDrawerTabsScreen(onBack: () -> Unit) {
         tabs = updated
         saveDrawerTabs(context, updated)
     }
+
+    var hideTabbedFromAll by remember { mutableStateOf(isHideTabbedAppsFromAll(context)) }
+    var swipeTabs by remember { mutableStateOf(isSwipeTabsEnabled(context)) }
+    var tabsBottom by remember { mutableStateOf(isTabsAtBottom(context)) }
+    var showCounts by remember { mutableStateOf(isShowTabCounts(context)) }
+    var hidePlus by remember { mutableStateOf(isHidePlusChip(context)) }
+    var defaultTabId by remember { mutableStateOf(getDefaultDrawerTabId(context)) }
+    var showDefaultTabPicker by remember { mutableStateOf(false) }
+    var tabAlignment by remember { mutableStateOf(getTabAlignment(context).toFloat()) }
 
     Column(
         modifier = Modifier
@@ -1104,98 +1052,138 @@ fun ManageDrawerTabsScreen(onBack: () -> Unit) {
                 fontWeight = FontWeight.Medium
             )
         }
-        // Global mode: apps assigned to a tab disappear from "All", and an app
-        // already in one tab can't be added to another (one tab per app).
-        // Same toggle composable as the Visibility Settings items so the
-        // screen stays visually homogenous.
-        var hideTabbedFromAll by remember { mutableStateOf(isHideTabbedAppsFromAll(context)) }
-        com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
-            title = "Hide added apps from all",
-            subtitle = "Apps only exist one at a time",
-            checked = hideTabbedFromAll,
-            onCheckedChange = {
-                hideTabbedFromAll = it
-                setHideTabbedAppsFromAll(context, it)
-            }
-        )
-        var swipeTabs by remember { mutableStateOf(isSwipeTabsEnabled(context)) }
-        com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
-            title = "Swipe between tabs",
-            subtitle = "Only works when rows are disabled",
-            checked = swipeTabs,
-            onCheckedChange = {
-                swipeTabs = it
-                setSwipeTabsEnabled(context, it)
-            }
-        )
-        var tabsBottom by remember { mutableStateOf(isTabsAtBottom(context)) }
-        com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
-            title = "Tabs at bottom",
-            subtitle = "Moves the tab bar below the app list",
-            checked = tabsBottom,
-            onCheckedChange = {
-                tabsBottom = it
-                setTabsAtBottom(context, it)
-            }
-        )
-        var showCounts by remember { mutableStateOf(isShowTabCounts(context)) }
-        com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
-            title = "Show app count",
-            subtitle = "Show the number of apps on each tab chip",
-            checked = showCounts,
-            onCheckedChange = {
-                showCounts = it
-                setShowTabCounts(context, it)
-            }
-        )
-        var hidePlus by remember { mutableStateOf(isHidePlusChip(context)) }
-        com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
-            title = "Hide (+) in drawer",
-            subtitle = "New tabs can only be added from this screen",
-            checked = hidePlus,
-            onCheckedChange = {
-                hidePlus = it
-                setHidePlusChip(context, it)
-            }
-        )
-        // Tab alignment — same thumb-drag slider + tick style as the drawer
-        // columns/rows/transparency sliders, with Left / Center / Right ticks.
-        var tabAlignment by remember { mutableStateOf(getTabAlignment(context).toFloat()) }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp)
-        ) {
-            com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider(
-                currentValue = tabAlignment,
-                config = com.bearinmind.launcher314.ui.components.SliderConfigs.tabAlignment,
-                onValueChange = {
-                    tabAlignment = it
-                    setTabAlignment(context, it.roundToInt())
-                },
-                onValueChangeFinished = {
-                    setTabAlignment(context, tabAlignment.roundToInt())
-                }
-            )
-        }
-        // Distinct separation between the settings above and the tab list —
-        // divider + accent section header, like Neo's "Tabs" section.
-        Spacer(modifier = Modifier.height(8.dp))
-        Divider(color = Color.White.copy(alpha = 0.12f))
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = "Tabs",
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 20.dp)
-        )
-        Spacer(modifier = Modifier.height(4.dp))
+        // Everything below the header scrolls as one list, padded past the nav bar (3-button or gestures).
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .weight(1f),
+            contentPadding = PaddingValues(
+                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
+            )
         ) {
+            item {
+                com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
+                    title = "Hide added apps from all",
+                    subtitle = "Apps only exist one at a time",
+                    checked = hideTabbedFromAll,
+                    onCheckedChange = {
+                        hideTabbedFromAll = it
+                        setHideTabbedAppsFromAll(context, it)
+                    }
+                )
+            }
+            item {
+                com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
+                    title = "Swipe between tabs",
+                    subtitle = "Only works when rows are disabled",
+                    checked = swipeTabs,
+                    onCheckedChange = {
+                        swipeTabs = it
+                        setSwipeTabsEnabled(context, it)
+                    }
+                )
+            }
+            item {
+                com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
+                    title = "Tabs at bottom",
+                    subtitle = "Moves the tab bar below the app list",
+                    checked = tabsBottom,
+                    onCheckedChange = {
+                        tabsBottom = it
+                        setTabsAtBottom(context, it)
+                    }
+                )
+            }
+            item {
+                com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
+                    title = "Show app count",
+                    subtitle = "Show the number of apps on each tab chip",
+                    checked = showCounts,
+                    onCheckedChange = {
+                        showCounts = it
+                        setShowTabCounts(context, it)
+                    }
+                )
+            }
+            item {
+                com.bearinmind.launcher314.ui.settings.SettingsToggleItem(
+                    title = "Hide (+) in drawer",
+                    subtitle = "New tabs can only be added from this screen",
+                    checked = hidePlus,
+                    onCheckedChange = {
+                        hidePlus = it
+                        setHidePlusChip(context, it)
+                    }
+                )
+            }
+            item {
+                val defaultTabLabel = when {
+                    defaultTabId == null -> "Last used"
+                    defaultTabId!!.isEmpty() -> "All"
+                    else -> tabs.firstOrNull { it.id == defaultTabId }?.name ?: "Last used"
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDefaultTabPicker = true }
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Default tab",
+                            color = Color.White.copy(alpha = 0.87f),
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = "The tab the drawer opens on",
+                            color = Color.White.copy(alpha = 0.45f),
+                            fontSize = 12.sp
+                        )
+                    }
+                    Text(
+                        text = defaultTabLabel,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+            item {
+                // Tab alignment — same thumb-drag slider + tick style as the drawer sliders.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp)
+                ) {
+                    com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider(
+                        currentValue = tabAlignment,
+                        config = com.bearinmind.launcher314.ui.components.SliderConfigs.tabAlignment,
+                        onValueChange = {
+                            tabAlignment = it
+                            setTabAlignment(context, it.roundToInt())
+                        },
+                        onValueChangeFinished = {
+                            setTabAlignment(context, tabAlignment.roundToInt())
+                        }
+                    )
+                }
+            }
+            item {
+                // Divider + accent section header between the settings and the tab list (Neo style).
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Divider(color = Color.White.copy(alpha = 0.12f))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Tabs",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 20.dp)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+            }
             items(tabs, key = { it.id }) { tab ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1229,8 +1217,7 @@ fun ManageDrawerTabsScreen(onBack: () -> Unit) {
                     }
                 }
             }
-            // "+" add button — sits directly UNDERNEATH the last tab (scrolls
-            // with the list), styled like Recorder314's outlined square "+".
+            // "+" add button under the last tab, styled like Recorder314's outlined square "+".
             items(listOf("add_tab_button")) {
                 Box(
                     modifier = Modifier
@@ -1246,6 +1233,53 @@ fun ManageDrawerTabsScreen(onBack: () -> Unit) {
                         color = Color.White.copy(alpha = 0.87f),
                         fontSize = 22.sp
                     )
+                }
+            }
+        }
+    }
+
+    if (showDefaultTabPicker) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showDefaultTabPicker = false }) {
+            androidx.compose.material3.Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF252525)
+            ) {
+                Column(modifier = Modifier.padding(vertical = 12.dp)) {
+                    Text(
+                        text = "Default tab",
+                        color = Color(0xFFE2E2E2),
+                        fontSize = 18.sp,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                    )
+                    val options = buildList {
+                        add(null to "Last used")
+                        add("" to "All")
+                        tabs.filter { !it.locked }.forEach { add(it.id to it.name) }
+                    }
+                    options.forEach { (id, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    defaultTabId = id
+                                    setDefaultDrawerTabId(context, id)
+                                    showDefaultTabPicker = false
+                                }
+                                .padding(horizontal = 24.dp, vertical = 12.dp)
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = defaultTabId == id,
+                                onClick = null
+                            )
+                            Spacer(modifier = Modifier.size(12.dp))
+                            Text(
+                                text = label,
+                                color = Color.White.copy(alpha = 0.87f),
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
                 }
             }
         }

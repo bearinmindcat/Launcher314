@@ -463,10 +463,16 @@ fun AppDrawerScreen(
     var selectedDrawerTabId by remember {
         // Never restore a LOCKED tab as the startup selection — that would show
         // its contents without authentication. Fall back to "All".
-        val persisted = getSelectedDrawerTabId(context)
-        val persistedLocked = persisted != null &&
-            loadDrawerTabs(context).firstOrNull { it.id == persisted }?.locked == true
-        mutableStateOf(if (persistedLocked) null else persisted)
+        val tabs = loadDrawerTabs(context)
+        // Issue #96: a configured default tab ("" = All) overrides the last-used one.
+        val startId = when (val def = getDefaultDrawerTabId(context)) {
+            null -> getSelectedDrawerTabId(context)
+            "" -> null
+            else -> if (tabs.any { it.id == def }) def else null
+        }
+        val startLocked = startId != null &&
+            tabs.firstOrNull { it.id == startId }?.locked == true
+        mutableStateOf(if (startLocked) null else startId)
     }
     // Locked tabs the user has authenticated for in THIS drawer session.
     // Intentionally not persisted — recreating the drawer re-locks them.
