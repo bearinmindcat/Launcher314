@@ -679,13 +679,6 @@ fun AppDrawerPreviewSection(
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
-            Text(
-                text = "Additional Customization for Drawer",
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                textAlign = TextAlign.Center
-            )
         }
     }
 }
@@ -2247,13 +2240,6 @@ fun HomeScreenPreviewSection(
                 text = "Additional Home Screen Settings",
                 fontSize = 16.sp,
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = "Additional Customization for Home Screen",
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center
             )
         }

@@ -197,7 +197,6 @@ fun EditDrawerSettingsScreen(
 
         SettingsToggleItem(
             title = "Reverse drawer search bar",
-            subtitle = "Moves the drawer search bar to the bottom",
             checked = reverseSearchBar,
             onCheckedChange = { reverseSearchBar = it; setReverseDrawerSearchBar(context, it) }
         )
@@ -214,7 +213,6 @@ fun EditDrawerSettingsScreen(
 
         SettingsToggleItem(
             title = "Hide home screen apps",
-            subtitle = "Hides apps from drawer that are already on home screen",
             checked = hideHomeScreenApps,
             onCheckedChange = { hideHomeScreenApps = it; com.bearinmind.launcher314.data.setHideHomeScreenApps(context, it) }
         )
@@ -223,7 +221,6 @@ fun EditDrawerSettingsScreen(
 
         SettingsToggleItem(
             title = "Add folders to sorting",
-            subtitle = "Allowed folders to be sorted instead of staying at the top of the list",
             checked = sortFolders,
             onCheckedChange = { sortFolders = it; setSortFoldersEnabled(context, it) }
         )
@@ -232,7 +229,6 @@ fun EditDrawerSettingsScreen(
 
         SettingsToggleItem(
             title = "Auto open keyboard",
-            subtitle = "Automatically opens the keyboard in the app drawer",
             checked = autoOpenKeyboard,
             onCheckedChange = { autoOpenKeyboard = it; setAutoOpenKeyboard(context, it) }
         )

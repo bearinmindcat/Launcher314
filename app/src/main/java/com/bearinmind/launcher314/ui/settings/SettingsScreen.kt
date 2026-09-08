@@ -1700,7 +1700,7 @@ fun EditHomeScreenSettingsScreen(
                 var infiniteDock by remember { mutableStateOf(com.bearinmind.launcher314.data.getInfiniteScrollDock(context)) }
                 SettingsToggleItem(
                     title = "Infinite scrolling",
-                    subtitle = "Seamlessly swipe between the first and last home pages",
+                    subtitle = "Swipe between first and last home screen",
                     checked = infiniteHome,
                     onCheckedChange = {
                         infiniteHome = it
@@ -1710,7 +1710,7 @@ fun EditHomeScreenSettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 SettingsToggleItem(
                     title = "Infinite dock scrolling",
-                    subtitle = "Seamlessly swipe between the first and last dock pages",
+                    subtitle = "Swipe between first and last dock page",
                     checked = infiniteDock,
                     onCheckedChange = {
                         infiniteDock = it
