@@ -302,24 +302,6 @@ fun LauncherWithDrawer(
     // Refresh trigger for home screen - increments when drawer closes
     var homeRefreshTrigger by remember { mutableIntStateOf(0) }
 
-    // REST-STATE RESET (Launcher3 calls moveToRestState() in onStop): when the
-    // launcher stops — e.g. you LAUNCH AN APP FROM THE DRAWER, or the screen
-    // turns off — the drawer snaps closed, and coming back always lands on the
-    // home screen, never a stale open drawer.
-    val drawerLifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(drawerLifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && (showAppDrawer || isDrawerDragging)) {
-                isDrawerDragging = false
-                showAppDrawer = false
-                homeRefreshTrigger++
-                coroutineScope.launch { swipeUpY.snapTo(drawerRangePx) }
-            }
-        }
-        drawerLifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { drawerLifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
     // Drawer-to-home drag transition state
     var drawerToHomeActive by remember { mutableStateOf(false) }
     var drawerToHomeItem by remember { mutableStateOf<Any?>(null) }
@@ -332,6 +314,26 @@ fun LauncherWithDrawer(
     // Animated fade for drawer-to-home transition (keeps swipeUpY at 0 so gesture coords stay correct)
     // Phase 1 (0→0.5): drawer fades out.  Phase 2 (0.5→1.0): home screen fades in.
     val drawerToHomeProgress = remember { Animatable(0f) }
+
+    // REST-STATE RESET (Launcher3's moveToRestState in onStop): the drawer snaps closed AND any mid-flight drawer-to-home fade is cleared — a frozen fade left home at alpha 0, the "phantom home screen" (issue #101).
+    val drawerLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(drawerLifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && (showAppDrawer || isDrawerDragging || drawerToHomeActive)) {
+                isDrawerDragging = false
+                showAppDrawer = false
+                drawerToHomeActive = false
+                drawerToHomeItem = null
+                homeRefreshTrigger++
+                coroutineScope.launch {
+                    drawerToHomeProgress.snapTo(0f)
+                    swipeUpY.snapTo(drawerRangePx)
+                }
+            }
+        }
+        drawerLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { drawerLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val drawerToHomeFadeAlpha = if (drawerToHomeProgress.value <= 0.5f)
         1f - (drawerToHomeProgress.value / 0.5f)   // drawer: 1→0 in first half
     else 0f                                          // drawer stays gone in second half
@@ -1482,9 +1484,9 @@ fun LauncherWithDrawer(
                 onExternalDragComplete = {
                     drawerToHomeActive = false
                     drawerToHomeItem = null
-                    // Drawer was faded out — snap position to closed and remove from composition
+                    // Drawer was faded out — snap position to closed and remove from composition.
+                    // Progress deliberately NOT snapped here: a late snap raced the NEXT drag's fade and cancelled it, freezing home at alpha 0 (issue #101); each drag snaps to 0 itself on start.
                     coroutineScope.launch {
-                        drawerToHomeProgress.snapTo(0f)
                         swipeUpY.snapTo(drawerRangePx)
                     }
                     showAppDrawer = false
