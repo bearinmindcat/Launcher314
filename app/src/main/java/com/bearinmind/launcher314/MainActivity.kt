@@ -151,9 +151,7 @@ class MainActivity : ComponentActivity() {
     // Launch widget configure activity via AppWidgetHost (has permission for non-exported activities)
     private fun launchWidgetConfigure(appWidgetId: Int) {
         try {
-            // Issue #91: on Android 14+ the config launch rides a PendingIntent, which is blocked
-            // unless background activity starts are explicitly allowed — without this the config
-            // screen never opens and instantly returns CANCELED (widget lands blank).
+            // Issue #91: Android 14+ blocks the config PendingIntent unless background activity starts are allowed — without it the config screen instantly returns CANCELED.
             val options = if (android.os.Build.VERSION.SDK_INT >= 34) {
                 android.app.ActivityOptions.makeBasic()
                     .setPendingIntentBackgroundActivityStartMode(
@@ -186,8 +184,7 @@ class MainActivity : ComponentActivity() {
                     addWidgetToHomeScreen(widget)
                 }
             } else {
-                // Some widgets return CANCELED even when they auto-configure during binding.
-                // Try to add the widget anyway — if it's already bound, it may render fine.
+                // Some widgets return CANCELED even when they auto-configure during binding — try adding anyway; a bound widget may render fine.
                 val manager = WidgetManager.getAppWidgetManager()
                 val info = manager?.getAppWidgetInfo(pendingWidgetId)
                 if (info != null) {
@@ -211,9 +208,7 @@ class MainActivity : ComponentActivity() {
         val gridColumns = getHomeGridSize(this)
         val gridRows = getHomeGridRows(this)
 
-        // Land the widget on whichever home page the user was viewing when
-        // they opened the widget picker. LauncherScreen persists the current
-        // page in `launcher_prefs` on every page change.
+        // Land the widget on the home page the user was viewing when they opened the picker (persisted in launcher_prefs).
         val targetPage = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
             .getInt("launcher_current_page", 0)
 
@@ -257,10 +252,7 @@ class MainActivity : ComponentActivity() {
         pendingWidgetInfo = null
     }
 
-    /**
-     * Find the first available position for a widget on the grid for the
-     * given page. Returns Pair(column, row) or null if no space available.
-     */
+    /** First available (column, row) for a widget on the page, or null if no space. */
     private fun findAvailablePositionForWidget(widgetCols: Int, widgetRows: Int, gridColumns: Int, gridRows: Int, page: Int = 0): Pair<Int, Int>? {
         val occupiedCells = getOccupiedCells(gridColumns, page)
 
@@ -292,9 +284,7 @@ class MainActivity : ComponentActivity() {
         return null
     }
 
-    /**
-     * Get all occupied cell indices on the home screen grid.
-     */
+    /** All occupied cell indices on the page's grid. */
     fun getOccupiedCells(gridColumns: Int, page: Int = 0): Set<Int> {
         val occupiedCells = mutableSetOf<Int>()
 
@@ -332,11 +322,7 @@ class MainActivity : ComponentActivity() {
     // loadHomeScreenData() uses shared function from data/HomeScreenStorage.kt
     private fun loadHomeScreenData(): HomeScreenData = com.bearinmind.launcher314.data.loadHomeScreenData(this)
 
-    /**
-     * Check if widget permission is granted and request it if needed.
-     * Returns true if permission is already granted (caller should proceed immediately).
-     * Returns false if permission dialog was shown (caller should wait for callback).
-     */
+    /** True = widget permission already granted (proceed now); false = permission dialog shown (wait for the callback). */
     fun checkWidgetPermissionAndNavigate(onPermissionGranted: () -> Unit): Boolean {
         val appWidgetManager = WidgetManager.getAppWidgetManager() ?: return true
 
@@ -407,11 +393,7 @@ class MainActivity : ComponentActivity() {
         val isHomeLaunch = intent?.categories?.contains(Intent.CATEGORY_HOME) == true
         val navigateTo = intent?.getStringExtra("navigate_to")
 
-        // Determine launcher mode:
-        // - If launcher is enabled AND this is a home launch → launcher mode
-        // - If launcher is enabled AND opened from app icon → also launcher mode
-        //   (real launchers like Lawnchair/Fossify/Yagni always show the launcher when enabled)
-        // - Preview modes → launcher mode
+        // Launcher mode: enabled AND (home launch OR opened from the app icon — real launchers always show the launcher), or a preview mode.
         val launcherEnabled = LauncherUtils.isEnabled(this)
         isLauncherMode = (launcherEnabled && (isHomeLaunch || navigateTo == null)) ||
                          navigateTo == "launcher_preview" ||
@@ -424,15 +406,12 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
-        // Warm the drawer app-list cache from disk on a background thread so the
-        // first drawer open after a cold start (e.g. the process was killed
-        // while a fullscreen video ran) paints instantly instead of spinning.
+        // Warm the drawer app-list cache on a background thread so the first drawer open after a cold start paints instantly.
         Thread {
             com.bearinmind.launcher314.data.DrawerAppCache.warm(applicationContext)
         }.start()
 
-        // Drive the launcher window at the panel's max refresh rate (else some
-        // devices leave it at 60Hz while system UI runs 120).
+        // Drive the launcher window at the panel's max refresh rate (some devices leave it at 60Hz while system UI runs 120).
         requestHighRefreshRate()
 
         // Handle pin shortcut request (Android 8.0+)
@@ -440,28 +419,14 @@ class MainActivity : ComponentActivity() {
             handlePinShortcutRequest(intent)
         }
 
-        // Initialize widget manager and start the host listening for the
-        // entire lifetime of this Activity instance (Launcher3's pattern).
-        // We deliberately do NOT pair start/stop with onStart/onStop —
-        // doing so means provider RemoteViews pushes that arrive while the
-        // launcher is in the background are never delivered to our host
-        // (only the LATEST view per widget gets cached at the system
-        // service, so multi-step animations / intermediate updates are
-        // lost). Keeping listening across pause/resume lets time-based
-        // widgets (Breezy Weather hourly, Sectograph, etc.) refresh in
-        // real time even while you're using another app.
+        // Launcher3 pattern: the host listens for the Activity's whole lifetime — pairing with onStart/onStop drops intermediate RemoteViews pushes (the service only caches the LATEST per widget), breaking time-based widgets.
         WidgetManager.init(this)
         WidgetManager.startListening()
 
-        // One-shot migration of legacy per-gesture preferences (issue #40).
-        // Idempotent — guarded by an internal flag — so this call costs ~one
-        // SharedPreferences read on every cold start. Must run BEFORE any
-        // composable mounts so the first read of the new keys returns the
-        // migrated values.
+        // One-shot idempotent migration of legacy per-gesture prefs (issue #40) — must run before any composable reads the new keys.
         com.bearinmind.launcher314.data.migrateLegacyGesturePrefs(this)
 
-        // Make navigation bar fully transparent — always enable edge-to-edge
-        // so WindowInsets padding works consistently on all screens
+        // Always edge-to-edge with a transparent nav bar so WindowInsets padding works consistently.
         applyTransparentNavigation(this)
 
         // Determine start destination
@@ -497,23 +462,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // API 35+ hint — pairs activity-resumed state with the host so
-        // animation-deferred updates flush at the right moment. No-op
-        // on older platforms.
+        // API 35+ hint — pairs activity-resumed state with the host so animation-deferred updates flush at the right moment.
         WidgetManager.setActivityResumed(true)
-        // Re-request the high refresh rate here too so it survives a fold /
-        // unfold (which swaps the display + its supported modes).
+        // Re-request the high refresh rate so it survives a fold/unfold (display + mode swap).
         requestHighRefreshRate()
     }
 
-    /**
-     * Ask the compositor for the panel's highest refresh rate. The launcher
-     * window is transparent + renderEffect-heavy, so without an explicit hint
-     * some devices (e.g. OnePlus 6) leave it at the panel default (60Hz) while
-     * the rest of the system runs 120. We only ever request a HIGHER rate at
-     * the CURRENT resolution — never a resolution change — so it's safe on
-     * foldables, where onResume re-applies it for the active display.
-     */
+    /** Request the panel's highest refresh rate at the CURRENT resolution (never a resolution change) — transparent renderEffect windows can get parked at 60Hz; onResume re-applies for the active display. */
     private fun requestHighRefreshRate() {
         try {
             val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -545,16 +500,7 @@ class MainActivity : ComponentActivity() {
         WidgetManager.setActivityResumed(false)
     }
 
-    /**
-     * Layered on top of the always-listening Launcher3 pattern: an extra
-     * safety-net rebind every ~5 minutes while the launcher is in the
-     * foreground. The Launcher3 listener already delivers provider pushes
-     * in real time, so this is a no-op in the common case — but it catches
-     * the rare edge case where a host view's cached RemoteViews diverged
-     * from what the system service holds (e.g. a brief binder disconnect
-     * during process pressure). Only fires while onStart..onStop, so no
-     * background battery cost.
-     */
+    /** Safety-net rebind every ~5 min while foregrounded — catches a host view whose cached RemoteViews diverged (brief binder disconnect); a no-op otherwise, and never runs in the background. */
     private val widgetRefreshIntervalMs = 5 * 60_000L
     private var lastWidgetRebindMs: Long = 0L
     private val timeTickReceiver = object : android.content.BroadcastReceiver() {
@@ -570,14 +516,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Resume-time rebind: when the user comes back to our launcher
-        // (after using a different launcher, or after we were
-        // backgrounded long enough that the OS killed adjacent activity),
-        // immediately re-bind every cached widget host view to its
-        // current provider info. Catches anything that drifted while we
-        // weren't the foreground host. Resets the throttle timer so the
-        // 5-minute TIME_TICK pass doesn't fire a second redundant rebind
-        // right after this one.
+        // Resume-time rebind: re-bind every cached widget host view on return (catches drift while we weren't foreground) and reset the throttle so the 5-minute pass doesn't double-fire.
         WidgetManager.rebindAllCachedViews()
         lastWidgetRebindMs = System.currentTimeMillis()
 
@@ -607,17 +546,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Mirror startListening() in onCreate. Per Launcher3, the host
-        // should stay listening for the lifetime of the Activity so
-        // provider updates pushed while we're in the background reach
-        // our cached views in real time — onStop is too aggressive
-        // because the system AppWidgetService only buffers the LATEST
-        // RemoteViews per widget while a host is not listening, so any
-        // intermediate frames are silently dropped.
+        // Mirror startListening() in onCreate — per Launcher3 the host stays listening for the Activity's lifetime; stopping at onStop silently drops intermediate RemoteViews frames.
         WidgetManager.stopListening()
-        // Drop the widget-view cache — the views hold THIS activity's context, and
-        // the cache is a singleton; keeping them across a recreation leaks the dead
-        // activity + composition (progressive drawer lag). See clearViewCache().
+        // Drop the widget-view cache — the singleton cache holds THIS activity's context; keeping it across recreation leaks the dead activity (progressive drawer lag).
         WidgetManager.clearViewCache()
     }
 
@@ -635,16 +566,13 @@ class MainActivity : ComponentActivity() {
         }
 
         when {
-            // Home button pressed while already in launcher mode:
-            // Signal Compose to return to home screen and close drawer
+            // Home pressed while in launcher mode — signal Compose to return home and close the drawer.
             isHomeLaunch && isLauncherMode -> {
                 com.bearinmind.launcher314.ui.home.HomePressSignal.launcherWasForeground =
                     hasWindowFocus() && (intent.flags and Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT) == 0
                 homeButtonTrigger.intValue++
             }
-            // Home button pressed but activity is in non-launcher mode:
-            // Restart fresh so onCreate picks up launcher mode with correct theme.
-            // Uses CLEAR_TASK to avoid NavController restoring stale back stack.
+            // Home pressed in non-launcher mode — restart fresh (CLEAR_TASK) so onCreate picks launcher mode without a stale back stack.
             isHomeLaunch && !isLauncherMode -> {
                 startActivity(Intent(this, MainActivity::class.java).apply {
                     addCategory(Intent.CATEGORY_HOME)
@@ -655,9 +583,7 @@ class MainActivity : ComponentActivity() {
             navigateTo == "app_drawer" && isLauncherMode -> {
                 openDrawerTrigger.intValue++
             }
-            // Any navigate_to intent that needs a mode switch (preview, app_drawer from non-launcher):
-            // Start fresh activity to avoid NavController restoring previous mode's back stack
-            // (which causes settings to overlap behind the transparent launcher).
+            // navigate_to needing a mode switch — start a fresh activity so the old mode's back stack can't overlap behind the transparent launcher.
             navigateTo != null -> {
                 startActivity(Intent(this, MainActivity::class.java).apply {
                     putExtra("navigate_to", navigateTo)
@@ -685,12 +611,7 @@ class MainActivity : ComponentActivity() {
         val iconsDir = java.io.File(filesDir, "shortcut_icons")
         if (!iconsDir.exists()) iconsDir.mkdirs()
 
-        // Save shortcut metadata.
-        // IMPORTANT: ShortcutInfo from a PinItemRequest does NOT expose its intent —
-        // shortcutInfo.intent / .intents are null for security. To launch correctly,
-        // we save (package, shortcutId, userHandle) and use LauncherApps.startShortcut()
-        // later, which lets the system resolve the real intent (e.g., the browser's
-        // URL-launch intent for "Add to Home Screen" PWA shortcuts).
+        // PinItemRequest ShortcutInfo hides its intent (null for security) — save (package, shortcutId, userHandle) and launch later via LauncherApps.startShortcut().
         val name = shortcutInfo.shortLabel?.toString() ?: shortcutInfo.longLabel?.toString() ?: "Shortcut"
         val publisherPackage = shortcutInfo.`package`
         val publisherShortcutId = shortcutInfo.id
@@ -699,12 +620,7 @@ class MainActivity : ComponentActivity() {
                 ?.getSerialNumberForUser(shortcutInfo.userHandle) ?: 0L
         } catch (_: Exception) { 0L }
 
-        // Meta format (line-based, backward-compatible):
-        //   line 0: display name
-        //   line 1: legacy launch intent URI (empty when from PinItemRequest)
-        //   line 2: publisher package
-        //   line 3: publisher shortcut id
-        //   line 4: user serial number
+        // Meta lines (backward-compatible): name, legacy intent URI (empty for PinItemRequest), publisher package, publisher shortcut id, user serial.
         val metaFile = java.io.File(iconsDir, "$shortcutId.meta")
         metaFile.writeText(
             "$name\n\n$publisherPackage\n$publisherShortcutId\n$userSerial"
@@ -731,9 +647,8 @@ class MainActivity : ComponentActivity() {
 
         // Add to home screen — find first truly empty cell across all pages
         val data = com.bearinmind.launcher314.data.loadHomeScreenData(this)
-        val prefs = applicationContext.getSharedPreferences("app_drawer_settings", MODE_PRIVATE)
-        val gridColumns = prefs.getInt("home_grid_columns", 4)
-        val gridRows = prefs.getInt("home_grid_rows", 5)
+        val gridColumns = com.bearinmind.launcher314.data.getHomeGridSize(this)
+        val gridRows = com.bearinmind.launcher314.data.getHomeGridRows(this)
         val totalCells = gridColumns * gridRows
         val placedWidgets = com.bearinmind.launcher314.ui.widgets.WidgetManager.loadPlacedWidgets(this)
 
@@ -790,28 +705,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/**
- * Navigate only when the current destination is fully RESUMED, using
- * launchSingleTop so a route can't be pushed twice. This kills the blank/black
- * screen from rapid taps: a second tap that lands while the NavHost is still
- * mid-transition (source not yet RESUMED) is ignored instead of racing the
- * transition into an empty state or stacking duplicate heavy destinations.
- */
+/** Navigate only when the current destination is RESUMED (launchSingleTop) — a second rapid tap mid-transition otherwise races into a blank screen or a duplicate destination. */
 private fun NavController.navigateSafely(route: String) {
     if (currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) {
         navigate(route) { launchSingleTop = true }
     }
 }
 
-/**
- * Pop only if there is somewhere to pop back TO. A raw popBackStack() on the
- * root destination pops the root itself, leaving the NavHost with an empty
- * back stack — which renders as a permanent black screen with the activity
- * still alive. Rapid double-taps on a back arrow (or queued back presses)
- * trigger exactly that: pop #1 goes back a screen, pop #2 lands on the root
- * and evicts it. Guarding on previousBackStackEntry makes the extra taps
- * no-ops instead.
- */
+/** Pop only when there is somewhere to pop TO — a raw pop on the root evicts it and leaves a permanent black screen; guarding on previousBackStackEntry makes extra taps no-ops. */
 private fun NavController.popBackStackSafely(): Boolean {
     return if (previousBackStackEntry != null) popBackStack() else false
 }
@@ -829,8 +730,7 @@ fun MainScreen(
     // Get activity reference for permission check
     val activity = context as? MainActivity
 
-    // When home button is pressed (singleTask delivers via onNewIntent),
-    // pop back to the launcher route so settings/widgets/fonts are dismissed
+    // Home press (singleTask onNewIntent) pops back to the launcher route, dismissing settings/widgets/fonts.
     val homeButtonTrigger = activity?.homeButtonTrigger?.intValue ?: 0
     val openDrawerTrigger = activity?.openDrawerTrigger?.intValue ?: 0
     LaunchedEffect(homeButtonTrigger) {
@@ -839,8 +739,7 @@ fun MainScreen(
         }
     }
 
-    // For launcher mode, don't use Scaffold to avoid any background
-    // Use the combined LauncherWithDrawer that has integrated swipe gesture
+    // Launcher mode skips Scaffold (no background) and uses LauncherWithDrawer's integrated swipe.
     if (isLauncherMode && startDestination == "launcher") {
         NavHost(
             navController = navController,
@@ -884,9 +783,7 @@ fun MainScreen(
                     gridColumns = gridColumns,
                     gridRows = gridRows,
                     getOccupiedCells = {
-                        // Match the page that addWidgetToHomeScreen will
-                        // target so the pre-flight space check looks at
-                        // the user's current page instead of page 0.
+                        // Match the page addWidgetToHomeScreen targets so the pre-flight space check uses the current page.
                         val curPage = context.getSharedPreferences("launcher_prefs", android.content.Context.MODE_PRIVATE)
                             .getInt("launcher_current_page", 0)
                         activity?.getOccupiedCells(gridColumns, curPage) ?: emptySet()
@@ -1039,9 +936,7 @@ fun MainScreen(
                         gridColumns = gridColumns,
                         gridRows = gridRows,
                         getOccupiedCells = {
-                            // Match the page that addWidgetToHomeScreen will
-                            // target so the pre-flight space check looks at
-                            // the user's current page instead of page 0.
+                            // Match the page addWidgetToHomeScreen targets so the pre-flight space check uses the current page.
                             val curPage = context.getSharedPreferences("launcher_prefs", android.content.Context.MODE_PRIVATE)
                                 .getInt("launcher_current_page", 0)
                             activity?.getOccupiedCells(gridColumns, curPage) ?: emptySet()

@@ -12,10 +12,7 @@ import com.bearinmind.launcher314.data.saveHomeScreenData
 import com.bearinmind.launcher314.data.saveBitmapToFile
 import java.io.File
 
-/**
- * Receives "Add to Home Screen" shortcuts from browsers (Firefox, etc.) and other apps.
- * Firefox checks for this receiver in the manifest before showing the "Add to Home Screen" menu option.
- */
+/** Receives "Add to Home Screen" shortcuts from browsers — Firefox checks for this receiver in the manifest before offering the option. */
 class InstallShortcutReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -37,9 +34,7 @@ class InstallShortcutReceiver : BroadcastReceiver() {
             iconBitmap.recycle()
         }
 
-        // Resolve the app that OPENS this shortcut (launch-intent handler), so the
-        // home icon can show a small source badge regardless of whether the source
-        // browser baked one into the bitmap.
+        // Resolve the app that OPENS this shortcut so the home icon can show a source badge regardless of the bitmap.
         val sourcePkg = launchIntent.`package`
             ?: launchIntent.component?.packageName
             ?: context.packageManager.resolveActivity(launchIntent, 0)?.activityInfo?.packageName
@@ -51,10 +46,8 @@ class InstallShortcutReceiver : BroadcastReceiver() {
 
         // Add to home screen at first available position on page 0
         val data = loadHomeScreenData(context)
-        val gridColumns = context.applicationContext.getSharedPreferences("app_drawer_settings", Context.MODE_PRIVATE)
-            .getInt("home_grid_columns", 4)
-        val gridRows = context.applicationContext.getSharedPreferences("app_drawer_settings", Context.MODE_PRIVATE)
-            .getInt("home_grid_rows", 5)
+        val gridColumns = com.bearinmind.launcher314.data.getHomeGridSize(context)
+        val gridRows = com.bearinmind.launcher314.data.getHomeGridRows(context)
         val totalCells = gridColumns * gridRows
 
         // Find first truly empty cell across all pages
@@ -115,14 +108,7 @@ class InstallShortcutReceiver : BroadcastReceiver() {
     }
 }
 
-/**
- * Resolve the package of the app that OPENS a given shortcut (its launch-intent
- * handler), used to draw a source badge on the shortcut's home icon. Reads the
- * cached source package from the shortcut's `.meta` file (3rd line); if absent
- * (shortcuts created before this was stored), derives it from the saved launch-
- * intent URI and writes it back. Returns null if it can't be determined or if it
- * would resolve to this launcher itself.
- */
+/** Package of the app that OPENS a shortcut (for its source badge): cached 3rd .meta line, else derived from the launch-intent URI and written back; null if undeterminable or the launcher itself. */
 fun getShortcutSourcePackage(context: Context, shortcutId: String): String? {
     return try {
         val metaFile = File(context.filesDir, "shortcut_icons/$shortcutId.meta")

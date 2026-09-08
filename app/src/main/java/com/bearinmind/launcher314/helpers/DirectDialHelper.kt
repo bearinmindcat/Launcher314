@@ -72,10 +72,9 @@ object DirectDialHelper {
     /** First empty cell, preferring the page the user is currently viewing. */
     private fun placeOnHomeScreen(context: Context, shortcutId: String): Boolean {
         val data = loadHomeScreenData(context)
-        val prefs = context.applicationContext
-            .getSharedPreferences("app_drawer_settings", Context.MODE_PRIVATE)
-        val gridColumns = prefs.getInt("home_grid_columns", 4)
-        val gridRows = prefs.getInt("home_grid_rows", 5)
+        // Real grid size lives in home_screen_settings — the old app_drawer_settings read always fell back to 4x5 and scrambled occupancy on custom grids (issue #103).
+        val gridColumns = com.bearinmind.launcher314.data.getHomeGridSize(context)
+        val gridRows = com.bearinmind.launcher314.data.getHomeGridRows(context)
         val totalCells = gridColumns * gridRows
         val currentPage = context.getSharedPreferences("launcher_prefs", Context.MODE_PRIVATE)
             .getInt("launcher_current_page", 0)
