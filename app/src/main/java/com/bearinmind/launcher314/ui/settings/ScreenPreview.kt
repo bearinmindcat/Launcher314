@@ -344,7 +344,7 @@ fun AppDrawerPreviewSection(
         // Home screen threshold (read stored settings)
         val homeGridCols = getHomeGridSize(context)
         val homeGridRows = getHomeGridRows(context)
-        val homeHPad = swDp * 0.044f
+        val homeHPad = swDp * com.bearinmind.launcher314.data.homeGridHPadFactor(context)
         val homeCellWidth = (swDp - homeHPad * 2) / homeGridCols
         val homeCellBasis = minOf(homeCellWidth, (shDp - 76f - swDp * 0.022f * 2) / homeGridRows)
         val homeMarkerPadding = homeCellBasis * 0.073f * 2f
@@ -2024,7 +2024,7 @@ fun HomeScreenPreviewSection(
 
     val universalOverflowThreshold = run {
         // Home screen threshold
-        val hPad = screenWidthDpVal * 0.044f
+        val hPad = screenWidthDpVal * com.bearinmind.launcher314.data.homeGridHPadFactor(context)
         val homeCellWidth = (screenWidthDpVal - hPad * 2) / gridColumns.roundToInt()
         val cellBasis = minOf(homeCellWidth, (screenHeightDpVal - 76f - screenWidthDpVal * 0.022f * 2) / gridRows.roundToInt())
         val markerPadding = cellBasis * 0.073f * 2f
@@ -2357,11 +2357,12 @@ private fun HomeScreenPreview(
     val iconSizeDp = (screenWidthDpVal / 4f * 0.55f * iconSizePercent / 100f)
 
     // Proportional padding matching actual launcher (LauncherScreen.kt)
-    val gridHPaddingPreview = (screenWidthDpVal * 0.044f).dp * scaleFactor
+    val previewHPadF = com.bearinmind.launcher314.data.homeGridHPadFactor(LocalContext.current)
+    val gridHPaddingPreview = (screenWidthDpVal * previewHPadF).dp * scaleFactor
     val gridVPaddingPreview = (screenWidthDpVal * 0.022f).dp * scaleFactor
 
     // Cell basis for proportional sizing (same formula as actual launcher)
-    val gridCellWidth = (screenWidthDpVal - screenWidthDpVal * 0.044f * 2) / gridColumns
+    val gridCellWidth = (screenWidthDpVal - screenWidthDpVal * previewHPadF * 2) / gridColumns
     val gridCellHeight = (screenHeightDpVal - 76f - screenWidthDpVal * 0.022f * 2) / gridRows
     val gridCellBasis = minOf(gridCellWidth, gridCellHeight)
 
@@ -3169,7 +3170,7 @@ private fun HomePreviewWidgetOverlay(
     val widgetConfig = LocalConfiguration.current
     val widgetScreenWidthDp = widgetConfig.screenWidthDp.toFloat()
     val widgetScreenHeightDp = widgetConfig.screenHeightDp.toFloat()
-    val widgetGridHPad = widgetScreenWidthDp * 0.044f
+    val widgetGridHPad = widgetScreenWidthDp * com.bearinmind.launcher314.data.homeGridHPadFactor(LocalContext.current)
     val widgetGridVPad = widgetScreenWidthDp * 0.022f
     val widgetGridWidthDp = widgetScreenWidthDp - widgetGridHPad * 2
     val widgetGridHeightDp = widgetScreenHeightDp - 76f - widgetGridVPad * 2

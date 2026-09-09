@@ -3,7 +3,7 @@ package com.bearinmind.launcher314.data
 import android.content.Context
 import kotlin.math.roundToInt
 
-// SharedPreferences keys and defaults fo   r drawer grid settings
+// SharedPreferences keys and defaults for drawer grid settings
 private const val PREFS_NAME = "app_drawer_settings"
 private const val KEY_GRID_SIZE = "grid_size"
 private const val KEY_ICON_SIZE = "icon_size"
@@ -43,60 +43,43 @@ private const val DEFAULT_ICON_TEXT_SIZE_PERCENT = 100
 private const val DEFAULT_SELECTED_FONT = "default"
 private const val KEY_SETTINGS_TAB = "settings_selected_tab"
 
-/**
- * Get the saved grid size (number of columns) from SharedPreferences.
- * Returns DEFAULT_GRID_SIZE (4) if not set.
- */
+/** Get the saved grid size (number of columns) from SharedPreferences. Returns DEFAULT_GRID_SIZE (4) if not set. */
 fun getGridSize(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_GRID_SIZE, DEFAULT_GRID_SIZE)
 }
 
-/**
- * Save the grid size (number of columns) to SharedPreferences.
- */
+/** Save the grid size (number of columns) to SharedPreferences. */
 fun setGridSize(context: Context, size: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_GRID_SIZE, size).apply()
 }
 
-/**
- * Get the saved icon size from SharedPreferences.
- * Returns DEFAULT_ICON_SIZE (48) if not set.
- */
+/** Get the saved icon size from SharedPreferences. Returns DEFAULT_ICON_SIZE (48) if not set. */
 fun getIconSize(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_ICON_SIZE, DEFAULT_ICON_SIZE)
 }
 
-/**
- * Save the icon size to SharedPreferences.
- */
+/** Save the icon size to SharedPreferences. */
 fun setIconSize(context: Context, size: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_ICON_SIZE, size).apply()
 }
 
-/**
- * Get whether icon size and grid size are linked from SharedPreferences.
- * Returns DEFAULT_LINKED (true) if not set.
- */
+/** Get whether icon size and grid size are linked from SharedPreferences. Returns DEFAULT_LINKED (true) if not set. */
 fun getSizeLinked(context: Context): Boolean {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getBoolean(KEY_SIZE_LINKED, DEFAULT_LINKED)
 }
 
-/**
- * Save whether icon size and grid size are linked to SharedPreferences.
- */
+/** Save whether icon size and grid size are linked to SharedPreferences. */
 fun setSizeLinked(context: Context, linked: Boolean) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putBoolean(KEY_SIZE_LINKED, linked).apply()
 }
 
-// ============================================================================
 // ICON SIZE PERCENTAGE (replaces dp-based icon size for proportional scaling)
-// ============================================================================
 
 fun getDrawerIconSizePercent(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -115,9 +98,7 @@ fun setDrawerIconSizePercent(context: Context, percent: Int) {
     prefs.edit().putInt(KEY_ICON_SIZE_PERCENT, percent).apply()
 }
 
-// ============================================================================
 // SCROLLBAR SETTINGS (percentage-based for proportional scaling)
-// ============================================================================
 
 fun getScrollbarWidthPercent(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -153,78 +134,57 @@ fun setScrollbarHeightPercent(context: Context, percent: Int) {
     prefs.edit().putInt(KEY_SCROLLBAR_HEIGHT_PERCENT, percent).apply()
 }
 
-// ============================================================================
 // SCROLLBAR SETTINGS (legacy dp-based - kept for backward compatibility)
 
-/**
- * Get the scrollbar width from SharedPreferences.
- */
+/** Get the scrollbar width from SharedPreferences. */
 fun getScrollbarWidth(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_SCROLLBAR_WIDTH, DEFAULT_SCROLLBAR_WIDTH)
 }
 
-/**
- * Save the scrollbar width to SharedPreferences.
- */
+/** Save the scrollbar width to SharedPreferences. */
 fun setScrollbarWidth(context: Context, width: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_SCROLLBAR_WIDTH, width).apply()
 }
 
-/**
- * Get the scrollbar height from SharedPreferences.
- */
+/** Get the scrollbar height from SharedPreferences. */
 fun getScrollbarHeight(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_SCROLLBAR_HEIGHT, DEFAULT_SCROLLBAR_HEIGHT)
 }
 
-/**
- * Save the scrollbar height to SharedPreferences.
- */
+/** Save the scrollbar height to SharedPreferences. */
 fun setScrollbarHeight(context: Context, height: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_SCROLLBAR_HEIGHT, height).apply()
 }
 
-/**
- * Get the scrollbar color from SharedPreferences.
- */
+/** Get the scrollbar color from SharedPreferences. */
 fun getScrollbarColor(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_SCROLLBAR_COLOR, DEFAULT_SCROLLBAR_COLOR)
 }
 
-/**
- * Save the scrollbar color to SharedPreferences.
- */
+/** Save the scrollbar color to SharedPreferences. */
 fun setScrollbarColor(context: Context, color: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_SCROLLBAR_COLOR, color).apply()
 }
 
-/**
- * Get the scrollbar color intensity from SharedPreferences.
- * Returns DEFAULT_SCROLLBAR_INTENSITY (100) if not set.
- * Range: 50 (darker) to 150 (lighter)
- */
+/** Get the scrollbar color intensity from SharedPreferences. Returns DEFAULT_SCROLLBAR_INTENSITY (100) if not set. Range: 50 (darker) to 150 (lighter) */
 fun getScrollbarIntensity(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_SCROLLBAR_INTENSITY, DEFAULT_SCROLLBAR_INTENSITY)
 }
 
-/**
- * Save the scrollbar color intensity to SharedPreferences.
- */
+/** Save the scrollbar color intensity to SharedPreferences. */
 fun setScrollbarIntensity(context: Context, intensity: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_SCROLLBAR_INTENSITY, intensity).apply()
 }
 
-// ============================================================================
 // DRAWER PAGED MODE SETTINGS
-// ============================================================================
 
 fun getDrawerGridRows(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -246,9 +206,7 @@ fun setDrawerPagedMode(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_DRAWER_PAGED_MODE, enabled).apply()
 }
 
-// ============================================================================
 // ICON TEXT SIZE PERCENTAGE (shared between home screen and app drawer)
-// ============================================================================
 
 fun getIconTextSizePercent(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -271,9 +229,7 @@ fun setHideIconText(context: Context, hide: Boolean) {
     prefs.edit().putBoolean(KEY_HIDE_ICON_TEXT, hide).apply()
 }
 
-// ============================================================================
 // GLOBAL ICON SHAPE (EXP method applied to all icons)
-// ============================================================================
 
 fun getGlobalIconShape(context: Context): String? {
     val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -290,8 +246,7 @@ fun setGlobalIconShape(context: Context, shape: String?) {
     }
 }
 
-// Drawer sort preference — persists the user's chosen sort option + direction so
-// it survives closing/reopening the drawer and returning from the dock (issue #4).
+// Drawer sort preference — persisted so it survives drawer reopen and dock returns (issue #4).
 private const val KEY_DRAWER_SORT_OPTION = "drawer_sort_option"
 private const val KEY_DRAWER_SORT_ASCENDING = "drawer_sort_ascending"
 
@@ -316,8 +271,7 @@ fun setDrawerSortAscending(context: Context, ascending: Boolean) {
         .edit().putBoolean(KEY_DRAWER_SORT_ASCENDING, ascending).apply()
 }
 
-// Fuzzy type-to-find search. Opt-in — default OFF keeps the classic
-// substring ("contains") search the drawer has always used.
+// Fuzzy type-to-find search — opt-in; default OFF keeps the classic substring search.
 private const val KEY_DRAWER_FUZZY_SEARCH = "drawer_fuzzy_search_enabled"
 
 fun isFuzzySearchEnabled(context: Context): Boolean {
@@ -415,9 +369,7 @@ fun setGlobalIconBgIntensity(context: Context, intensity: Int) {
     prefs.edit().putInt(KEY_GLOBAL_ICON_BG_INTENSITY, intensity).commit()
 }
 
-// ============================================================================
 // AUTO OPEN KEYBOARD
-// ============================================================================
 
 private const val KEY_AUTO_OPEN_KEYBOARD = "auto_open_keyboard"
 
@@ -433,11 +385,7 @@ fun setAutoOpenKeyboard(context: Context, enabled: Boolean) {
 
 private const val KEY_AUTO_LAUNCH_SEARCH_RESULT = "auto_launch_search_result"
 
-/**
- * When true, the app-drawer search auto-launches the only match (after a
- * short typing pause) and Enter / IME Search launches the top of the
- * current filtered list. Default off.
- */
+/** When true, drawer search auto-launches a lone match after a typing pause, and Enter launches the top result. Default off. */
 fun getAutoLaunchSearchResult(context: Context): Boolean {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getBoolean(KEY_AUTO_LAUNCH_SEARCH_RESULT, false)
@@ -448,9 +396,7 @@ fun setAutoLaunchSearchResult(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_AUTO_LAUNCH_SEARCH_RESULT, enabled).apply()
 }
 
-// ============================================================================
 // REVERSE DRAWER SEARCH BAR
-// ============================================================================
 
 private const val KEY_REVERSE_SEARCH_BAR = "reverse_drawer_search_bar"
 
@@ -490,9 +436,7 @@ fun setSortFoldersEnabled(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_SORT_FOLDERS, enabled).apply()
 }
 
-// Hide the drawer's top section entirely — the search bar AND its (⋮) settings
-// menu. Also removes the search-bar drop zone used to drag an app to the home
-// screen. Default off.
+// Hide the drawer's top section — search bar, (⋮) menu, and the drag-to-home drop zone. Default off.
 private const val KEY_HIDE_SEARCH_BAR = "hide_drawer_search_bar"
 
 fun getHideDrawerSearchBar(context: Context): Boolean {
@@ -518,9 +462,7 @@ fun setHideHomeScreenApps(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_HIDE_HOME_SCREEN_APPS, enabled).apply()
 }
 
-// ============================================================================
 // DOUBLE-TAP TO LOCK SCREEN
-// ============================================================================
 
 private const val KEY_DOUBLE_TAP_LOCK = "double_tap_lock_enabled"
 
@@ -534,9 +476,7 @@ fun setDoubleTapLockEnabled(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_DOUBLE_TAP_LOCK, enabled).apply()
 }
 
-// ============================================================================
 // FONT SELECTION (shared between home screen and app drawer)
-// ============================================================================
 
 fun getSelectedFont(context: Context): String {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -567,9 +507,7 @@ fun removeImportedFontPath(context: Context, path: String) {
     prefs.edit().putStringSet(KEY_IMPORTED_FONTS, current).apply()
 }
 
-// ============================================================================
 // ICON PACK SELECTION
-// ============================================================================
 
 fun getSelectedIconPack(context: Context): String {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -581,9 +519,7 @@ fun setSelectedIconPack(context: Context, iconPackPackage: String) {
     prefs.edit().putString(KEY_SELECTED_ICON_PACK, iconPackPackage).apply()
 }
 
-// ============================================================================
 // SETTINGS TAB SELECTION
-// ============================================================================
 
 fun getSettingsSelectedTab(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -595,9 +531,7 @@ fun setSettingsSelectedTab(context: Context, tab: Int) {
     prefs.edit().putInt(KEY_SETTINGS_TAB, tab).apply()
 }
 
-// ============================================================================
 // WIDGET ROUNDED CORNERS
-// ============================================================================
 
 private const val KEY_WIDGET_ROUNDED_CORNERS_ENABLED = "widget_rounded_corners_enabled"
 private const val KEY_WIDGET_CORNER_RADIUS = "widget_corner_radius_percent"
@@ -627,9 +561,7 @@ fun setWidgetCornerRadiusPercent(context: Context, percent: Int) {
 /** Max corner radius in dp (100% maps to this value) */
 const val WIDGET_MAX_CORNER_RADIUS_DP = 32f
 
-// ============================================================================
 // WIDGET TEXT SIZE (font scale)
-// ============================================================================
 
 private const val KEY_WIDGET_FONT_SCALE = "widget_font_scale_percent"
 private const val DEFAULT_WIDGET_FONT_SCALE_PERCENT = 100
@@ -644,9 +576,7 @@ fun setWidgetFontScalePercent(context: Context, percent: Int) {
     prefs.edit().putInt(KEY_WIDGET_FONT_SCALE, percent).apply()
 }
 
-// ============================================================================
 // WIDGET PADDING
-// ============================================================================
 
 private const val KEY_WIDGET_PADDING_PERCENT = "widget_padding_percent"
 private const val DEFAULT_WIDGET_PADDING_PERCENT = 0
@@ -664,9 +594,7 @@ fun setWidgetPaddingPercent(context: Context, percent: Int) {
     prefs.edit().putInt(KEY_WIDGET_PADDING_PERCENT, percent).apply()
 }
 
-// ============================================================================
 // HIDDEN APPS
-// ============================================================================
 
 private const val KEY_HIDDEN_APPS = "hidden_apps"
 
@@ -700,6 +628,34 @@ fun setExtendedGridSize(context: Context, enabled: Boolean) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putBoolean(KEY_EXTENDED_GRID_SIZE, enabled).apply()
 }
+
+// EXPERIMENTAL (issue #106): outer margins as % of the stock margin (100 = stock, 0 = flush with the screen edges), gated by an enable toggle.
+private const val KEY_OUTER_MARGINS_ENABLED = "experimental_outer_margins_enabled"
+private const val KEY_HOME_OUTER_MARGIN = "experimental_home_outer_margin"
+
+fun getOuterMarginsEnabled(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_OUTER_MARGINS_ENABLED, false)
+}
+
+fun setOuterMarginsEnabled(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_OUTER_MARGINS_ENABLED, enabled).apply()
+}
+
+fun getHomeOuterMarginPercent(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_HOME_OUTER_MARGIN, 100).coerceIn(0, 100)
+}
+
+fun setHomeOuterMarginPercent(context: Context, percent: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_HOME_OUTER_MARGIN, percent.coerceIn(0, 100)).apply()
+}
+
+/** The home grid's horizontal padding factor (stock 0.044 x screen width), scaled by the experimental outer-margin percent when its toggle is on. */
+fun homeGridHPadFactor(context: Context): Float =
+    if (getOuterMarginsEnabled(context)) 0.044f * (getHomeOuterMarginPercent(context) / 100f) else 0.044f
 
 fun setHiddenApps(context: Context, hiddenApps: Set<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -767,9 +723,7 @@ fun setDrawerNoisePercent(context: Context, percent: Int) {
     prefs.edit().putInt(KEY_DRAWER_NOISE_PERCENT, percent.coerceIn(0, 100)).apply()
 }
 
-// ============================================================================
 // PINNED APPS (top of drawer)
-// ============================================================================
 
 private const val KEY_PINNED_APPS = "pinned_apps"
 private const val KEY_PINNED_APPS_ORDER = "pinned_apps_order"
@@ -792,9 +746,7 @@ fun setPinnedAppsOrder(context: Context, order: List<String>) {
 
 fun getPinnedApps(context: Context): Set<String> = getPinnedAppsOrder(context).toSet()
 
-// ============================================================================
 // SWIPE DOWN FOR NOTIFICATIONS
-// ============================================================================
 
 private const val KEY_SWIPE_DOWN_NOTIFICATIONS = "swipe_down_notifications"
 
@@ -821,9 +773,7 @@ fun setSwipeDownMode(context: Context, mode: Int) {
     prefs.edit().putInt(KEY_SWIPE_DOWN_MODE, mode).apply()
 }
 
-// ============================================================================
 // TEXT COLOR
-// ============================================================================
 
 private const val KEY_GLOBAL_TEXT_COLOR = "global_text_color"
 
@@ -853,14 +803,7 @@ fun setGlobalTextColorIntensity(context: Context, intensity: Int) {
     prefs.edit().putInt(KEY_GLOBAL_TEXT_COLOR_INTENSITY, intensity).commit()
 }
 
-// ============================================================================
-// GESTURE ACTIONS (issue #40)
-// ----------------------------------------------------------------------------
-// Per-gesture user-assigned actions. Each gesture stores a fixed-vocabulary
-// action key (see GestureAction.storageKey) and a companion target-package key
-// used only when the action is OpenApp. A one-time migration translates the
-// legacy swipe-down-mode int + double-tap-lock boolean into the new schema.
-// ============================================================================
+// GESTURE ACTIONS (issue #40): per-gesture action key (GestureAction.storageKey) + companion package key for OpenApp; legacy prefs migrate once.
 
 private const val KEY_GESTURE_PREFIX = "gesture_action_"
 private const val KEY_GESTURE_PKG_PREFIX = "gesture_target_pkg_"
@@ -909,16 +852,7 @@ fun setGestureAction(context: Context, id: GestureId, action: GestureAction) {
     editor.apply()
 }
 
-/**
- * One-shot migration from the old fixed-purpose preferences to the new
- * per-gesture action schema. Idempotent — guarded by a flag in prefs.
- *
- * - swipe-down: legacy `swipe_down_mode` (0 = Notifications, 1 = Quick Settings)
- *   maps to OpenNotifications / OpenQuickSettings respectively.
- * - double-tap: legacy `double_tap_lock_enabled = true` maps to LockScreen,
- *   false maps to None.
- * - swipe-up: always seeded to OpenDrawer (matches prior hardcoded behavior).
- */
+/** One-shot idempotent migration to the per-gesture schema: swipe_down_mode -> Notifications/QuickSettings, double_tap_lock -> LockScreen/None, swipe-up seeded to OpenDrawer. */
 fun migrateLegacyGesturePrefs(context: Context) {
     val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     if (prefs.getBoolean(KEY_GESTURE_MIGRATION_DONE, false)) return

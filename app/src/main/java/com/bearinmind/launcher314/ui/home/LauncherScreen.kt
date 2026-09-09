@@ -893,11 +893,12 @@ fun LauncherScreen(
     // Reference: 360dp phone, 4 cols, 6 rows → cellWidth=82dp, cellHeight~110dp → basis=82dp
     val screenWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
     val screenHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
-    val gridHPadding = (screenWidthDp * 0.044f).dp   // ~16dp on 360dp phone
+    val hPadF = com.bearinmind.launcher314.data.homeGridHPadFactor(context)
+    val gridHPadding = (screenWidthDp * hPadF).dp   // ~16dp on 360dp phone at stock margin
     val gridVPadding = (screenWidthDp * 0.022f).dp    // ~8dp on 360dp phone
     val edgeScrollZone = (screenWidthDp * 0.111f).dp  // ~40dp on 360dp phone
-    val gridCellWidth = (screenWidthDp - screenWidthDp * 0.044f * 2) / gridColumns
-    val dockCellWidth = (screenWidthDp - screenWidthDp * 0.044f * 2) / dockSlots
+    val gridCellWidth = (screenWidthDp - screenWidthDp * hPadF * 2) / gridColumns
+    val dockCellWidth = (screenWidthDp - screenWidthDp * hPadF * 2) / dockSlots
     // Estimate cell height: screen height minus dock (~56dp), nav dots (~20dp), vertical padding
     val gridCellHeight = (screenHeightDp - 76f - screenWidthDp * 0.022f * 2) / gridRows
     // Use the smaller of width/height so content never overflows

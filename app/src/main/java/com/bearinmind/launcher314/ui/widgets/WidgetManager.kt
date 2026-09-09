@@ -15,10 +15,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
- * Data class representing a placed widget on the home screen.
- * Uses Einstein Launcher's grid item model: startColumn, startRow, columnSpan, rowSpan.
- */
+/** Data class representing a placed widget on the home screen. Uses Einstein Launcher's grid item model: startColumn, startRow, columnSpan, rowSpan. */
 @Serializable
 data class PlacedWidget(
     val appWidgetId: Int,
@@ -34,13 +31,9 @@ data class PlacedWidget(
     val stackOrder: Int = 0,      // Order within the stack (0 = first/primary)
     val paddingPercent: Int? = null,  // Per-widget padding override (null = use global)
     val fontScalePercent: Int? = null, // Per-widget text size override (null = use global)
-    // Per-widget corner roundness override (null = use the global rounded-corners
-    // toggle + radius). When set, it wins regardless of the global toggle.
+    // Per-widget corner roundness override (null = global); when set it wins over the global toggle.
     val cornerRadiusPercent: Int? = null,
-    // Stack slideshow — when enabled, the stack's pager auto-advances to the
-    // next widget every `stackSlideshowIntervalSec` seconds. Stored on every
-    // widget in the stack (helper keeps them synchronized) so any one of them
-    // can be read for the current setting.
+    // Stack slideshow: pager auto-advances every intervalSec; stored on EVERY stack member so any one can be read.
     val stackSlideshowEnabled: Boolean = false,
     val stackSlideshowIntervalSec: Int = 10
 ) {
@@ -57,10 +50,7 @@ data class PlacedWidget(
     val bottom: Int get() = startRow + rowSpan - 1
 }
 
-/**
- * Singleton manager for app widgets on the home screen.
- * Handles widget lifecycle: allocation, binding, configuration, and persistence.
- */
+/** Singleton manager for app widgets on the home screen. Handles widget lifecycle: allocation, binding, configuration, and persistence. */
 object WidgetManager {
 
     private const val PREFS_NAME = "launcher_widgets"
@@ -77,18 +67,7 @@ object WidgetManager {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    /**
-     * Initialize the widget manager with context.
-     * Should be called when the launcher activity starts.
-     *
-     * The host is created ONCE with the application context and never rebuilt — so the
-     * cached host views (and the RemoteViews already applied to them) survive Activity
-     * recreations (config change / foldable fold-unfold). Rebuilding the host and
-     * clearing the views on every recreation made already-rendered widgets flip back to
-     * "Can't show content" until their provider happened to push again. The host view
-     * still gets the Activity (UI) context for correct rendering — it's passed into
-     * host.createView(), not taken from the host's own context.
-     */
+    /** Init on launcher start. Host is created ONCE with the app context and never rebuilt — rebuilding on recreation flipped rendered widgets to "Can't show content"; views still get the Activity context via createView(). */
     fun init(context: Context) {
         if (appWidgetHost == null) {
             appWidgetHost = LauncherAppWidgetHost(context.applicationContext, LauncherAppWidgetHost.HOST_ID)
@@ -96,22 +75,14 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Start listening for widget updates.
-     * Should be called in Activity.onStart()
-     */
+    /** Start listening for widget updates. Should be called in Activity.onStart() */
     fun startListening() {
         try {
             appWidgetHost?.startListening()
         } catch (e: Exception) {
             // Host might already be listening
         }
-        // Re-bind every cached host view to its provider. After the host has
-        // been stopped (onStop -> onStart) the AppWidgetService only pushes
-        // the latest RemoteViews to bindings that are re-established on
-        // re-connect; cached views from before the stop otherwise stay
-        // frozen at whatever RemoteViews they had the moment we stopped
-        // listening. See issue #11.
+        // Re-bind every cached host view — after a stop the service only pushes RemoteViews to re-established bindings; stale views stay frozen otherwise (issue #11).
         val manager = appWidgetManager ?: return
         for ((id, view) in widgetViews) {
             val providerInfo = manager.getAppWidgetInfo(id) ?: continue
@@ -123,10 +94,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Stop listening for widget updates.
-     * Should be called in Activity.onStop()
-     */
+    /** Stop listening for widget updates. Should be called in Activity.onStop() */
     fun stopListening() {
         try {
             appWidgetHost?.stopListening()
@@ -135,43 +103,27 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Allocate a new widget ID for binding.
-     */
+    /** Allocate a new widget ID for binding. */
     fun allocateWidgetId(): Int {
         return appWidgetHost?.allocateAppWidgetId() ?: -1
     }
 
-    /**
-     * Delete a widget ID and clean up resources.
-     */
+    /** Delete a widget ID and clean up resources. */
     fun deleteWidgetId(appWidgetId: Int) {
         appWidgetHost?.deleteAppWidgetId(appWidgetId)
     }
 
-    /**
-     * Get the AppWidgetManager instance.
-     */
+    /** Get the AppWidgetManager instance. */
     fun getAppWidgetManager(): AppWidgetManager? = appWidgetManager
 
-    /**
-     * Get the AppWidgetHost instance.
-     */
+    /** Get the AppWidgetHost instance. */
     fun getAppWidgetHost(): LauncherAppWidgetHost? = appWidgetHost
 
-    /**
-     * Check if a widget needs to be bound (has permission).
-     */
+    /** Check if a widget needs to be bound (has permission). */
     fun bindWidget(context: Context, appWidgetId: Int, providerInfo: AppWidgetProviderInfo): Boolean {
         val manager = appWidgetManager ?: return false
 
-        // Pass an initial options bundle (with size) at BIND time — exactly like
-        // Launcher3/Lawnchair use the 3-arg bindAppWidgetIdIfAllowed. Glance widgets
-        // (Samsung clock/weather) compose their layout AT BIND from OPTION_APPWIDGET_SIZES;
-        // binding without options means Glance's first composition has no size and renders
-        // "Can't show content" — and it never recovers (this is why the dual-analog clock
-        // works when Lawnchair places it but failed for us). Seeding the size at bind lets
-        // Glance compose a real layout immediately.
+        // Seed a size-options bundle AT BIND (Launcher3's 3-arg bind) — Glance widgets compose from OPTION_APPWIDGET_SIZES at bind and never recover from a size-less first composition.
         val d = context.resources.displayMetrics.density
         val wdp = (providerInfo.minWidth / d).toInt().coerceAtLeast(40)
         val hdp = (providerInfo.minHeight / d).toInt().coerceAtLeast(40)
@@ -195,10 +147,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Request bind permission for a widget.
-     * Returns an intent to launch if permission is needed.
-     */
+    /** Request bind permission for a widget. Returns an intent to launch if permission is needed. */
     fun createBindIntent(appWidgetId: Int, providerInfo: AppWidgetProviderInfo): Intent {
         return Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -209,16 +158,12 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Check if a widget needs configuration before it can be used.
-     */
+    /** Check if a widget needs configuration before it can be used. */
     fun needsConfiguration(providerInfo: AppWidgetProviderInfo): Boolean {
         return providerInfo.configure != null
     }
 
-    /**
-     * Create an intent to configure a widget.
-     */
+    /** Create an intent to configure a widget. */
     fun createConfigureIntent(appWidgetId: Int, providerInfo: AppWidgetProviderInfo): Intent? {
         val configureComponent = providerInfo.configure ?: return null
         return Intent().apply {
@@ -227,10 +172,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Create a widget host view for the given widget ID.
-     * Caches the view for later access (e.g., for resize operations).
-     */
+    /** Create a widget host view for the given widget ID. Caches the view for later access (e.g., for resize operations). */
     fun createWidgetView(context: Context, appWidgetId: Int): LauncherAppWidgetHostView? {
         val host = appWidgetHost ?: return null
         val manager = appWidgetManager ?: return null
@@ -240,15 +182,7 @@ object WidgetManager {
             val view = host.createView(context, appWidgetId, providerInfo) as? LauncherAppWidgetHostView
             if (view != null) {
                 widgetViews[appWidgetId] = view
-                // Glance widgets (Samsung clock/weather, Google, etc.) render
-                // "Can't show content" until the host has published
-                // OPTION_APPWIDGET_SIZES — they compose against the sizes the
-                // launcher reports, and an empty list = no layout = error state.
-                // We previously only reported size in onGloballyPositioned (after
-                // layout), so Glance's FIRST composition saw no sizes. Seed the
-                // options from the provider's min size right now so Glance composes
-                // a real layout immediately; onGloballyPositioned later refines it
-                // to the actual cell size.
+                // Glance renders "Can't show content" until OPTION_APPWIDGET_SIZES is published — seed from the provider's min size NOW; onGloballyPositioned refines to the real cell size later.
                 try {
                     val d = context.resources.displayMetrics.density
                     updateWidgetViewSize(
@@ -265,40 +199,24 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Get a cached widget view by ID.
-     */
+    /** Get a cached widget view by ID. */
     fun getWidgetView(appWidgetId: Int): LauncherAppWidgetHostView? {
         return widgetViews[appWidgetId]
     }
 
-    /**
-     * Get a cached widget view or create a new one if not cached.
-     * Reusing cached views avoids content flash when HorizontalPager
-     * re-composes a page (e.g., during cross-page drag scroll-back).
-     */
+    /** Get a cached widget view or create a new one if not cached. Reusing cached views avoids content flash when HorizontalPager re-composes a page (e.g., during cross-page drag scroll-back). */
     fun getOrCreateWidgetView(context: Context, appWidgetId: Int): LauncherAppWidgetHostView? {
         return widgetViews[appWidgetId] ?: createWidgetView(context, appWidgetId)
     }
 
-    /**
-     * Update a widget's rendered size. Sizes must be in dp (not px).
-     * This calls updateAppWidgetSize on the widget's host view.
-     */
+    /** Update a widget's rendered size. Sizes must be in dp (not px). This calls updateAppWidgetSize on the widget's host view. */
     fun updateWidgetViewSize(appWidgetId: Int, widthDp: Int, heightDp: Int) {
         val view = widgetViews[appWidgetId] ?: return
         val w = widthDp.coerceAtLeast(1)
         val h = heightDp.coerceAtLeast(1)
         try {
             if (android.os.Build.VERSION.SDK_INT >= 31) {
-                // The Launcher3/Lawnchair path on Android 12+: ONE call that sets
-                // min/max AND a non-empty OPTION_APPWIDGET_SIZES atomically and
-                // notifies the provider once. The legacy 4-arg overload on 12+
-                // internally pushes options with an EMPTY sizes list first — Glance
-                // widgets (Samsung clock/weather) compose "Can't show content" from
-                // that empty push and often stay stuck even after a corrected bundle
-                // follows (a race we lose). The modern overload never emits the
-                // empty state at all.
+                // Android 12+ single-call overload sets min/max + non-empty SIZES atomically — the legacy 4-arg path pushes an EMPTY sizes list first, which sticks Glance widgets in "Can't show content".
                 view.updateAppWidgetSize(
                     Bundle(),
                     listOf(android.util.SizeF(w.toFloat(), h.toFloat()))
@@ -312,36 +230,17 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Remove a widget view from the cache.
-     */
+    /** Remove a widget view from the cache. */
     fun removeWidgetView(appWidgetId: Int) {
         widgetViews.remove(appWidgetId)
     }
 
-    /**
-     * Drop every cached host view. MUST be called from Activity.onDestroy():
-     * the cached views were created with the ACTIVITY context, and this map is
-     * a process-wide singleton — after an activity recreation (fold/unfold,
-     * theme change, rotation) the stale views pin the dead Activity, its View
-     * tree and its whole Compose composition in memory. Each recreation leaked
-     * another full activity ("Activities: 2" in dumpsys meminfo), and the
-     * growing GC pressure made the drawer progressively laggy over 30-60 min.
-     * The new composition recreates views lazily via getOrCreateWidgetView();
-     * the (app-context) host keeps listening, so widgets re-fill immediately.
-     */
+    /** Drop every cached host view — MUST run in Activity.onDestroy(): views hold the ACTIVITY context in a singleton map, so keeping them across recreation leaks the dead activity + composition (progressive drawer lag); views recreate lazily and the app-context host keeps listening. */
     fun clearViewCache() {
         widgetViews.clear()
     }
 
-    /**
-     * Re-bind every cached host view to its current provider info. Called
-     * by `LauncherAppWidgetHost.onProvidersChanged` when *any* provider
-     * package on the device is added / updated / removed. Matches what
-     * Launcher3 does so that a freshly-installed APK (e.g. a widget app
-     * the user just updated from the Play Store) immediately renders
-     * with the new provider's metadata + RemoteViews.
-     */
+    /** Re-bind every cached view on onProvidersChanged (any provider added/updated/removed) — Launcher3's pattern so a freshly-updated widget APK renders immediately. */
     fun rebindAllCachedViews() {
         val manager = appWidgetManager ?: return
         for ((id, view) in widgetViews) {
@@ -354,11 +253,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Re-bind a single cached host view. Called by
-     * `LauncherAppWidgetHost.onProviderChanged` for the specific provider
-     * that was updated.
-     */
+    /** Re-bind a single cached host view. Called by `LauncherAppWidgetHost.onProviderChanged` for the specific provider that was updated. */
     fun rebindCachedView(appWidgetId: Int, providerInfo: AppWidgetProviderInfo) {
         val view = widgetViews[appWidgetId] ?: return
         try {
@@ -368,13 +263,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Called by `LauncherAppWidgetHost.onAppWidgetRemoved` when the
-     * system removes a widget on its own — for example, when the
-     * provider's APK is uninstalled. Strips the persisted `PlacedWidget`
-     * entry, deletes the host ID, and clears the cached view so the
-     * user doesn't see a ghost cell on the home screen.
-     */
+    /** On system-initiated widget removal (e.g. provider uninstalled): strip the persisted entry, delete the host ID, and clear the cached view so no ghost cell remains. */
     fun handleProviderRemovedWidget(context: Context, appWidgetId: Int) {
         widgetViews.remove(appWidgetId)
         val widgets = loadPlacedWidgets(context).filter { it.appWidgetId != appWidgetId }
@@ -386,15 +275,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * API 35+ hint — pairs activity-resumed state with the host so the
-     * framework can defer non-critical updates while the launcher is
-     * paused (animation hand-off, etc.). No-op on older platforms.
-     *
-     * Called via reflection because AGP 8.2.0 (this project's plugin)
-     * doesn't expose the API 35 stub at compile time even with
-     * compileSdk = 35, so a direct method reference fails to compile.
-     */
+    /** API 35+ resumed-state hint for the host; called via reflection because AGP 8.2.0 doesn't expose the API 35 stub at compile time. */
     fun setActivityResumed(resumed: Boolean) {
         if (Build.VERSION.SDK_INT < 35) return
         val host = appWidgetHost ?: return
@@ -406,20 +287,14 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Re-apply rounded corner settings to all cached widget views.
-     * Called when the user changes the rounded corners toggle or radius.
-     */
+    /** Re-apply rounded corner settings to all cached widget views. Called when the user changes the rounded corners toggle or radius. */
     fun refreshAllWidgetCorners(context: Context) {
         for ((_, view) in widgetViews) {
             view.applyRoundedCorners(context)
         }
     }
 
-    /**
-     * Recreate a single widget view (needed when its per-widget font scale changes).
-     * The new view will use the updated Context from LauncherAppWidgetHost.
-     */
+    /** Recreate a single widget view (needed when its per-widget font scale changes). The new view will use the updated Context from LauncherAppWidgetHost. */
     fun recreateWidgetView(context: Context, appWidgetId: Int): LauncherAppWidgetHostView? {
         val host = appWidgetHost ?: return null
         val manager = appWidgetManager ?: return null
@@ -437,10 +312,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Recreate all cached widget views (needed when font scale changes).
-     * The new views will use the updated Context from LauncherAppWidgetHost.
-     */
+    /** Recreate all cached widget views (needed when font scale changes). The new views will use the updated Context from LauncherAppWidgetHost. */
     fun recreateAllWidgetViews(context: Context) {
         val host = appWidgetHost ?: return
         val manager = appWidgetManager ?: return
@@ -459,10 +331,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Stack two widgets together. The dropped widget takes the target widget's position/size.
-     * Both widgets get the same stackId.
-     */
+    /** Stack two widgets: the dropped one takes the target's position/size and both share a stackId. */
     fun stackWidgets(context: Context, droppedWidgetId: Int, targetWidgetId: Int): List<PlacedWidget> {
         val widgets = loadPlacedWidgets(context).toMutableList()
         val target = widgets.find { it.appWidgetId == targetWidgetId } ?: return widgets
@@ -495,10 +364,7 @@ object WidgetManager {
         return updatedWidgets
     }
 
-    /**
-     * Remove a widget from its stack and delete it from the home screen.
-     * If only one widget remains in the stack, dissolve the stack.
-     */
+    /** Remove a widget from its stack and delete it from the home screen. If only one widget remains in the stack, dissolve the stack. */
     fun removeFromStack(context: Context, appWidgetId: Int): List<PlacedWidget> {
         val widgets = loadPlacedWidgets(context).toMutableList()
         val widget = widgets.find { it.appWidgetId == appWidgetId } ?: return widgets
@@ -521,19 +387,12 @@ object WidgetManager {
         return updatedWidgets
     }
 
-    /**
-     * Get all widgets in a stack, ordered by stackOrder.
-     */
+    /** Get all widgets in a stack, ordered by stackOrder. */
     fun getStackWidgets(widgets: List<PlacedWidget>, stackId: String): List<PlacedWidget> {
         return widgets.filter { it.stackId == stackId }.sortedBy { it.stackOrder }
     }
 
-    /**
-     * Apply slideshow settings (enabled + interval) to every widget in a stack
-     * and persist. Returns the updated list so the caller can swap it into
-     * state. Stack-level setting stored on every member so reads of any one
-     * widget yield the same value.
-     */
+    /** Apply slideshow settings to every stack member and persist; returns the updated list for the caller's state. */
     fun setStackSlideshow(
         context: Context,
         widgets: List<PlacedWidget>,
@@ -553,27 +412,20 @@ object WidgetManager {
         return updated
     }
 
-    /**
-     * The home grid's real cell size in dp (width, height) — same math as
-     * LauncherScreen's grid layout, so spans match what actually renders.
-     */
+    /** The home grid's real cell size in dp (width, height) — same math as LauncherScreen's grid layout, so spans match what actually renders. */
     fun homeCellSizeDp(context: Context): Pair<Float, Float> {
         val config = context.resources.configuration
         val screenWidthDp = config.screenWidthDp.toFloat()
         val screenHeightDp = config.screenHeightDp.toFloat()
         val gridColumns = getHomeGridSize(context).coerceAtLeast(1)
         val gridRows = getHomeGridRows(context).coerceAtLeast(1)
-        val cellWidth = (screenWidthDp - screenWidthDp * 0.044f * 2) / gridColumns
+        val hPadF = com.bearinmind.launcher314.data.homeGridHPadFactor(context)
+        val cellWidth = (screenWidthDp - screenWidthDp * hPadF * 2) / gridColumns
         val cellHeight = (screenHeightDp - 76f - screenWidthDp * 0.022f * 2) / gridRows
         return Pair(cellWidth.coerceAtLeast(1f), cellHeight.coerceAtLeast(1f))
     }
 
-    /**
-     * Calculate the number of grid cells a widget needs (Launcher3 approach):
-     * targetCellWidth/Height when declared (S+), else from minWidth/minHeight
-     * against the REAL cell size — always clamped to the grid, so a widget can
-     * never demand more cells than the grid has.
-     */
+    /** Cells a widget needs (Launcher3 approach): declared targetCell sizes on S+, else min sizes against the REAL cell size — always clamped to the grid. */
     fun calculateCellSpan(context: Context, providerInfo: AppWidgetProviderInfo): Pair<Int, Int> {
         val density = context.resources.displayMetrics.density
         val (cellW, cellH) = homeCellSizeDp(context)
@@ -604,13 +456,7 @@ object WidgetManager {
             b.startRow < a.startRow + a.rowSpan
     }
 
-    /**
-     * Re-flow placed widgets after a grid-size change (Launcher3's
-     * GridSizeMigrationLogic approach): keep each widget where it is when it
-     * still fits, otherwise shrink it to fit and row-major scan for the first
-     * vacant region, spilling onto later pages when a page is full. Cells taken
-     * by home apps/folders are treated as occupied so widgets don't land on them.
-     */
+    /** Re-flow widgets after a grid-size change (Launcher3's GridSizeMigrationLogic): keep-if-fits, else shrink + row-major scan for a vacancy, spilling to later pages; app/folder cells count as occupied. */
     fun reconcileWidgetsToGrid(context: Context, widgets: List<PlacedWidget>): List<PlacedWidget> {
         if (widgets.isEmpty()) return widgets
         val columns = getHomeGridSize(context).coerceAtLeast(1)
@@ -717,17 +563,13 @@ object WidgetManager {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    /**
-     * Save placed widgets to persistent storage.
-     */
+    /** Save placed widgets to persistent storage. */
     fun savePlacedWidgets(context: Context, widgets: List<PlacedWidget>) {
         val jsonString = json.encodeToString(widgets)
         getPrefs(context).edit().putString(KEY_PLACED_WIDGETS, jsonString).apply()
     }
 
-    /**
-     * Load placed widgets from persistent storage.
-     */
+    /** Load placed widgets from persistent storage. */
     fun loadPlacedWidgets(context: Context): List<PlacedWidget> {
         val jsonString = getPrefs(context).getString(KEY_PLACED_WIDGETS, null) ?: return emptyList()
         return try {
@@ -738,33 +580,23 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Add a widget to the placed widgets list.
-     */
+    /** Add a widget to the placed widgets list. */
     fun addPlacedWidget(context: Context, widget: PlacedWidget) {
         val widgets = loadPlacedWidgets(context).toMutableList()
         widgets.add(widget)
         savePlacedWidgets(context, widgets)
     }
 
-    /**
-     * Remove a widget from the placed widgets list.
-     */
+    /** Remove a widget from the placed widgets list. */
     fun removePlacedWidget(context: Context, appWidgetId: Int) {
         val widgets = loadPlacedWidgets(context).filter { it.appWidgetId != appWidgetId }
         savePlacedWidgets(context, widgets)
         deleteWidgetId(appWidgetId)
-        // FIX: Clean the cached LauncherAppWidgetHostView alongside the host-ID deletion
-        // so a leftover orphan view can't be re-parented into a sibling widget's container
-        // during recomposition (caused the "removed widget takes over another widget's slot"
-        // bug). Matches the cleanup order used by removeFromStack().
+        // Clean the cached host view with the host-ID deletion — an orphan view could get re-parented into a sibling's container ("removed widget takes over another slot" bug).
         removeWidgetView(appWidgetId)
     }
 
-    /**
-     * Update a widget's position and size (Einstein style).
-     * If the widget is in a stack, all widgets in the stack are updated to match.
-     */
+    /** Update a widget's position and size (Einstein style). If the widget is in a stack, all widgets in the stack are updated to match. */
     fun updateWidget(
         context: Context,
         appWidgetId: Int,
@@ -790,9 +622,7 @@ object WidgetManager {
         savePlacedWidgets(context, updatedWidgets)
     }
 
-    /**
-     * Update a widget's position and size (legacy compatibility).
-     */
+    /** Update a widget's position and size (legacy compatibility). */
     fun updateWidgetPositionAndSize(
         context: Context,
         appWidgetId: Int,
@@ -804,10 +634,7 @@ object WidgetManager {
         updateWidget(context, appWidgetId, column, row, spanColumns, spanRows)
     }
 
-    /**
-     * Update a widget's position only.
-     * If the widget is in a stack, all widgets in the stack are updated to match.
-     */
+    /** Update a widget's position only. If the widget is in a stack, all widgets in the stack are updated to match. */
     fun updateWidgetPosition(context: Context, appWidgetId: Int, startColumn: Int, startRow: Int, page: Int? = null) {
         val widgets = loadPlacedWidgets(context)
         val target = widgets.find { it.appWidgetId == appWidgetId }
@@ -821,10 +648,7 @@ object WidgetManager {
         savePlacedWidgets(context, updatedWidgets)
     }
 
-    /**
-     * Update a widget's size only.
-     * If the widget is in a stack, all widgets in the stack are updated to match.
-     */
+    /** Update a widget's size only. If the widget is in a stack, all widgets in the stack are updated to match. */
     fun updateWidgetSize(context: Context, appWidgetId: Int, columnSpan: Int, rowSpan: Int) {
         val widgets = loadPlacedWidgets(context)
         val target = widgets.find { it.appWidgetId == appWidgetId }
@@ -838,10 +662,7 @@ object WidgetManager {
         savePlacedWidgets(context, updatedWidgets)
     }
 
-    /**
-     * Get minimum resize dimensions for a widget (in cells).
-     * Based on minResizeWidth/minResizeHeight from provider info.
-     */
+    /** Minimum resize dimensions in cells, from the provider's minResizeWidth/Height. */
     fun getMinResizeCells(context: Context, providerInfo: AppWidgetProviderInfo): Pair<Int, Int> {
         val density = context.resources.displayMetrics.density
         val (cellW, cellH) = homeCellSizeDp(context)
@@ -866,10 +687,7 @@ object WidgetManager {
         )
     }
 
-    /**
-     * Get maximum resize dimensions for a widget (in cells).
-     * Based on maxResizeWidth/maxResizeHeight from provider info (Android S+).
-     */
+    /** Maximum resize dimensions in cells, from the provider's maxResizeWidth/Height (Android S+). */
     fun getMaxResizeCells(context: Context, providerInfo: AppWidgetProviderInfo, maxGridCols: Int, maxGridRows: Int): Pair<Int, Int> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val density = context.resources.displayMetrics.density
@@ -889,9 +707,7 @@ object WidgetManager {
         return Pair(maxGridCols, maxGridRows)
     }
 
-    /**
-     * Check if a widget supports resizing.
-     */
+    /** Check if a widget supports resizing. */
     fun canResize(providerInfo: AppWidgetProviderInfo): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             providerInfo.resizeMode != AppWidgetProviderInfo.RESIZE_NONE
@@ -900,9 +716,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Check if a widget can resize horizontally.
-     */
+    /** Check if a widget can resize horizontally. */
     fun canResizeHorizontally(providerInfo: AppWidgetProviderInfo): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             (providerInfo.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
@@ -911,9 +725,7 @@ object WidgetManager {
         }
     }
 
-    /**
-     * Check if a widget can resize vertically.
-     */
+    /** Check if a widget can resize vertically. */
     fun canResizeVertically(providerInfo: AppWidgetProviderInfo): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             (providerInfo.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL) != 0

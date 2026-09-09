@@ -890,6 +890,15 @@ object SliderConfigs {
         label = "App Drawer Rows"
     )
 
+    // Experimental (issue #106): outer margins as % of stock; 0 = grid flush with the screen edges. Tick styling mirrors dockColumns.
+    val homeOuterMargin = HorizontalSliderConfig(
+        minValue = 0f,
+        maxValue = 100f,
+        tickValues = listOf(0, 25, 50, 75, 100),
+        snapTickValues = (0..100).toList(),
+        label = "Outer Margins"
+    )
+
     val dockColumnsExtended = HorizontalSliderConfig(
         minValue = 1f,
         maxValue = 20f,
