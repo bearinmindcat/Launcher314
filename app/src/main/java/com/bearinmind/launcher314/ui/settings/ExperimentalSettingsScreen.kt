@@ -43,8 +43,11 @@ import com.bearinmind.launcher314.data.getHomeOuterMarginPercent
 import com.bearinmind.launcher314.data.getOuterMarginsEnabled
 import com.bearinmind.launcher314.data.setExtendedGridSize
 import com.bearinmind.launcher314.data.setExtendedIconSizes
+import com.bearinmind.launcher314.data.getWallpaperAccentEnabled
 import com.bearinmind.launcher314.data.setHomeOuterMarginPercent
 import com.bearinmind.launcher314.data.setOuterMarginsEnabled
+import com.bearinmind.launcher314.data.setWallpaperAccentEnabled
+import com.bearinmind.launcher314.ui.theme.ThemeAccentSignal
 import com.bearinmind.launcher314.ui.components.SliderConfigs
 import com.bearinmind.launcher314.ui.components.ThumbDragHorizontalSlider
 import kotlin.math.roundToInt
@@ -95,6 +98,17 @@ fun ExperimentalSettingsScreen(onBack: () -> Unit) {
                 onCheckedChange = {
                     extendedGrid = it
                     setExtendedGridSize(context, it)
+                }
+            )
+            var wallpaperAccent by remember { mutableStateOf(getWallpaperAccentEnabled(context)) }
+            SettingsToggleItem(
+                title = "Wallpaper accent",
+                subtitle = "Tints the launcher with your wallpaper's color",
+                checked = wallpaperAccent,
+                onCheckedChange = {
+                    wallpaperAccent = it
+                    setWallpaperAccentEnabled(context, it)
+                    ThemeAccentSignal.state.intValue++
                 }
             )
             // Outer margins (issue #106): 100 = stock spacing, 0 = grid flush with the screen edges; checkbox enables the slider (Font / "Hide text" pattern).

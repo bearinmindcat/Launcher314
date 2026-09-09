@@ -629,6 +629,19 @@ fun setExtendedGridSize(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_EXTENDED_GRID_SIZE, enabled).apply()
 }
 
+// EXPERIMENTAL (issue #102): tint the launcher accent with the wallpaper's color (Monet on 12+, WallpaperColors on 8.1+).
+private const val KEY_WALLPAPER_ACCENT = "experimental_wallpaper_accent"
+
+fun getWallpaperAccentEnabled(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_WALLPAPER_ACCENT, false)
+}
+
+fun setWallpaperAccentEnabled(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_WALLPAPER_ACCENT, enabled).apply()
+}
+
 // EXPERIMENTAL (issue #106): outer margins as % of the stock margin (100 = stock, 0 = flush with the screen edges), gated by an enable toggle.
 private const val KEY_OUTER_MARGINS_ENABLED = "experimental_outer_margins_enabled"
 private const val KEY_HOME_OUTER_MARGIN = "experimental_home_outer_margin"
