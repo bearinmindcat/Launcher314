@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bearinmind.launcher314.data.getExtendedGridSize
 import com.bearinmind.launcher314.data.getExtendedIconSizes
+import com.bearinmind.launcher314.data.getFolderAutoSizeEnabled
+import com.bearinmind.launcher314.data.setFolderAutoSizeEnabled
 import com.bearinmind.launcher314.data.getHomeOuterMarginPercent
 import com.bearinmind.launcher314.data.getOuterMarginsEnabled
 import com.bearinmind.launcher314.data.setExtendedGridSize
@@ -98,6 +100,16 @@ fun ExperimentalSettingsScreen(onBack: () -> Unit) {
                 onCheckedChange = {
                     extendedGrid = it
                     setExtendedGridSize(context, it)
+                }
+            )
+            var folderAutoSize by remember { mutableStateOf(getFolderAutoSizeEnabled(context)) }
+            SettingsToggleItem(
+                title = "Folder auto-size",
+                subtitle = "Home folders size themselves to their contents",
+                checked = folderAutoSize,
+                onCheckedChange = {
+                    folderAutoSize = it
+                    setFolderAutoSizeEnabled(context, it)
                 }
             )
             var wallpaperAccent by remember { mutableStateOf(getWallpaperAccentEnabled(context)) }

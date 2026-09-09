@@ -368,18 +368,40 @@ private fun reflowFolderCells(
     return placed.toMap()
 }
 
-/**
- * Default OPEN-folder grid size. One fewer column/row than the home grid so the
- * folder's icons default to ~home/drawer size instead of shrinking to fit a full
- * home-sized grid inside the smaller popup. Resizing overrides this (icons reflow).
- */
+/** Default OPEN-folder columns: one fewer than home so folder icons stay ~home size; resizing overrides. */
 private fun folderDefaultCols(gridColumns: Int): Int = (gridColumns - 1).coerceAtLeast(2)
 
-/**
- * Default OPEN-folder rows: one fewer than home, but grown so EVERY app still gets
- * a cell — the folder grid is fixed (non-scrolling) and [reflowFolderCells] drops
- * apps that have no cell, so we must never default to fewer cells than apps.
- */
+/** Folder popup size limits + defaults bundled off the 64KB-limited LauncherScreen body. */
+private class FolderPopupMetrics(val defaultWpx: Float, val defaultHpx: Float, val minWpx: Float, val minHpx: Float, val maxWpx: Float, val maxHpx: Float)
+private fun folderPopupMetrics(density: androidx.compose.ui.unit.Density, screenWpx: Float, screenHpx: Float): FolderPopupMetrics = with(density) {
+    FolderPopupMetrics(
+        (screenWpx * 0.72f).coerceAtMost(320.dp.toPx()),
+        screenHpx * 0.38f + 52.dp.toPx(),
+        200.dp.toPx(),
+        200.dp.toPx(),
+        screenWpx - 2f * 16.dp.toPx(),
+        // Half the screen height so the popup always fits fully above or below the folder icon.
+        screenHpx * 0.5f
+    )
+}
+
+/** Experimental (issue #81): popup grid + card size derived from the app count, icons kept at full home size; null when the toggle is off. */
+private class FolderAutoSize(val cols: Int, val rows: Int, val wPx: Float, val hPx: Float)
+private fun folderAutoSize(context: android.content.Context, folder: HomeFolder, density: androidx.compose.ui.unit.Density, iconSizeDp: Int): FolderAutoSize? {
+    if (!com.bearinmind.launcher314.data.getFolderAutoSizeEnabled(context)) return null
+    val n = folder.appPackageNames.count { it.isNotEmpty() }.coerceAtLeast(1)
+    val cols = kotlin.math.ceil(kotlin.math.sqrt(n.toDouble())).toInt().coerceIn(1, 4)
+    val rows = ((n + cols - 1) / cols).coerceAtLeast(1)
+    val iconPx = with(density) { iconSizeDp.dp.toPx() }
+    val padPx = with(density) { 16.dp.toPx() }
+    val titleBarPx = with(density) { 52.dp.toPx() }
+    // Cell sized so the fit formula (0.82w / 0.58h caps) lands exactly on the full home icon size, with a hair of slack.
+    val cellW = iconPx / 0.82f * 1.04f
+    val cellH = iconPx / 0.58f * 1.02f
+    return FolderAutoSize(cols, rows, cellW * cols + padPx, cellH * rows + titleBarPx + padPx)
+}
+
+/** Default OPEN-folder rows: one fewer than home, grown so EVERY app gets a cell — the fixed grid drops cell-less apps, so never default below the app count. */
 private fun folderDefaultRows(folder: HomeFolder, gridColumns: Int, gridRows: Int): Int {
     val cols = folderDefaultCols(gridColumns)
     val appCount = folder.appPackageNames.count { it.isNotEmpty() }
@@ -7153,27 +7175,13 @@ fun LauncherScreen(
         var folderOverlayRootPos by remember { mutableStateOf(Offset.Zero) }
         var folderHeaderBottomY by remember { mutableStateOf(0f) }
 
-        // ── Bounded-popup placement (Lawnchair / Neo Launcher style) ──────
-        // Card opens just above or below the tapped folder, ~85% of screen
-        // width with a 400dp cap. Wallpaper + home grid stays visible behind
-        // a 50% black dim. Tap-outside closes. transformOrigin points toward
-        // the anchor so the scale-up reads as "growing out of the folder".
+        // Bounded-popup placement (Lawnchair style): card opens above/below the tapped folder over a dim, transformOrigin at the anchor so it grows out of the icon.
         val folderDensity = LocalDensity.current
         val folderConfig = LocalConfiguration.current
         val screenWpx = with(folderDensity) { folderConfig.screenWidthDp.dp.toPx() }
         val screenHpx = with(folderDensity) { folderConfig.screenHeightDp.dp.toPx() }
-        // Narrower / shorter popup, closer to Lawnchair's compact card. The
-        // wide 85%-screen version felt like a generic dialog floating over
-        // the wallpaper; this size makes the popup feel like the folder
-        // cell itself stretched outward. Height = grid area + title bar so
-        // adding the title doesn't squish the apps. The user can drag-
-        // resize the popup via the title-bar's "Resize" menu — saved
-        // dimensions live in AppCustomization keyed by folder ID and
-        // override the defaults below when present.
-        val maxCardWpx = with(folderDensity) { 320.dp.toPx() }
-        val defaultPopupWpx = (screenWpx * 0.72f).coerceAtMost(maxCardWpx)
-        val titleBarPx = with(folderDensity) { 52.dp.toPx() }
-        val defaultPopupHpx = screenHpx * 0.38f + titleBarPx
+        // Compact Lawnchair-style card sizing lives in folderPopupMetrics; manual "Resize" dimensions (AppCustomization, keyed by folder id) override the defaults.
+        val fpm = folderPopupMetrics(folderDensity, screenWpx, screenHpx)
         val folderCust = appCustomizations.customizations[folder.id]
         var resizeWidthOverride by remember(folder.id) {
             mutableStateOf(folderCust?.folderPopupWidthPx?.toFloat())
@@ -7181,9 +7189,7 @@ fun LauncherScreen(
         var resizeHeightOverride by remember(folder.id) {
             mutableStateOf(folderCust?.folderPopupHeightPx?.toFloat())
         }
-        // Per-folder grid overrides. Null while the user hasn't opted in;
-        // the Resize panel seeds these from the global gridColumns/gridRows
-        // on first open so the steppers start from a real value.
+        // Per-folder grid overrides — null until the Resize panel seeds them from the global grid.
         var resizeColumnsOverride by remember(folder.id) {
             mutableStateOf(folderCust?.folderGridColumns)
         }
@@ -7191,9 +7197,7 @@ fun LauncherScreen(
             mutableStateOf(folderCust?.folderGridRows)
         }
         var isResizingFolder by remember(folder.id) { mutableStateOf(false) }
-        // Spring-driven resize enter/exit progress (declared here so the popup
-        // card's static border can cross-fade out as the dashed resize outline
-        // fades in — see the .border below).
+        // Spring-driven resize enter/exit progress — the card's static border cross-fades against the dashed resize outline.
         val resizeAnimProgress by animateFloatAsState(
             targetValue = if (isResizingFolder) 1f else 0f,
             animationSpec = spring(
@@ -7203,31 +7207,20 @@ fun LauncherScreen(
             ),
             label = "folderResizeAnim"
         )
-        // Effective grid dims used by the folder render loop. The Resize
-        // session updates the overrides live; the loop reads these.
-        val folderGridColumns = resizeColumnsOverride ?: folderDefaultCols(gridColumns)
-        val folderGridRows = resizeRowsOverride ?: folderDefaultRows(folder, gridColumns, gridRows)
-        val minPopupWpx = with(folderDensity) { 200.dp.toPx() }
-        val minPopupHpx = with(folderDensity) { 200.dp.toPx() }
-        val maxPopupWpx = screenWpx - 2f * with(folderDensity) { 16.dp.toPx() }
-        // Cap at HALF the screen height so the popup can always sit ABOVE or
-        // BELOW the folder icon no matter where the icon is on screen — the
-        // grow-from-icon animation only reads correctly when one full popup
-        // height fits between the icon's edge and the matching screen edge.
-        val maxPopupHpx = screenHpx * 0.5f
-        val popupWpx = (resizeWidthOverride ?: defaultPopupWpx)
+        // Effective grid dims used by the folder render loop. Manual resize wins, then auto-size (issue #81), then the stock defaults.
+        val autoSz = folderAutoSize(context, folder, folderDensity, iconSizeDp)
+        val folderGridColumns = resizeColumnsOverride ?: autoSz?.cols ?: folderDefaultCols(gridColumns)
+        val folderGridRows = resizeRowsOverride ?: autoSz?.rows ?: folderDefaultRows(folder, gridColumns, gridRows)
+        val minPopupWpx = fpm.minWpx
+        val minPopupHpx = fpm.minHpx
+        val maxPopupWpx = fpm.maxWpx
+        val maxPopupHpx = fpm.maxHpx
+        val popupWpx = (resizeWidthOverride ?: autoSz?.wPx ?: fpm.defaultWpx)
             .coerceIn(minPopupWpx, maxPopupWpx)
-        val popupHpx = (resizeHeightOverride ?: defaultPopupHpx)
+        val popupHpx = (resizeHeightOverride ?: autoSz?.hPx ?: fpm.defaultHpx)
             .coerceIn(minPopupHpx, maxPopupHpx)
 
-        // ── Auto-shrink folder icons so they never overlap (folder-only) ──
-        // The grid cells split the popup evenly (weight 1f). Compute each
-        // cell's px size from the popup content area, then cap the icon so it
-        // fits its cell with margin. min() with the normal home icon size
-        // means icons only ever get SMALLER than home — never bigger — so a
-        // sparse folder still looks like the home screen, but a dense grid
-        // (or a small / resized popup) flows the icons down instead of
-        // overlapping. Home and dock are untouched; this is the folder only.
+        // Auto-shrink folder icons (folder-only): cap icons to their cell so a dense grid or small popup flows instead of overlapping — icons only ever get SMALLER than home, never bigger.
         val folderGridPadPx = with(folderDensity) { 16.dp.toPx() }   // 8dp each side
         val folderTitleBarPx2 = with(folderDensity) { 52.dp.toPx() }
         val folderContentWpx = (popupWpx - folderGridPadPx).coerceAtLeast(1f)
