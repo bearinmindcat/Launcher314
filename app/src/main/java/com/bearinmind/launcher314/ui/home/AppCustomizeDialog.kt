@@ -173,8 +173,9 @@ fun AppCustomizeDialog(
         (currentCustomization?.iconTintIntensity ?: 100).toFloat()
     ) }
     // Per-app icon size uses absolute percentage (same scale as global slider)
+    val perAppIconCfg = if (remember { com.bearinmind.launcher314.data.getExtendedIconSizes(context) }) SliderConfigs.perAppIconSizeExtended else SliderConfigs.perAppIconSize
     var selectedSizePercent by remember { mutableStateOf(
-        (currentCustomization?.iconSizePercent ?: globalIconSizePercent).toFloat().coerceIn(SliderConfigs.perAppIconSize.minValue, SliderConfigs.perAppIconSize.maxValue)
+        (currentCustomization?.iconSizePercent ?: globalIconSizePercent).toFloat().coerceIn(perAppIconCfg.minValue, perAppIconCfg.maxValue)
     ) }
     var tintBackgroundOnly by remember { mutableStateOf(currentCustomization?.iconTintBackgroundOnly ?: false) }
     // Issue #48 — Experimental: detach the icon from the grid.
@@ -564,7 +565,7 @@ fun AppCustomizeDialog(
                                     selectedTintColor = null
                                     tintIntensity = 100f
                                     tintBackgroundOnly = false
-                                    selectedSizePercent = globalIconSizePercent.toFloat().coerceIn(SliderConfigs.perAppIconSize.minValue, SliderConfigs.perAppIconSize.maxValue)
+                                    selectedSizePercent = globalIconSizePercent.toFloat().coerceIn(perAppIconCfg.minValue, perAppIconCfg.maxValue)
                                     customIconPath = null
                                     selectedIconPackName = null
                                     selectedTextSizePercent = globalIconTextSizePercent.toFloat().coerceIn(SliderConfigs.iconTextSize.minValue, SliderConfigs.iconTextSize.maxValue)
@@ -952,7 +953,7 @@ fun AppCustomizeDialog(
                             ) {
                                 ThumbDragHorizontalSlider(
                                     currentValue = selectedSizePercent,
-                                    config = SliderConfigs.perAppIconSize,
+                                    config = perAppIconCfg,
                                     overflowThreshold = iconSizeOverflowThreshold,
                                     onValueChange = { selectedSizePercent = it },
                                     onValueChangeFinished = {}

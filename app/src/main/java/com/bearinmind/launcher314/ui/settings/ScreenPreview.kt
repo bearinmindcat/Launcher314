@@ -2258,15 +2258,17 @@ private fun HomeVerticalIconSizeSlider(
     onSizeChange: (Float) -> Unit,
     onSizeChangeFinished: () -> Unit
 ) {
-    // Always 50-125 range, with overflow threshold for visual warning
-    val config = SliderConfigs.iconSizePercent
+    // Experimental (issue #50): "Extended icon sizes" swaps in the 200% config with no drag cap.
+    val extCtx = LocalContext.current
+    val extended = remember { com.bearinmind.launcher314.data.getExtendedIconSizes(extCtx) }
+    val config = if (extended) SliderConfigs.iconSizePercentExtended else SliderConfigs.iconSizePercent
     ThumbDragVerticalSlider(
         currentValue = currentSize,
         sliderHeight = sliderHeight,
         config = config,
         onValueChange = onSizeChange,
         onValueChangeFinished = onSizeChangeFinished,
-        overflowThreshold = overflowThreshold
+        overflowThreshold = if (extended) config.maxValue else overflowThreshold
     )
 }
 

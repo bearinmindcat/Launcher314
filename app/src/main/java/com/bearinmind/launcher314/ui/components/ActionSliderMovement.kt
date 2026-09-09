@@ -39,17 +39,20 @@ fun VerticalIconSizeSlider(
     onSizeChangeFinished: () -> Unit,
     overflowThreshold: Float = 125f  // above this value, track/thumb turns red (visual warning only)
 ) {
+    // Experimental (issue #50): "Extended icon sizes" opens the range to 200% and the overflow cap becomes a warning only.
+    val extendedCtx = androidx.compose.ui.platform.LocalContext.current
+    val extendedSizes = remember { com.bearinmind.launcher314.data.getExtendedIconSizes(extendedCtx) }
     val minValue = 50f
-    val effectiveMax = 125f
-    // Major tick values (at every 25%)
-    val majorTickValues = listOf(50, 75, 100, 125)
+    val effectiveMax = if (extendedSizes) 200f else 125f
+    // Major tick values
+    val majorTickValues = if (extendedSizes) listOf(50, 100, 150, 200) else listOf(50, 75, 100, 125)
     // Minor tick values (every 5%)
-    val minorTickValues = (50..125 step 5).toList()
+    val minorTickValues = (50..effectiveMax.toInt() step 5).toList()
     // Snap to 5% increments (when linked, snap to linked values within range)
-    val snapTickValues = if (isLinked) listOf(67, 80, 100, 133).filter { it <= 125 } else minorTickValues
+    val snapTickValues = if (isLinked) listOf(67, 80, 100, 133, 160, 200).filter { it <= effectiveMax.toInt() } else minorTickValues
 
-    // Cap at highest usable snap value (below overflow threshold)
-    val dragMax = if (overflowThreshold >= effectiveMax) effectiveMax
+    // Cap at highest usable snap value (below overflow threshold); extended mode drags the full range.
+    val dragMax = if (extendedSizes || overflowThreshold >= effectiveMax) effectiveMax
         else snapTickValues.filter { it.toFloat() <= overflowThreshold }.maxOrNull()?.toFloat() ?: minValue
     // Clamp currentSize to full range (allow dragging into red zone)
     val clampedSize = currentSize.coerceIn(minValue, effectiveMax)

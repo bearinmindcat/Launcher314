@@ -1413,7 +1413,7 @@ internal fun SelectableAppItem(
 
                     Box(
                         modifier = Modifier
-                            .size(folderBoxSize)
+                            .requiredSize(folderBoxSize)
                             .graphicsLayer {
                                 this.alpha = folderPreviewProgress
                                 scaleX = previewScale

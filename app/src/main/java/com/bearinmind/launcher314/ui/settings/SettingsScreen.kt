@@ -116,6 +116,7 @@ fun SettingsScreen(
     onEditDrawerSettingsClick: () -> Unit = {},
     onEditHomeSettingsClick: () -> Unit = {},
     onManageTabsClick: () -> Unit = {},
+    onExperimentalSettingsClick: () -> Unit = {},
     onPickAppForGesture: (com.bearinmind.launcher314.data.GestureId) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -560,7 +561,7 @@ fun SettingsScreen(
                         .padding(horizontal = 4.dp, vertical = 8.dp)
                         .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { }
+                        .clickable { onExperimentalSettingsClick() }
                         .padding(horizontal = 16.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {

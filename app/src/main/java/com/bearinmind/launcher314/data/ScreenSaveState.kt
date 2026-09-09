@@ -675,6 +675,19 @@ fun getHiddenApps(context: Context): Set<String> {
     return prefs.getStringSet(KEY_HIDDEN_APPS, emptySet()) ?: emptySet()
 }
 
+// EXPERIMENTAL (issue #50): icon size sliders open up to 200% instead of 125%.
+private const val KEY_EXTENDED_ICON_SIZES = "experimental_extended_icon_sizes"
+
+fun getExtendedIconSizes(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_EXTENDED_ICON_SIZES, false)
+}
+
+fun setExtendedIconSizes(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_EXTENDED_ICON_SIZES, enabled).apply()
+}
+
 fun setHiddenApps(context: Context, hiddenApps: Set<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()

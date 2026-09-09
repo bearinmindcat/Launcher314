@@ -1046,7 +1046,7 @@ fun DraggableGridCell(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(folderBoxSize)
+                                        .requiredSize(folderBoxSize)
                                         .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                                         .background(Color(0xFF1A1A1A))
                                         .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)),
@@ -1524,7 +1524,7 @@ fun DraggableGridCell(
 
                             Box(
                                 modifier = Modifier
-                                    .size(folderBoxSize)
+                                    .requiredSize(folderBoxSize)
                                     .onGloballyPositioned { coords ->
                                         // Always use the final target scale (1.265f) so popup doesn't stutter during animation
                                         val targetScale = 1.265f
@@ -2564,7 +2564,7 @@ fun DockSlot(
 
                 Box(
                     modifier = Modifier
-                        .size(folderBoxSize)
+                        .requiredSize(folderBoxSize)
                         .onGloballyPositioned { coords ->
                             // Report the dock folder icon's bounds at the opened
                             // scale (1.265, matching home) so the popup covers it.

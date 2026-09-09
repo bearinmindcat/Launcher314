@@ -98,8 +98,9 @@ fun FolderCustomizeDialog(
     var tintIntensity by remember { mutableStateOf(
         (currentCustomization?.iconTintIntensity ?: 100).toFloat()
     ) }
+    val perAppIconCfg = if (remember { com.bearinmind.launcher314.data.getExtendedIconSizes(context) }) SliderConfigs.perAppIconSizeExtended else SliderConfigs.perAppIconSize
     var selectedSizePercent by remember { mutableStateOf(
-        (currentCustomization?.iconSizePercent ?: globalIconSizePercent).toFloat().coerceIn(SliderConfigs.perAppIconSize.minValue, SliderConfigs.perAppIconSize.maxValue)
+        (currentCustomization?.iconSizePercent ?: globalIconSizePercent).toFloat().coerceIn(perAppIconCfg.minValue, perAppIconCfg.maxValue)
     ) }
     var selectedShapeExp by remember { mutableStateOf(currentCustomization?.iconShapeExp) }
     var selectedTextSizePercent by remember { mutableStateOf(
@@ -214,7 +215,7 @@ fun FolderCustomizeDialog(
                                     selectedShapeExp = null
                                     selectedTintColor = null
                                     tintIntensity = 100f
-                                    selectedSizePercent = globalIconSizePercent.toFloat().coerceIn(SliderConfigs.perAppIconSize.minValue, SliderConfigs.perAppIconSize.maxValue)
+                                    selectedSizePercent = globalIconSizePercent.toFloat().coerceIn(perAppIconCfg.minValue, perAppIconCfg.maxValue)
                                     selectedTextSizePercent = globalIconTextSizePercent.toFloat().coerceIn(SliderConfigs.iconTextSize.minValue, SliderConfigs.iconTextSize.maxValue)
                                     selectedFontId = null
                                     selectedLabelColor = null
@@ -516,7 +517,7 @@ fun FolderCustomizeDialog(
                             ) {
                                 ThumbDragHorizontalSlider(
                                     currentValue = selectedSizePercent,
-                                    config = SliderConfigs.perAppIconSize,
+                                    config = perAppIconCfg,
                                     overflowThreshold = iconSizeOverflowThreshold,
                                     onValueChange = { selectedSizePercent = it },
                                     onValueChangeFinished = {}

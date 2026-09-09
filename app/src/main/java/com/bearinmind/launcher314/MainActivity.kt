@@ -835,6 +835,9 @@ fun MainScreen(
                             onManageTabsClick = {
                                 navController.navigateSafely("manage_tabs")
                             },
+                            onExperimentalSettingsClick = {
+                                navController.navigateSafely("experimental_settings")
+                            },
                             onPickAppForGesture = { gestureId ->
                                 navController.navigateSafely("app_picker/${gestureId.name}")
                             }
@@ -860,6 +863,11 @@ fun MainScreen(
                         }
                     },
                     onOpenPinnedApps = { navController.navigateSafely("pinned_apps") }
+                )
+            }
+            composable("experimental_settings") {
+                com.bearinmind.launcher314.ui.settings.ExperimentalSettingsScreen(
+                    onBack = { navController.popBackStackSafely() }
                 )
             }
             composable("edit_home_settings") {
@@ -998,6 +1006,9 @@ fun MainScreen(
                         onManageTabsClick = {
                             navController.navigateSafely("manage_tabs")
                         },
+                        onExperimentalSettingsClick = {
+                            navController.navigateSafely("experimental_settings")
+                        },
                         onPickAppForGesture = { gestureId ->
                             navController.navigateSafely("app_picker/${gestureId.name}")
                         }
@@ -1010,6 +1021,11 @@ fun MainScreen(
                 }
                 composable("manage_tabs") {
                     com.bearinmind.launcher314.ui.drawer.ManageDrawerTabsScreen(
+                        onBack = { navController.popBackStackSafely() }
+                    )
+                }
+                composable("experimental_settings") {
+                    com.bearinmind.launcher314.ui.settings.ExperimentalSettingsScreen(
                         onBack = { navController.popBackStackSafely() }
                     )
                 }

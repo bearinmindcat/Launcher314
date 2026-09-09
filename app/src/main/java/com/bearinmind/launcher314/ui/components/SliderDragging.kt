@@ -847,6 +847,18 @@ object SliderConfigs {
         labelSuffix = "%"
     )
 
+    // Experimental (issue #50): 200% range, active only with the "Extended icon sizes" toggle.
+    val perAppIconSizeExtended = HorizontalSliderConfig(
+        minValue = 50f,
+        maxValue = 200f,
+        tickValues = listOf(50, 100, 150, 200),
+        labeledTickValues = listOf(50, 100, 150, 200),
+        snapTickValues = (50..200 step 5).toList(),
+        showMinorTicks = true,
+        label = "Icon Size",
+        labelSuffix = "%"
+    )
+
     val drawerTransparency = HorizontalSliderConfig(
         minValue = 0f,
         maxValue = 100f,
@@ -1020,6 +1032,16 @@ object SliderConfigs {
         majorTickValues = listOf(50, 75, 100, 125),
         minorTickValues = (50..125 step 5).toList(),
         snapTickValues = (50..125 step 5).toList(),
+        label = "Icon Size"
+    )
+
+    // Experimental (issue #50): 200% range, active only with the "Extended icon sizes" toggle.
+    val iconSizePercentExtended = VerticalSliderConfig(
+        minValue = 50f,
+        maxValue = 200f,
+        majorTickValues = listOf(50, 100, 150, 200),
+        minorTickValues = (50..200 step 5).toList(),
+        snapTickValues = (50..200 step 5).toList(),
         label = "Icon Size"
     )
 
