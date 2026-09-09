@@ -16,4 +16,7 @@ package com.bearinmind.launcher314.ui.home
 object HomePagerSwipeState {
     @Volatile
     var isSettling: Boolean = false
+    // Dock pager version (issue #84): a settling dock consumes the next touch, eating swipe-up from the dock.
+    @Volatile
+    var isDockSettling: Boolean = false
 }

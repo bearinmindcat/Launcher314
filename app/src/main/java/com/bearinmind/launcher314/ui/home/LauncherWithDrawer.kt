@@ -1240,7 +1240,9 @@ fun LauncherWithDrawer(
                         // decide by the real finger delta + dominant axis (a clearly-
                         // vertical swipe opens the drawer; horizontal still goes to the
                         // pager). At rest, deference is unchanged.
-                        val pagerSettling = com.bearinmind.launcher314.ui.home.HomePagerSwipeState.isSettling
+                        // Dock settle eats vertical swipes the same way (issue #84).
+                        val pagerSettling = com.bearinmind.launcher314.ui.home.HomePagerSwipeState.isSettling ||
+                            com.bearinmind.launcher314.ui.home.HomePagerSwipeState.isDockSettling
                         // During a page settle, peek in the INITIAL pass (parent sees
                         // events BEFORE the pager) so a vertical claim can consume the
                         // touch before the pager — interrupted-fling drag-state — scrolls
@@ -1350,7 +1352,9 @@ fun LauncherWithDrawer(
                                 // the drawer was never engaged, so just fire the user's
                                 // swipe-down action if they dragged down far enough. No
                                 // drawer state to reset (it never moved).
-                                if (totalDragAmount > actionThreshold) {
+                                // Issue #84: also commit on a fast down-fling — distance-only made quick short flicks silently fail.
+                                if (totalDragAmount > actionThreshold ||
+                                    velocityTracker.calculateVelocity().y > 600f) {
                                     com.bearinmind.launcher314.data.getGestureAction(
                                         context,
                                         com.bearinmind.launcher314.data.GestureId.SWIPE_DOWN
@@ -1400,8 +1404,8 @@ fun LauncherWithDrawer(
                                         // downward fling), or fire a reassigned action.
                                         // Mark closed FIRST so home is interactive while
                                         // the drawer animates away.
+                                        // No refresh here (issue #84): drawer never opened, and the reload janked the next swipe.
                                         showAppDrawer = false
-                                        homeRefreshTrigger++
                                         settleDrawer(drawerRangePx, releaseVelocityY)
                                         if (swipeUpEnabled &&
                                             swipeUpAction !is com.bearinmind.launcher314.data.GestureAction.OpenDrawer &&
@@ -1413,13 +1417,12 @@ fun LauncherWithDrawer(
                                 }
                             }
                         } else {
-                            // onDragCancel equivalent
+                            // onDragCancel equivalent — no refresh here either (drawer never opened).
                             if (!isSwipeDown) {
                                 coroutineScope.launch {
                                     if (swipeUpMovesDrawer) swipeUpY.snapTo(dragShift)
                                     isDrawerDragging = false
                                     showAppDrawer = false
-                                    homeRefreshTrigger++
                                     settleDrawer(drawerRangePx, 0f)
                                 }
                             }

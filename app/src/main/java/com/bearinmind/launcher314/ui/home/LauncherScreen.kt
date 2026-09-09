@@ -5832,6 +5832,8 @@ fun LauncherScreen(
             val isDockSwiping = dockPagerState.isScrollInProgress
             var isDockSwipeLingering by remember { mutableStateOf(false) }
             LaunchedEffect(isDockSwiping) {
+                // Publish dock settle (issue #84) so the drawer swipe can claim vertical swipes during it.
+                HomePagerSwipeState.isDockSettling = isDockSwiping
                 if (isDockSwiping) {
                     isDockSwipeLingering = true
                 } else if (isDockSwipeLingering) {
