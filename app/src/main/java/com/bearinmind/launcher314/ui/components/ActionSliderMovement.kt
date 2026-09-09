@@ -26,10 +26,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/**
- * Custom vertical slider for icon size selection.
- * Supports smooth dragging with animated snap-on-release behavior.
- */
+/** Custom vertical slider for icon size selection — smooth dragging with animated snap-on-release. */
 @Composable
 fun VerticalIconSizeSlider(
     currentSize: Float,
@@ -65,8 +62,7 @@ fun VerticalIconSizeSlider(
     var isDragOnThumb by remember { mutableStateOf(false) }  // Only drag if started on thumb
     var isOverflowSnapping by remember { mutableStateOf(false) }
 
-    // Sync animated value with external changes (e.g., from linked slider)
-    // Animate smoothly when not dragging
+    // Sync animated value with external changes (e.g., linked slider); animate when not dragging.
     LaunchedEffect(clampedSize) {
         if (!isDragging && !isOverflowSnapping) {
             animatedValue.animateTo(
@@ -153,10 +149,7 @@ fun VerticalIconSizeSlider(
                             },
                             onDragEnd = {
                                 if (isDragOnThumb) {
-                                    // === Icon size slider snap-back animation ===
-                                    // When released from the red overflow zone, animate back
-                                    // to the nearest valid tick with a bouncy spring.
-                                    // stiffness = 300f controls the speed, DampingRatioMediumBouncy adds bounce.
+                                    // Released from the red overflow zone: bouncy-spring back to the nearest valid tick.
                                     val validSnaps = snapTickValues.filter { it.toFloat() <= dragMax }
                                     val snappedValue = validSnaps.minByOrNull {
                                         kotlin.math.abs(it - animatedValue.value)
@@ -184,8 +177,7 @@ fun VerticalIconSizeSlider(
                             },
                             onDragCancel = {
                                 if (isDragOnThumb) {
-                                    // === Icon size slider snap-back animation (on cancel) ===
-                                    // Same logic as onDragEnd above.
+                                    // Same snap-back as onDragEnd (a cancel can carry the release).
                                     val validSnaps = snapTickValues.filter { it.toFloat() <= dragMax }
                                     val snappedValue = validSnaps.minByOrNull {
                                         kotlin.math.abs(it - animatedValue.value)
@@ -356,10 +348,7 @@ fun VerticalIconSizeSlider(
     }
 }
 
-/**
- * Custom horizontal slider for column count selection.
- * Supports smooth dragging with animated snap-on-release behavior.
- */
+/** Custom horizontal slider for column count selection — smooth dragging with animated snap-on-release. */
 @Composable
 fun BottomColumnsSlider(
     currentSize: Float,
@@ -378,8 +367,7 @@ fun BottomColumnsSlider(
     var isDragging by remember { mutableStateOf(false) }
     var isDragOnThumb by remember { mutableStateOf(false) }  // Only drag if started on thumb
 
-    // Sync animated value with external changes (e.g., from linked slider)
-    // Animate smoothly when not dragging
+    // Sync animated value with external changes (e.g., linked slider); animate when not dragging.
     LaunchedEffect(currentSize) {
         if (!isDragging) {
             animatedValue.animateTo(

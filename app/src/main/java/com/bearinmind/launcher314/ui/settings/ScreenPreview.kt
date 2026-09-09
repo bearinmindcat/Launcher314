@@ -353,9 +353,9 @@ fun AppDrawerPreviewSection(
         minOf(drawerThreshold, homeThreshold)
     }
 
-    // Auto-snap icon size down when threshold drops below current value
+    // Auto-snap icon size down when threshold drops below current value — skipped with extended icon sizes (issue #50), where past-threshold values are deliberate.
     LaunchedEffect(universalOverflowThreshold) {
-        if (currentIconSizePercent > universalOverflowThreshold) {
+        if (!com.bearinmind.launcher314.data.getExtendedIconSizes(context) && currentIconSizePercent > universalOverflowThreshold) {
             // Snap to highest usable value
             val snapTicks = if (isLinked) listOf(67, 80, 100, 133).filter { it <= 125 } else (50..125 step 5).toList()
             val maxSnap = snapTicks.filter { it.toFloat() <= universalOverflowThreshold }.maxOrNull()?.toFloat() ?: 50f
@@ -2040,9 +2040,9 @@ fun HomeScreenPreviewSection(
         minOf(homeThreshold, drawerThreshold)
     }
 
-    // Auto-snap icon size down when threshold drops below current value
+    // Auto-snap icon size down when threshold drops below current value — skipped with extended icon sizes (issue #50).
     LaunchedEffect(universalOverflowThreshold) {
-        if (iconSizePercent > universalOverflowThreshold) {
+        if (!com.bearinmind.launcher314.data.getExtendedIconSizes(context) && iconSizePercent > universalOverflowThreshold) {
             val snapTicks = (50..125 step 5).toList()
             val maxSnap = snapTicks.filter { it.toFloat() <= universalOverflowThreshold }.maxOrNull()?.toFloat() ?: 50f
             iconSizePercent = maxSnap
@@ -2268,7 +2268,7 @@ private fun HomeVerticalIconSizeSlider(
         config = config,
         onValueChange = onSizeChange,
         onValueChangeFinished = onSizeChangeFinished,
-        overflowThreshold = if (extended) config.maxValue else overflowThreshold
+        overflowThreshold = overflowThreshold
     )
 }
 

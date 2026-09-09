@@ -654,7 +654,8 @@ private fun OverlayFolderContent(
             val intensity = (folderCust.iconTintIntensity ?: 100) / 100f
             Color(folderCust.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
         } else com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current
-        Box(modifier = Modifier.requiredSize(folderBoxSize), contentAlignment = Alignment.Center) {
+        BoxWithConstraints(modifier = Modifier.widthIn(max = folderBoxSize).heightIn(max = folderBoxSize).aspectRatio(1f), contentAlignment = Alignment.Center) {
+            val folderBoxSize = maxWidth
             Box(modifier = Modifier.matchParentSize().background(folderBoxBg, folderShape))
             Box(
                 modifier = Modifier

@@ -1044,14 +1044,15 @@ fun DraggableGridCell(
                                     },
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Box(
+                                BoxWithConstraints(
                                     modifier = Modifier
-                                        .requiredSize(folderBoxSize)
+                                        .widthIn(max = folderBoxSize).heightIn(max = folderBoxSize).aspectRatio(1f)
                                         .clip(getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius))
                                         .background(Color(0xFF1A1A1A))
                                         .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, getIconShape(globalIconShape) ?: RoundedCornerShape(folderCornerRadius)),
                                     contentAlignment = Alignment.Center
                                 ) {
+                                    val folderBoxSize = maxWidth
                                     val padding = folderBoxSize * 0.12f
                                     val spacing = folderBoxSize * 0.05f
                                     val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
@@ -1522,9 +1523,9 @@ fun DraggableGridCell(
                                 Color(folderCustomization.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
                             } else com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current
 
-                            Box(
+                            BoxWithConstraints(
                                 modifier = Modifier
-                                    .requiredSize(folderBoxSize)
+                                    .widthIn(max = folderBoxSize).heightIn(max = folderBoxSize).aspectRatio(1f)
                                     .onGloballyPositioned { coords ->
                                         // Always use the final target scale (1.265f) so popup doesn't stutter during animation
                                         val targetScale = 1.265f
@@ -1549,6 +1550,7 @@ fun DraggableGridCell(
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
+                            val folderBoxSize = maxWidth
                             val folderCustomIcon = com.bearinmind.launcher314.data.folderCustomIconPath(folderCustomization)
                             if (folderCustomIcon != null) {
                                 // Issue #57 — a single chosen image fills the folder,
@@ -2562,9 +2564,9 @@ fun DockSlot(
                     Color(folderCustomization.iconTintColor).copy(alpha = intensity.coerceIn(0f, 1f))
                 } else com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current
 
-                Box(
+                BoxWithConstraints(
                     modifier = Modifier
-                        .requiredSize(folderBoxSize)
+                        .widthIn(max = folderBoxSize).heightIn(max = folderBoxSize).aspectRatio(1f)
                         .onGloballyPositioned { coords ->
                             // Report the dock folder icon's bounds at the opened
                             // scale (1.265, matching home) so the popup covers it.
@@ -2588,6 +2590,7 @@ fun DockSlot(
                         },
                     contentAlignment = Alignment.Center
                 ) {
+                val folderBoxSize = maxWidth
                 val dockFolderCustomIcon = com.bearinmind.launcher314.data.folderCustomIconPath(folderCustomization)
                 if (dockFolderCustomIcon != null) {
                     // Issue #57 — chosen image fills the dock folder, clipped to shape.

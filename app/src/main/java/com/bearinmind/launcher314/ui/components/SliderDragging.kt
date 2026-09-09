@@ -28,15 +28,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/**
- * Touch radius around the thumb for drag detection.
- * User must touch within this distance of the thumb to start dragging.
- */
+/** Touch radius around the thumb — drags must start within this distance of it. */
 private val THUMB_TOUCH_RADIUS = 48.dp
 
-/**
- * Configuration for a horizontal thumb-drag-only slider.
- */
+/** Configuration for a horizontal thumb-drag-only slider. */
 data class HorizontalSliderConfig(
     val minValue: Float,
     val maxValue: Float,
@@ -46,14 +41,11 @@ data class HorizontalSliderConfig(
     val label: String,
     val showMinorTicks: Boolean = false,
     val labelSuffix: String = "",
-    // Optional TEXT labels under the ticks (e.g. Left / Center / Right),
-    // indexed against labeledTickValues; falls back to the numeric value.
+    // Optional TEXT labels under the ticks (e.g. Left / Right), indexed against labeledTickValues; numeric fallback.
     val tickTextLabels: List<String>? = null
 )
 
-/**
- * Configuration for a vertical thumb-drag-only slider.
- */
+/** Configuration for a vertical thumb-drag-only slider. */
 data class VerticalSliderConfig(
     val minValue: Float,
     val maxValue: Float,
@@ -63,10 +55,7 @@ data class VerticalSliderConfig(
     val label: String
 )
 
-/**
- * A horizontal slider that only responds to thumb dragging, not track clicks.
- * Prevents accidental value changes while scrolling.
- */
+/** Horizontal slider that only responds to thumb dragging (not track clicks) — prevents accidental changes while scrolling. */
 @Composable
 fun ThumbDragHorizontalSlider(
     currentValue: Float,
@@ -78,8 +67,10 @@ fun ThumbDragHorizontalSlider(
     overflowThreshold: Float = config.maxValue, // above this value, track/thumb turns red and snaps back
     onDoubleTap: (() -> Unit)? = null // optional double-tap to reset
 ) {
-    // Cap at highest usable snap value (below overflow threshold)
-    val dragMax = if (overflowThreshold >= config.maxValue) config.maxValue
+    // Cap at highest usable snap value (below overflow threshold); extended icon sizes (issue #50) drag through the red and keep the value.
+    val extendedCtx = androidx.compose.ui.platform.LocalContext.current
+    val extendedSizes = remember { com.bearinmind.launcher314.data.getExtendedIconSizes(extendedCtx) }
+    val dragMax = if (extendedSizes || overflowThreshold >= config.maxValue) config.maxValue
         else config.snapTickValues.filter { it.toFloat() <= overflowThreshold }.maxOrNull()?.toFloat() ?: config.minValue
 
     val animatedValue = remember { Animatable(currentValue) }
@@ -138,13 +129,7 @@ fun ThumbDragHorizontalSlider(
                     .height(32.dp)
                     .then(
                         if (enabled) Modifier.pointerInput(Unit) {
-                            // Press-state tracking so the ripple appears even
-                            // on a plain tap (not just when drag slop is passed).
-                            // Double-tap reset only fires when the second tap
-                            // lands inside the thumb's touch radius — taps on
-                            // empty track don't reset, matching the user's
-                            // expectation that the draggable rectangle is the
-                            // target.
+                            // Press ripple on plain taps too; double-tap reset only fires within the thumb's touch radius — track taps don't reset.
                             detectTapGestures(
                                 onPress = { offset ->
                                     val currentThumbFraction =
@@ -363,9 +348,7 @@ fun ThumbDragHorizontalSlider(
                 )
             }
 
-            // Touch indicator — shows on drag OR plain press so the ripple
-            // confirms the slider is receiving touch even when the user isn't
-            // yet moving their finger past the drag-slop threshold.
+            // Touch indicator on drag OR plain press — the ripple confirms touch before drag slop is passed.
             if (isDragging || isPressed) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val thumbXOffset = maxWidth * thumbFraction
@@ -444,10 +427,7 @@ fun ThumbDragHorizontalSlider(
     }
 }
 
-/**
- * A vertical slider that only responds to thumb dragging, not track clicks.
- * Prevents accidental value changes while scrolling.
- */
+/** Vertical slider that only responds to thumb dragging (not track clicks) — prevents accidental changes while scrolling. */
 @Composable
 fun ThumbDragVerticalSlider(
     currentValue: Float,
@@ -458,8 +438,10 @@ fun ThumbDragVerticalSlider(
     modifier: Modifier = Modifier,
     overflowThreshold: Float = 125f  // above this value, track/thumb turns red (visual warning only)
 ) {
-    // Cap at highest usable snap value (below overflow threshold)
-    val dragMax = if (overflowThreshold >= config.maxValue) config.maxValue
+    // Cap at highest usable snap below the overflow threshold; extended icon sizes (issue #50) drag through the red and keep the value.
+    val extendedCtxV = androidx.compose.ui.platform.LocalContext.current
+    val extendedSizesV = remember { com.bearinmind.launcher314.data.getExtendedIconSizes(extendedCtxV) }
+    val dragMax = if (extendedSizesV || overflowThreshold >= config.maxValue) config.maxValue
         else config.snapTickValues.filter { it.toFloat() <= overflowThreshold }.maxOrNull()?.toFloat() ?: config.minValue
     val clampedValue = currentValue.coerceIn(config.minValue, config.maxValue)
     val animatedValue = remember { Animatable(clampedValue) }
@@ -552,10 +534,7 @@ fun ThumbDragVerticalSlider(
                             },
                             onDragEnd = {
                                 if (isDragOnThumb) {
-                                    // === Icon size slider snap-back animation ===
-                                    // When released from the red overflow zone, animate back
-                                    // to the nearest valid tick with a bouncy spring.
-                                    // stiffness = 300f controls the speed, DampingRatioMediumBouncy adds bounce.
+                                    // Released from the red overflow zone: bouncy-spring back to the nearest valid tick.
                                     val validSnaps = config.snapTickValues.filter { it.toFloat() <= dragMax }
                                     val snappedValue = validSnaps.minByOrNull {
                                         kotlin.math.abs(it - animatedValue.value)
@@ -583,8 +562,7 @@ fun ThumbDragVerticalSlider(
                             },
                             onDragCancel = {
                                 if (isDragOnThumb) {
-                                    // === Icon size slider snap-back animation (on cancel) ===
-                                    // Same logic as onDragEnd above.
+                                    // Same snap-back as onDragEnd (a cancel can carry the release).
                                     val validSnaps = config.snapTickValues.filter { it.toFloat() <= dragMax }
                                     val snappedValue = validSnaps.minByOrNull {
                                         kotlin.math.abs(it - animatedValue.value)
@@ -755,9 +733,7 @@ fun ThumbDragVerticalSlider(
     }
 }
 
-/**
- * Pre-configured slider configs for common use cases
- */
+/** Pre-configured slider configs for common use cases. */
 object SliderConfigs {
     val scrollbarWidth = HorizontalSliderConfig(
         minValue = 50f,
@@ -870,8 +846,7 @@ object SliderConfigs {
         labelSuffix = "%"
     )
 
-    // Type-to-find search leniency: 0 = strict (only tight, near-perfect
-    // matches), 100 = loose (allow scattered matches + typo tolerance).
+    // Type-to-find search leniency: 0 = strict, 100 = loose (scattered matches + typo tolerance).
     val searchFuzziness = HorizontalSliderConfig(
         minValue = 0f,
         maxValue = 100f,
@@ -977,11 +952,7 @@ object SliderConfigs {
         labelSuffix = ""
     )
 
-    // Unified config for the Samsung-Photos-style effects (brightness,
-    // exposure, contrast, highlights, shadows, saturation, tint, temperature,
-    // sharpness). Bipolar -100..+100 with 0 as the neutral / default. 21 snap
-    // ticks at step 10 so every effect's trackline renders with the same
-    // visual density.
+    // Samsung-Photos-style effects config: bipolar -100..+100, 0 neutral, snap step 10 for uniform track density.
     val wallpaperEffect = HorizontalSliderConfig(
         minValue = -100f,
         maxValue = 100f,

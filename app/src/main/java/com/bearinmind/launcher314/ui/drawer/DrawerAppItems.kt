@@ -1411,9 +1411,9 @@ internal fun SelectableAppItem(
                     val folderCornerRadius = (iconSize * 0.29f).dp
                     val previewScale = 0.85f + 0.15f * folderPreviewProgress
 
-                    Box(
+                    BoxWithConstraints(
                         modifier = Modifier
-                            .requiredSize(folderBoxSize)
+                            .widthIn(max = folderBoxSize).heightIn(max = folderBoxSize).aspectRatio(1f)
                             .graphicsLayer {
                                 this.alpha = folderPreviewProgress
                                 scaleX = previewScale
@@ -1424,6 +1424,7 @@ internal fun SelectableAppItem(
                             .border(1.dp, com.bearinmind.launcher314.ui.theme.LocalFolderBorderColor.current, iconClipShape ?: RoundedCornerShape(folderCornerRadius)),
                         contentAlignment = Alignment.Center
                     ) {
+                        val folderBoxSize = maxWidth
                         val padding = folderBoxSize * 0.12f
                         val spacing = folderBoxSize * 0.05f
                         val miniIconSize = (folderBoxSize - padding * 2 - spacing) / 2
