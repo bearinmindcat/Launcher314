@@ -355,9 +355,12 @@ fun BottomColumnsSlider(
     onSizeChange: (Float) -> Unit,
     onSizeChangeFinished: () -> Unit
 ) {
-    val tickValues = listOf(3, 4, 5, 6, 7)
+    // Experimental (issue #105): "Extended grid size" opens the column range to 20.
+    val extGridCtx = androidx.compose.ui.platform.LocalContext.current
+    val extendedGrid = remember { com.bearinmind.launcher314.data.getExtendedGridSize(extGridCtx) }
+    val tickValues = if (extendedGrid) (3..20).toList() else listOf(3, 4, 5, 6, 7)
     val minValue = 3f
-    val maxValue = 7f
+    val maxValue = if (extendedGrid) 20f else 7f
 
     // Animated value for smooth transitions
     val animatedValue = remember { Animatable(currentSize) }

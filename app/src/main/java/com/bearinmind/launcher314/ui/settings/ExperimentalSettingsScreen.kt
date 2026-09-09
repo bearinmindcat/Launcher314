@@ -27,7 +27,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bearinmind.launcher314.data.getExtendedGridSize
 import com.bearinmind.launcher314.data.getExtendedIconSizes
+import com.bearinmind.launcher314.data.setExtendedGridSize
 import com.bearinmind.launcher314.data.setExtendedIconSizes
 
 /** Experimental features — opt-in, use at own risk. */
@@ -35,6 +37,7 @@ import com.bearinmind.launcher314.data.setExtendedIconSizes
 fun ExperimentalSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var extendedIcons by remember { mutableStateOf(getExtendedIconSizes(context)) }
+    var extendedGrid by remember { mutableStateOf(getExtendedGridSize(context)) }
 
     Column(
         modifier = Modifier
@@ -66,6 +69,15 @@ fun ExperimentalSettingsScreen(onBack: () -> Unit) {
                 onCheckedChange = {
                     extendedIcons = it
                     setExtendedIconSizes(context, it)
+                }
+            )
+            SettingsToggleItem(
+                title = "Extended grid size",
+                subtitle = "Increased grid to 20x20; also applies to dock",
+                checked = extendedGrid,
+                onCheckedChange = {
+                    extendedGrid = it
+                    setExtendedGridSize(context, it)
                 }
             )
         }

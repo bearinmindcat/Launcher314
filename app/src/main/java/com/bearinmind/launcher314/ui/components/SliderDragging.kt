@@ -865,6 +865,39 @@ object SliderConfigs {
         label = "App Grid Columns"
     )
 
+    // Experimental (issue #105): 20x20 grid ranges, active only with the "Extended grid size" toggle.
+    val gridColumnsExtended = HorizontalSliderConfig(
+        minValue = 3f,
+        maxValue = 20f,
+        tickValues = (3..20).toList(),
+        labeledTickValues = listOf(3, 9, 15, 20),
+        label = "App Grid Columns"
+    )
+
+    val gridRowsExtended = HorizontalSliderConfig(
+        minValue = 4f,
+        maxValue = 20f,
+        tickValues = (4..20).toList(),
+        labeledTickValues = listOf(4, 10, 15, 20),
+        label = "App Grid Rows"
+    )
+
+    val drawerRowsExtended = HorizontalSliderConfig(
+        minValue = 4f,
+        maxValue = 20f,
+        tickValues = (4..20).toList(),
+        labeledTickValues = listOf(4, 10, 15, 20),
+        label = "App Drawer Rows"
+    )
+
+    val dockColumnsExtended = HorizontalSliderConfig(
+        minValue = 1f,
+        maxValue = 20f,
+        tickValues = (1..20).toList(),
+        labeledTickValues = listOf(1, 7, 14, 20),
+        label = "Dock Columns"
+    )
+
     val suggestedColumns = HorizontalSliderConfig(
         minValue = 3f,
         maxValue = 7f,

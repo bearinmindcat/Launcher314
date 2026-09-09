@@ -688,6 +688,19 @@ fun setExtendedIconSizes(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_EXTENDED_ICON_SIZES, enabled).apply()
 }
 
+// EXPERIMENTAL (issue #105): home & drawer grid sliders open up to 10 columns / 15 rows.
+private const val KEY_EXTENDED_GRID_SIZE = "experimental_extended_grid_size"
+
+fun getExtendedGridSize(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_EXTENDED_GRID_SIZE, false)
+}
+
+fun setExtendedGridSize(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_EXTENDED_GRID_SIZE, enabled).apply()
+}
+
 fun setHiddenApps(context: Context, hiddenApps: Set<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()

@@ -920,9 +920,7 @@ private fun DrawerTransparencySlider(
     )
 }
 
-/**
- * Horizontal rows slider for App Drawer paged mode (4 to 7 rows)
- */
+/** Horizontal rows slider for App Drawer paged mode. */
 @Composable
 private fun DrawerRowsSlider(
     currentSize: Float,
@@ -930,9 +928,11 @@ private fun DrawerRowsSlider(
     onSizeChange: (Float) -> Unit,
     onSizeChangeFinished: () -> Unit
 ) {
+    val extCtx = LocalContext.current
+    val extendedGrid = remember { com.bearinmind.launcher314.data.getExtendedGridSize(extCtx) }
     ThumbDragHorizontalSlider(
         currentValue = currentSize,
-        config = SliderConfigs.drawerRows,
+        config = if (extendedGrid) SliderConfigs.drawerRowsExtended else SliderConfigs.drawerRows,
         onValueChange = onSizeChange,
         onValueChangeFinished = onSizeChangeFinished,
         enabled = enabled
@@ -2246,10 +2246,7 @@ fun HomeScreenPreviewSection(
     }
 }
 
-/**
- * Vertical icon size slider for Home Screen (similar to App Drawer)
- * Now includes minor tick marks at every 2 increments and snaps to them
- */
+/** Vertical icon size slider for Home Screen (same style as App Drawer's). */
 @Composable
 private fun HomeVerticalIconSizeSlider(
     currentSize: Float,
@@ -2272,43 +2269,41 @@ private fun HomeVerticalIconSizeSlider(
     )
 }
 
-/**
- * Horizontal columns slider for Home Screen
- */
+/** Horizontal columns slider for Home Screen. */
 @Composable
 private fun HomeColumnsSlider(
     currentSize: Float,
     onSizeChange: (Float) -> Unit,
     onSizeChangeFinished: () -> Unit
 ) {
+    val extCtx = LocalContext.current
+    val extendedGrid = remember { com.bearinmind.launcher314.data.getExtendedGridSize(extCtx) }
     ThumbDragHorizontalSlider(
         currentValue = currentSize,
-        config = SliderConfigs.gridColumns,
+        config = if (extendedGrid) SliderConfigs.gridColumnsExtended else SliderConfigs.gridColumns,
         onValueChange = onSizeChange,
         onValueChangeFinished = onSizeChangeFinished
     )
 }
 
-/**
- * Horizontal rows slider for Home Screen
- */
+/** Horizontal rows slider for Home Screen. */
 @Composable
 private fun HomeRowsSlider(
     currentSize: Float,
     onSizeChange: (Float) -> Unit,
     onSizeChangeFinished: () -> Unit
 ) {
+    val extCtx = LocalContext.current
+    val extendedGrid = remember { com.bearinmind.launcher314.data.getExtendedGridSize(extCtx) }
     ThumbDragHorizontalSlider(
         currentValue = currentSize,
-        config = SliderConfigs.gridRows,
+        config = if (extendedGrid) SliderConfigs.gridRowsExtended else SliderConfigs.gridRows,
         onValueChange = onSizeChange,
         onValueChangeFinished = onSizeChangeFinished
     )
 }
 
-/**
- * Horizontal dock columns slider for Home Screen
- */
+/** Horizontal dock columns slider for Home Screen. */
 @Composable
 private fun HomeDockColumnsSlider(
     currentSize: Float,
@@ -2316,9 +2311,11 @@ private fun HomeDockColumnsSlider(
     onSizeChange: (Float) -> Unit,
     onSizeChangeFinished: () -> Unit
 ) {
+    val extCtx = LocalContext.current
+    val extendedGrid = remember { com.bearinmind.launcher314.data.getExtendedGridSize(extCtx) }
     ThumbDragHorizontalSlider(
         currentValue = currentSize,
-        config = SliderConfigs.dockColumns,
+        config = if (extendedGrid) SliderConfigs.dockColumnsExtended else SliderConfigs.dockColumns,
         enabled = enabled,
         onValueChange = onSizeChange,
         onValueChangeFinished = onSizeChangeFinished
