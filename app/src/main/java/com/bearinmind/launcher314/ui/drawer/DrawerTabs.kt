@@ -93,6 +93,8 @@ import com.bearinmind.launcher314.data.getInstalledApps
 import com.bearinmind.launcher314.data.nestedFolderIds
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -498,9 +500,8 @@ internal fun DrawerTabRow(
     val settleAnim = remember { Animatable(0f) }
     val settleScope = rememberCoroutineScope()
 
-    // The currently-selected chip, and its recorded (offset, width).
+    // The currently-selected chip's key; its position is read inside the centering effect, not composition.
     val selectedKey = selectedTabId ?: "__all__"
-    val selectedPos = chipPositions[selectedKey]
 
     val chipAlignment = if (tabAlignment == 1) Alignment.End else Alignment.Start
 
@@ -530,12 +531,12 @@ internal fun DrawerTabRow(
     ) {
         val viewportWidthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
 
-        // When the selected tab changes (tap or swipe), centre it in the viewport.
-        LaunchedEffect(selectedKey, selectedPos, viewportWidthPx, draggingId) {
-            if (draggingId != null) return@LaunchedEffect   // don't fight a reorder drag
-            val pos = selectedPos ?: return@LaunchedEffect
+        // Centre the selected chip ONLY on selection change (issue #84) — keying on its live position restarted this every placement-anim frame, and the scroll storm slid the strip under a stationary finger, cancelling the next reorder long-press.
+        LaunchedEffect(selectedKey, viewportWidthPx) {
             if (viewportWidthPx <= 0) return@LaunchedEffect
-            val (left, width) = pos
+            val (left, width) = androidx.compose.runtime.snapshotFlow { chipPositions[selectedKey] }
+                .filterNotNull().first()
+            if (draggingId != null || settlingId != null) return@LaunchedEffect
             val target = (left - (viewportWidthPx - width) / 2).coerceIn(0, chipScroll.maxValue)
             chipScroll.animateScrollTo(target)
         }
