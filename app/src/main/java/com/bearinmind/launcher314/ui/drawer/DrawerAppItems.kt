@@ -339,9 +339,14 @@ internal fun FolderItem(
             val folderGlobalPct = remember(drawerFolderCustVersion) { com.bearinmind.launcher314.data.getDrawerIconSizePercent(drawerFolderContext) }
             val folderSizeDp = drawerFolderCust?.iconSizePercent
                 ?.let { iconSize * it / folderGlobalPct.coerceAtLeast(1) } ?: iconSize
+            // Issue #50: fixed iconSize slot keeps rows/labels aligned; the clamped box draws over it via requiredSize.
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(iconSize.dp), contentAlignment = Alignment.Center) {
+            val folderVisualSize = folderSizeDp.dp.coerceAtMost(maxWidth)
             BoxWithConstraints(
                 modifier = Modifier
-                    .size(folderSizeDp.dp)
+                    // Bottom-anchored so overflow grows upward, not over the label.
+                    .offset(y = -((folderVisualSize - iconSize.dp) / 2).coerceAtLeast(0.dp))
+                    .requiredSize(folderVisualSize)
                     .onGloballyPositioned { coords ->
                         // Always use the final target scale (1.265f) so popup doesn't stutter during animation
                         val targetScale = 1.265f
@@ -441,6 +446,7 @@ internal fun FolderItem(
                     )
                 }
             }
+            } // end iconSize slot
             Spacer(modifier = Modifier.height(4.dp))
             val drawerFolderFontFamily = drawerFolderCust?.labelFontId?.let { id ->
                 com.bearinmind.launcher314.helpers.FontManager.bundledFonts.find { it.id == id }?.fontFamily
