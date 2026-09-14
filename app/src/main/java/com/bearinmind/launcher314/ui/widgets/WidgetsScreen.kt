@@ -107,7 +107,9 @@ fun WidgetsScreen(
     onDirectDialSelected: () -> Unit = {},
     gridColumns: Int = 4,
     gridRows: Int = 5,
-    getOccupiedCells: () -> Set<Int> = { emptySet() }
+    getOccupiedCells: () -> Set<Int> = { emptySet() },
+    // Issue #113: the add's own rules, so the dialog can't refuse what would actually fit.
+    canPlaceWidget: (WidgetInfo) -> Boolean = { true }
 ) {
     val context = LocalContext.current
     var appGroups by remember { mutableStateOf<List<AppWidgetGroup>>(emptyList()) }
@@ -226,15 +228,8 @@ fun WidgetsScreen(
     // Handle widget long-press - show confirmation dialog
     fun handleWidgetLongPress(widget: WidgetInfo) {
         selectedWidget = widget
-        // Check if there's space available
-        val availablePos = findAvailablePosition(widget.cellWidth, widget.cellHeight)
-        if (availablePos != null) {
-            noSpaceError = false
-            showAddDialog = true
-        } else {
-            noSpaceError = true
-            showAddDialog = true
-        }
+        noSpaceError = !canPlaceWidget(widget)
+        showAddDialog = true
     }
 
     // Solid dark background for widgets screen

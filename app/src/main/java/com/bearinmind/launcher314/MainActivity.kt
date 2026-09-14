@@ -209,16 +209,14 @@ class MainActivity : ComponentActivity() {
         val gridRows = getHomeGridRows(this)
 
         // Land the widget on the home page the user was viewing when they opened the picker (persisted in launcher_prefs).
-        val targetPage = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
-            .getInt("launcher_current_page", 0)
+        val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
+        val targetPage = prefs.getInt("launcher_current_page", 0)
+        val totalPages = prefs.getInt("launcher_total_pages", 1).coerceAtLeast(1)
 
-        // Find first available position for the widget on the target page
-        val availablePos = findAvailablePositionForWidget(
-            widget.cellWidth, widget.cellHeight, gridColumns, gridRows, targetPage
-        )
+        val spot = findWidgetSpot(widget, gridColumns, gridRows, targetPage, totalPages)
 
-        if (availablePos == null) {
-            Toast.makeText(this, "Not enough space for widget on this page", Toast.LENGTH_SHORT).show()
+        if (spot == null) {
+            Toast.makeText(this, "Not enough space for widget on any page", Toast.LENGTH_SHORT).show()
             WidgetManager.deleteWidgetId(pendingWidgetId)
             pendingWidgetId = -1
             pendingWidgetInfo = null
@@ -230,11 +228,11 @@ class MainActivity : ComponentActivity() {
             appWidgetId = pendingWidgetId,
             packageName = widget.providerInfo.provider.packageName,
             className = widget.providerInfo.provider.className,
-            startColumn = availablePos.first,
-            startRow = availablePos.second,
-            columnSpan = widget.cellWidth,
-            rowSpan = widget.cellHeight,
-            page = targetPage
+            startColumn = spot.col,
+            startRow = spot.row,
+            columnSpan = spot.cols,
+            rowSpan = spot.rows,
+            page = spot.page
         )
         WidgetManager.addPlacedWidget(this, placedWidget)
 
@@ -242,7 +240,16 @@ class MainActivity : ComponentActivity() {
         WidgetManager.stopListening()
         WidgetManager.startListening()
 
-        Toast.makeText(this, "Widget \"${widget.label}\" added!", Toast.LENGTH_SHORT).show()
+        // Issue #113: say so when it shrank or moved, or it reads as a bug.
+        val shrunk = spot.cols < widget.cellWidth || spot.rows < widget.cellHeight
+        val moved = spot.page != targetPage
+        val note = when {
+            shrunk && moved -> " to page ${spot.page + 1}, resized to fit"
+            moved -> " to page ${spot.page + 1}"
+            shrunk -> ", resized to fit"
+            else -> ""
+        }
+        Toast.makeText(this, "Widget \"${widget.label}\" added$note!", Toast.LENGTH_SHORT).show()
 
         // Trigger home screen refresh so the new widget renders
         widgetAddedTrigger.intValue++
@@ -250,6 +257,44 @@ class MainActivity : ComponentActivity() {
         // Clear pending state
         pendingWidgetId = -1
         pendingWidgetInfo = null
+    }
+
+    /** Where a widget landed: page, cell, and the span it actually got. */
+    private data class WidgetSpot(val page: Int, val col: Int, val row: Int, val cols: Int, val rows: Int)
+
+    /** Pre-flight for the picker dialog — true when the add would find a spot (issue #113). */
+    fun canPlaceWidget(widget: WidgetInfo): Boolean {
+        val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
+        return findWidgetSpot(
+            widget, getHomeGridSize(this), getHomeGridRows(this),
+            prefs.getInt("launcher_current_page", 0),
+            prefs.getInt("launcher_total_pages", 1).coerceAtLeast(1)
+        ) != null
+    }
+
+    /** Issue #113: asked-for page first, shrinking toward the min resize span, then other pages. */
+    private fun findWidgetSpot(widget: WidgetInfo, gridColumns: Int, gridRows: Int, targetPage: Int, totalPages: Int): WidgetSpot? {
+        val minSpan = runCatching { WidgetManager.getMinResizeCells(this, widget.providerInfo) }.getOrNull()
+        val minCols = (minSpan?.first ?: widget.cellWidth).coerceIn(1, widget.cellWidth)
+        val minRows = (minSpan?.second ?: widget.cellHeight).coerceIn(1, widget.cellHeight)
+
+        // Largest first, shrinking whichever side is furthest above its minimum.
+        val spans = mutableListOf(widget.cellWidth to widget.cellHeight)
+        var c = widget.cellWidth
+        var r = widget.cellHeight
+        while (c > minCols || r > minRows) {
+            if (c > minCols && (c - minCols) >= (r - minRows)) c-- else if (r > minRows) r-- else c--
+            spans.add(c to r)
+        }
+
+        val pages = listOf(targetPage) + (0 until totalPages).filter { it != targetPage }
+        for (page in pages) {
+            for ((cols, rows) in spans) {
+                val pos = findAvailablePositionForWidget(cols, rows, gridColumns, gridRows, page)
+                if (pos != null) return WidgetSpot(page, pos.first, pos.second, cols, rows)
+            }
+        }
+        return null
     }
 
     /** First available (column, row) for a widget on the page, or null if no space. */
@@ -795,7 +840,8 @@ fun MainScreen(
                         val curPage = context.getSharedPreferences("launcher_prefs", android.content.Context.MODE_PRIVATE)
                             .getInt("launcher_current_page", 0)
                         activity?.getOccupiedCells(gridColumns, curPage) ?: emptySet()
-                    }
+                    },
+                    canPlaceWidget = { w -> activity?.canPlaceWidget(w) ?: true }
                 )
             }
             composable("settings") {
@@ -956,7 +1002,8 @@ fun MainScreen(
                             val curPage = context.getSharedPreferences("launcher_prefs", android.content.Context.MODE_PRIVATE)
                                 .getInt("launcher_current_page", 0)
                             activity?.getOccupiedCells(gridColumns, curPage) ?: emptySet()
-                        }
+                        },
+                        canPlaceWidget = { w -> activity?.canPlaceWidget(w) ?: true }
                     )
                 }
                 composable("app_drawer") {
