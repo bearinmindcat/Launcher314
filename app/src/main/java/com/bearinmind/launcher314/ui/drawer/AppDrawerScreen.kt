@@ -271,7 +271,9 @@ fun AppDrawerScreen(
     // Compute icon dp from percentage using fixed reference (screenWidth / 4)
     // Uses reference column count of 4 so icon size is consistent across screens regardless of actual column count
     val screenWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
-    val iconSize = (screenWidthDp / 4f * 0.55f * iconSizePercent / 100f).toInt()
+    // Issue #89: icon size off the SHORT edge so landscape icons match portrait (Launcher3 rule).
+    val drawerShortEdgeDp = minOf(screenWidthDp, LocalConfiguration.current.screenHeightDp.toFloat())
+    val iconSize = (drawerShortEdgeDp / 4f * 0.55f * iconSizePercent / 100f).toInt()
     val appLabelFontSize = 12.sp * iconTextSizePercent / 100f
 
     // Trigger to refresh the app list (incremented on resume and package changes)

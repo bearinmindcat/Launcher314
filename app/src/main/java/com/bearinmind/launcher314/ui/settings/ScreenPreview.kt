@@ -324,9 +324,10 @@ fun AppDrawerPreviewSection(
         }
     }
 
-    // Calculate the preview height based on screen
+    // Calculate the preview height based on screen (short edge when the Landscape mode preview is active).
     val configuration = LocalConfiguration.current
-    val previewHeight = (configuration.screenHeightDp * 0.4f).dp
+    val previewHeight = ((if (com.bearinmind.launcher314.data.getAllowRotation(LocalContext.current))
+        minOf(configuration.screenWidthDp, configuration.screenHeightDp) else configuration.screenHeightDp) * 0.4f).dp
 
     // Compute UNIVERSAL overflow threshold — min of drawer and home screen thresholds
     // Icon formula: screenWidth / 4 * 0.55 * pct/100
@@ -972,8 +973,12 @@ private fun RealAppDrawerPreview(
 
     val drawerPreviewContext = LocalContext.current
     val scaleFactor = 0.4f
-    val previewWidth = screenWidth * scaleFactor
-    val previewHeight = screenHeight * scaleFactor
+    // Issue #89: Landscape mode shows a wide mock of the rotated drawer.
+    val landscapePreview = com.bearinmind.launcher314.data.getAllowRotation(drawerPreviewContext)
+    val previewShortDp = minOf(configuration.screenWidthDp, configuration.screenHeightDp).toFloat()
+    val previewLongDp = maxOf(configuration.screenWidthDp, configuration.screenHeightDp).toFloat()
+    val previewWidth = (if (landscapePreview) previewLongDp else previewShortDp).dp * scaleFactor
+    val previewHeight = (if (landscapePreview) previewShortDp else previewLongDp).dp * scaleFactor
 
     // Resolve label text color from prefs
     val previewLabelColor = run {
@@ -986,9 +991,8 @@ private fun RealAppDrawerPreview(
         } else Color.White
     }
 
-    // Compute icon dp from percentage using fixed reference (screenWidth / 4)
-    // Uses reference column count of 4 so icon size is consistent across screens
-    val iconSize = (configuration.screenWidthDp.toFloat() / 4f * 0.55f * iconSizePercent / 100f).toInt()
+    // Icon dp from percentage against shortEdge/4 — the launcher's landscape-safe basis.
+    val iconSize = (previewShortDp / 4f * 0.55f * iconSizePercent / 100f).toInt()
     val baseIconSize = iconSize.dp * scaleFactor
     val baseFontSize = 12.sp * scaleFactor * iconTextSizePercent / 100f
     val baseSpacing = 8.dp * scaleFactor
@@ -999,9 +1003,9 @@ private fun RealAppDrawerPreview(
     val tinyIconSize = 10.dp * scaleFactor
     val smallIconSize = 14.dp * scaleFactor
 
-    // Compute scrollbar dp from percentage (100% = 2% screen width / 20% screen height)
-    val scrollbarWidth = (configuration.screenWidthDp * 0.02f * scrollbarWidthPercent / 100f).toInt()
-    val scrollbarHeight = (configuration.screenHeightDp * 0.20f * scrollbarHeightPercent / 100f).toInt()
+    // Compute scrollbar dp from percentage (100% = 2% short edge / 20% of the preview's vertical axis)
+    val scrollbarWidth = (previewShortDp * 0.02f * scrollbarWidthPercent / 100f).toInt()
+    val scrollbarHeight = ((if (landscapePreview) previewShortDp else previewLongDp) * 0.20f * scrollbarHeightPercent / 100f).toInt()
     // Scaled scrollbar dimensions (scaled down extra for accurate visual representation)
     val scrollbarScaleFactor = scaleFactor * 0.6f  // Extra scale for visual accuracy
     val scaledScrollbarWidth = (scrollbarWidth * scrollbarScaleFactor).dp
@@ -2012,9 +2016,10 @@ fun HomeScreenPreviewSection(
         }
     }
 
-    // Calculate the preview height based on screen
+    // Calculate the preview height based on screen (short edge when the Landscape mode preview is active).
     val configuration = LocalConfiguration.current
-    val previewHeight = (configuration.screenHeightDp * 0.4f).dp
+    val previewHeight = ((if (com.bearinmind.launcher314.data.getAllowRotation(LocalContext.current))
+        minOf(configuration.screenWidthDp, configuration.screenHeightDp) else configuration.screenHeightDp) * 0.4f).dp
 
     // Compute UNIVERSAL overflow threshold — min of home screen and drawer thresholds
     // Icon formula: screenWidth / 4 * 0.55 * pct/100
@@ -2348,23 +2353,27 @@ private fun HomeScreenPreview(
     val screenHeight = configuration.screenHeightDp.dp
 
     val scaleFactor = 0.4f
-    val previewWidth = screenWidth * scaleFactor
-    val previewHeight = screenHeight * scaleFactor
-
-    // Match actual launcher proportional sizing system
-    val screenWidthDpVal = configuration.screenWidthDp.toFloat()
-    val screenHeightDpVal = configuration.screenHeightDp.toFloat()
-    val iconSizeDp = (screenWidthDpVal / 4f * 0.55f * iconSizePercent / 100f)
+    // Issue #89: Landscape mode mocks the rotated screen with the launcher's short-edge math.
+    val homeLandscapePreview = com.bearinmind.launcher314.data.getAllowRotation(LocalContext.current)
+    val homeShortDp = minOf(configuration.screenWidthDp, configuration.screenHeightDp).toFloat()
+    val homeLongDp = maxOf(configuration.screenWidthDp, configuration.screenHeightDp).toFloat()
+    val screenWidthDpVal = if (homeLandscapePreview) homeLongDp else homeShortDp
+    val screenHeightDpVal = if (homeLandscapePreview) homeShortDp else homeLongDp
+    val previewWidth = screenWidthDpVal.dp * scaleFactor
+    val previewHeight = screenHeightDpVal.dp * scaleFactor
 
     // Proportional padding matching actual launcher (LauncherScreen.kt)
     val previewHPadF = com.bearinmind.launcher314.data.homeGridHPadFactor(LocalContext.current)
-    val gridHPaddingPreview = (screenWidthDpVal * previewHPadF).dp * scaleFactor
-    val gridVPaddingPreview = (screenWidthDpVal * 0.022f).dp * scaleFactor
+    val gridHPaddingPreview = (homeShortDp * previewHPadF).dp * scaleFactor
+    val gridVPaddingPreview = (homeShortDp * 0.022f).dp * scaleFactor
 
     // Cell basis for proportional sizing (same formula as actual launcher)
-    val gridCellWidth = (screenWidthDpVal - screenWidthDpVal * previewHPadF * 2) / gridColumns
-    val gridCellHeight = (screenHeightDpVal - 76f - screenWidthDpVal * 0.022f * 2) / gridRows
+    val gridCellWidth = (screenWidthDpVal - homeShortDp * previewHPadF * 2) / gridColumns
+    val gridCellHeight = (screenHeightDpVal - 76f - homeShortDp * 0.022f * 2) / gridRows
     val gridCellBasis = minOf(gridCellWidth, gridCellHeight)
+    // Same landscape-only icon clamp as the launcher.
+    val iconSizeDp = (homeShortDp / 4f * 0.55f * iconSizePercent / 100f)
+        .let { if (homeLandscapePreview) minOf(it, gridCellBasis * 0.78f) else it }
 
     val statusBarHeight = 24.dp * scaleFactor
     val statusBarPadding = 8.dp * scaleFactor  // Match app drawer preview

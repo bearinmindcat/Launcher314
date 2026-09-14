@@ -959,7 +959,8 @@ internal fun MainDrawerContent(
             val dotContext = LocalContext.current
             val dotBaseColor = getScrollbarColor(dotContext)
             val dotIntensity = getScrollbarIntensity(dotContext)
-            val dotSize = (LocalConfiguration.current.screenWidthDp * 0.02f * getScrollbarWidthPercent(dotContext) / 100f).dp
+            // Issue #89: dot size off the short edge so landscape matches portrait.
+            val dotSize = (minOf(LocalConfiguration.current.screenWidthDp, LocalConfiguration.current.screenHeightDp) * 0.02f * getScrollbarWidthPercent(dotContext) / 100f).dp
             val dotColor = remember(dotBaseColor, dotIntensity) {
                 val base = Color(dotBaseColor)
                 val factor = (dotIntensity / 100f).coerceIn(0f, 1f)
@@ -1259,7 +1260,7 @@ internal fun MainDrawerContent(
                             val sbHPct = getScrollbarHeightPercent(sbCtx)
                             val sbSW = LocalConfiguration.current.screenWidthDp.toFloat()
                             val sbSH = LocalConfiguration.current.screenHeightDp.toFloat()
-                            val sbW = (sbSW * 0.02f * sbWPct / 100f).toInt()
+                            val sbW = (minOf(sbSW, sbSH) * 0.02f * sbWPct / 100f).toInt()
                             val sbH = (sbSH * 0.20f * sbHPct / 100f).toInt()
                             val sbColor = getScrollbarColor(sbCtx)
                             val sbInt = getScrollbarIntensity(sbCtx)
@@ -1547,7 +1548,7 @@ internal fun MainDrawerContent(
                 val scrollbarHeightPct = getScrollbarHeightPercent(scrollbarContext)
                 val scrollbarScreenWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
                 val scrollbarScreenHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
-                val scrollbarWidth = (scrollbarScreenWidthDp * 0.02f * scrollbarWidthPct / 100f).toInt()
+                val scrollbarWidth = (minOf(scrollbarScreenWidthDp, scrollbarScreenHeightDp) * 0.02f * scrollbarWidthPct / 100f).toInt()
                 val scrollbarHeight = (scrollbarScreenHeightDp * 0.20f * scrollbarHeightPct / 100f).toInt()
                 val scrollbarColor = getScrollbarColor(scrollbarContext)
                 val scrollbarIntensity = getScrollbarIntensity(scrollbarContext)

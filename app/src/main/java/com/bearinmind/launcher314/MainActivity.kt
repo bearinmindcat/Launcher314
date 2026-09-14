@@ -414,6 +414,11 @@ class MainActivity : ComponentActivity() {
         // Drive the launcher window at the panel's max refresh rate (some devices leave it at 60Hz while system UI runs 120).
         requestHighRefreshRate()
 
+        // Issue #89 (experimental): runtime override lifts the manifest portrait lock.
+        if (com.bearinmind.launcher314.data.getAllowRotation(this)) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+
         // Handle pin shortcut request (Android 8.0+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             handlePinShortcutRequest(intent)

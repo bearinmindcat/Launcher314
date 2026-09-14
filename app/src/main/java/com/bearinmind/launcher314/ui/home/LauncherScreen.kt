@@ -42,6 +42,8 @@ import androidx.compose.animation.core.snap
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -838,6 +840,16 @@ internal suspend fun androidx.compose.foundation.pager.PagerState.animateToLogic
     if (spec != null) animateScrollToPage(raw, animationSpec = spec) else animateScrollToPage(raw)
 }
 
+/** Universal per-app overflow threshold: min of home & drawer slider red-zones (same formula as global settings). */
+private fun universalOverflowThreshold(context: android.content.Context, shortEdgeDp: Float, screenWidthDp: Float, gridCellWidth: Float, gridCellBasis: Float): Float {
+    val iconRef = shortEdgeDp / 4f * 0.55f
+    val homeT = ((gridCellWidth - gridCellBasis * 0.073f * 2f) / iconRef * 100f).coerceIn(50f, 125f)
+    val drawerHPad = if (getDrawerPagedMode(context)) 16f else 28f
+    val drawerCellWidth = (screenWidthDp - drawerHPad) / getGridSize(context)
+    val drawerT = ((drawerCellWidth - 16f) / iconRef * 100f).coerceIn(50f, 125f)
+    return minOf(homeT, drawerT)
+}
+
 /**
  * LauncherScreen - A home screen with drag and drop app placement
  */
@@ -915,14 +927,16 @@ fun LauncherScreen(
     // Reference: 360dp phone, 4 cols, 6 rows → cellWidth=82dp, cellHeight~110dp → basis=82dp
     val screenWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
     val screenHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
+    // Issue #89: sizes off the SHORT edge (Launcher3 rule) keep landscape icons portrait-sized.
+    val shortEdgeDp = minOf(screenWidthDp, screenHeightDp)
     val hPadF = com.bearinmind.launcher314.data.homeGridHPadFactor(context)
-    val gridHPadding = (screenWidthDp * hPadF).dp   // ~16dp on 360dp phone at stock margin
-    val gridVPadding = (screenWidthDp * 0.022f).dp    // ~8dp on 360dp phone
-    val edgeScrollZone = (screenWidthDp * 0.111f).dp  // ~40dp on 360dp phone
-    val gridCellWidth = (screenWidthDp - screenWidthDp * hPadF * 2) / gridColumns
-    val dockCellWidth = (screenWidthDp - screenWidthDp * hPadF * 2) / dockSlots
+    val gridHPadding = (shortEdgeDp * hPadF).dp   // ~16dp on 360dp phone at stock margin
+    val gridVPadding = (shortEdgeDp * 0.022f).dp    // ~8dp on 360dp phone
+    val edgeScrollZone = (shortEdgeDp * 0.111f).dp  // ~40dp on 360dp phone
+    val gridCellWidth = (screenWidthDp - shortEdgeDp * hPadF * 2) / gridColumns
+    val dockCellWidth = (screenWidthDp - shortEdgeDp * hPadF * 2) / dockSlots
     // Estimate cell height: screen height minus dock (~56dp), nav dots (~20dp), vertical padding
-    val gridCellHeight = (screenHeightDp - 76f - screenWidthDp * 0.022f * 2) / gridRows
+    val gridCellHeight = (screenHeightDp - 76f - shortEdgeDp * 0.022f * 2) / gridRows
     // Use the smaller of width/height so content never overflows
     val gridCellBasis = minOf(gridCellWidth, gridCellHeight)
     val dockCellBasis = minOf(dockCellWidth, gridCellHeight)
@@ -941,21 +955,14 @@ fun LauncherScreen(
     val dockMarkerHalfSize = (dockCellBasis * 0.073f).dp
     val dockHoverCornerRadius = (dockCellBasis * 0.146f).dp
 
-    // Icon size from percentage using fixed reference (screenWidth / 4)
+    // Icon size from percentage using fixed reference (shortEdge / 4)
     // Uses reference column count of 4 so icon size is consistent across screens regardless of actual column count
-    val iconSizeDp = (screenWidthDp / 4f * 0.55f * iconSizePercent / 100f).toInt()
+    // Landscape-only clamp: icon + label + spacer must fit the shorter rows (portrait math unchanged).
+    val iconSizeDp = (shortEdgeDp / 4f * 0.55f * iconSizePercent / 100f).toInt()
+        .let { if (screenWidthDp > screenHeightDp) minOf(it, (gridCellHeight - 22f).toInt().coerceAtLeast(18)) else it }
 
-    // Per-app icon size overflow threshold: same universal formula as global settings slider
-    // (min of home screen threshold and drawer threshold), converted to per-app scale
-    val iconRef = screenWidthDp / 4f * 0.55f
-    val gridMarkerPadding = gridCellBasis * 0.073f * 2f
-    val homeOverflowThreshold = ((gridCellWidth - gridMarkerPadding) / iconRef * 100f).coerceIn(50f, 125f)
-    val drawerGridSize = getGridSize(context)
-    val drawerPaged = getDrawerPagedMode(context)
-    val drawerHPad = if (drawerPaged) 16f else 28f
-    val drawerCellWidth = (screenWidthDp - drawerHPad) / drawerGridSize
-    val drawerOverflowThreshold = ((drawerCellWidth - 16f) / iconRef * 100f).coerceIn(50f, 125f)
-    val universalOverflowThreshold = minOf(homeOverflowThreshold, drawerOverflowThreshold)
+    // Per-app icon size overflow threshold (extracted for the 64KB method limit).
+    val universalOverflowThreshold = universalOverflowThreshold(context, shortEdgeDp, screenWidthDp, gridCellWidth, gridCellBasis)
 
     // Edge scroll zone in pixels (proportional to screen width)
     val edgeScrollZonePx = with(density) { edgeScrollZone.toPx() }
@@ -1140,6 +1147,12 @@ fun LauncherScreen(
     val loopHome = remember { com.bearinmind.launcher314.data.getInfiniteScrollHome(context) }
     val pagerState = rememberLoopedPagerState(loopHome, totalPages, prefs.getInt("launcher_current_page", 0))
     val currentPage by remember { derivedStateOf { pagerState.currentPage.mod(totalPages.coerceAtLeast(1)) } }
+    // Launcher3-style page snap, hoisted so the dots strip shares it (issue #89).
+    val homePageSnapSpec = remember { spring<Float>(dampingRatio = 0.9f, stiffness = 500f) }
+    val homePagerFlingBehavior = PagerDefaults.flingBehavior(
+        state = pagerState,
+        snapAnimationSpec = homePageSnapSpec
+    )
     // Expose pager settle state so the drawer swipe gesture can claim a vertical
     // swipe immediately during a page settle (see HomePagerSwipeState).
     LaunchedEffect(pagerState.isScrollInProgress) {
@@ -3089,25 +3102,6 @@ fun LauncherScreen(
                         CircularProgressIndicator(color = Color.White)
                     }
                 } else {
-                    // Custom snap spec for the home page swipe — matches
-                    // AOSP Launcher3 / Lawnchair's Workspace exactly:
-                    //   curve: f(t) = (t-1)^5 + 1  (quintic ease-out — fast
-                    //          start, decelerates aggressively to a soft
-                    //          landing). From AOSP Interpolators.SCROLL.
-                    //   duration: 750 ms (phone). From Trebuchet's
-                    //          config_pageSnapAnimationDuration.
-                    // Default decay path is preserved so a hard flick still
-                    // flings naturally before the snap takes over.
-                    val homePageSnapSpec = remember {
-                        // Spring settle, consistent with the drawer release settle (also
-                        // a spring) so letting go mid-page-swipe and mid-drawer-swipe feel
-                        // the same. High damping = smooth decelerate with no page bounce.
-                        spring<Float>(dampingRatio = 0.9f, stiffness = 500f)
-                    }
-                    val homePagerFlingBehavior = PagerDefaults.flingBehavior(
-                        state = pagerState,
-                        snapAnimationSpec = homePageSnapSpec
-                    )
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
@@ -3978,7 +3972,7 @@ fun LauncherScreen(
                                                             alpha = base.alpha
                                                         )
                                                     }
-                                                    val stackDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
+                                                    val stackDotSize = (shortEdgeDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
 
                                                     // Show card chrome (background, outline, dots) while swiping, dragging a widget, + linger after
                                                     val isStackSwiping = stackPagerState.isScrollInProgress
@@ -5725,7 +5719,7 @@ fun LauncherScreen(
 
             // Page indicator dots (home page = rounded triangle, others = circle)
             // Uses scrollbar personalization settings for size, color, intensity
-            val navDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
+            val navDotSize = (shortEdgeDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
             val navDotBaseColor = getScrollbarColor(context)
             val navDotIntensity = getScrollbarIntensity(context)
             val navDotColor = remember(navDotBaseColor, navDotIntensity) {
@@ -5740,11 +5734,19 @@ fun LauncherScreen(
             }
             // Equilateral triangle height = dot diameter + 10% (canvas slightly wider to fit)
             val triangleSize = navDotSize * 2f / 1.732f * 1.1f
-            // Fixed height container so dot size changes don't shift the grid
+            // Fixed height container so dot size changes don't shift the grid.
+            // The strip sits OUTSIDE the pager, so forward its swipes or they die (issue #89).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(maxOf(triangleSize, navDotSize) + 16.dp),
+                    .height(maxOf(triangleSize, navDotSize) + 16.dp)
+                    .scrollable(
+                        state = pagerState,
+                        orientation = androidx.compose.foundation.gestures.Orientation.Horizontal,
+                        reverseDirection = androidx.compose.foundation.gestures.ScrollableDefaults.reverseDirection(
+                            LocalLayoutDirection.current, androidx.compose.foundation.gestures.Orientation.Horizontal, false),
+                        flingBehavior = homePagerFlingBehavior
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Row(
@@ -5864,7 +5866,7 @@ fun LauncherScreen(
                     alpha = base.alpha
                 )
             }
-            val dockDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
+            val dockDotSize = (shortEdgeDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
 
             if (isDockEnabled) Box(
                 modifier = Modifier
@@ -5995,6 +5997,7 @@ fun LauncherScreen(
                             // Proportional sizing
                             markerHalfSizeParam = dockMarkerHalfSize,
                             hoverCornerRadius = dockHoverCornerRadius,
+                            maxCellHeightDp = (shortEdgeDp - shortEdgeDp * hPadF * 2) / dockSlots,
                             onTap = {
                                 if (dockFolder != null) {
                                     // Open dock folder using the existing folder overlay system
@@ -6431,7 +6434,7 @@ fun LauncherScreen(
                             val factor = (overlayDotIntensity / 100f).coerceIn(0f, 1f)
                             Color(base.red * factor, base.green * factor, base.blue * factor, base.alpha)
                         }
-                        val overlayDotSize = (screenWidthDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
+                        val overlayDotSize = (shortEdgeDp * 0.02f * getScrollbarWidthPercent(context) / 100f).dp
 
                         Row(
                             modifier = Modifier

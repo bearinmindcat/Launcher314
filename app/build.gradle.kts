@@ -7,13 +7,13 @@ plugins {
 
 android {
     namespace = "com.bearinmind.launcher314"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.bearinmind.launcher314"
         minSdk = 24
-        targetSdk = 35
-        versionCode = 35
+        targetSdk = 36
+        versionCode = 36
         versionName = "0.0.25-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

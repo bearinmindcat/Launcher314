@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -805,7 +806,8 @@ fun DraggableGridCell(
                                 val intensity = (cell.appInfo.customization?.iconTintIntensity ?: 100) / 100f
                                 ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(cell.appInfo.customization?.iconTintBlendMode))
                             }
-                            val perAppSizePercent = cell.appInfo.customization?.iconSizePercent ?: globalIconSizePercent.toInt()
+                            val perAppSizePercent = if (isLandscapeNow()) globalIconSizePercent.toInt()
+                                else cell.appInfo.customization?.iconSizePercent ?: globalIconSizePercent.toInt()
                             val perAppIconSizeDp = (iconSize * perAppSizePercent / globalIconSizePercent.toFloat()).dp
                             // When bg color is set, generate icon with user color as bg layer
                             val useBgColorIcon = globalIconBgColor != null && !hasCustomIcon
@@ -1505,7 +1507,8 @@ fun DraggableGridCell(
                         ) {
                             // Folder preview - 2x2 grid of app icons in a rounded square
                             // Per-folder size, same absolute-percent scale as per-app icons.
-                            val folderSizePct = folderCustomization?.iconSizePercent ?: globalIconSizePercent.toInt()
+                            val folderSizePct = if (isLandscapeNow()) globalIconSizePercent.toInt()
+                                else folderCustomization?.iconSizePercent ?: globalIconSizePercent.toInt()
                             val folderBoxSize = (iconSize * folderSizePct / globalIconSizePercent).dp
                             val folderCornerRadius = (iconSize * 0.29f).dp
                             // Per-folder shape override: folder customization > global shape > rounded corner
@@ -1949,6 +1952,11 @@ fun DraggableGridCell(
     } // Close outer Box
 }
 
+/** Issue #89: landscape ignores per-item size overrides — its rows are too short for oversized icons. */
+@Composable
+private fun isLandscapeNow(): Boolean =
+    LocalConfiguration.current.let { it.screenWidthDp > it.screenHeightDp }
+
 /**
  * DockSlot - A single slot in the dock bar at the bottom
  * Same style as the main grid - Lawnchair style empty cells with hover animation
@@ -1976,6 +1984,8 @@ fun DockSlot(
     // Proportional sizing params (defaults match 360dp phone with 4 columns)
     markerHalfSizeParam: Dp = 6.dp,
     hoverCornerRadius: Dp = 12.dp,
+    // Issue #89: height cap for the square cell — landscape slots are far too wide otherwise.
+    maxCellHeightDp: Float = 10000f,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onDragStart: () -> Unit,
@@ -2046,10 +2056,11 @@ fun DockSlot(
         label = "dockCreatePreview"
     )
 
-    // Fill available width and use square aspect ratio
+    // Fill available width, square aspect; cap = portrait cell size, so portrait is unchanged.
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(max = maxCellHeightDp.dp)
             .aspectRatio(1f), // Square cells like grid
         contentAlignment = Alignment.Center
     ) {
@@ -2212,7 +2223,8 @@ fun DockSlot(
                     val intensity = (appInfo.customization?.iconTintIntensity ?: 100) / 100f
                     ColorFilter.tint(Color(tintColor.toInt()).copy(alpha = intensity), parseBlendMode(appInfo.customization?.iconTintBlendMode))
                 }
-                val dockPerAppSizePercent = appInfo?.customization?.iconSizePercent ?: globalIconSizePercent.toInt()
+                val dockPerAppSizePercent = if (isLandscapeNow()) globalIconSizePercent.toInt()
+                    else appInfo?.customization?.iconSizePercent ?: globalIconSizePercent.toInt()
                 val dockPerAppIconSizeDp = (iconSize * dockPerAppSizePercent / globalIconSizePercent.toFloat()).dp
                 // When bg color is set, generate icon with user color as bg layer
                 val dockUseBgColorIcon = globalIconBgColor != null && !dockHasCustomIcon && appInfo != null
@@ -2526,7 +2538,8 @@ fun DockSlot(
                 contentAlignment = Alignment.Center
             ) {
                 // Folder 2x2 icon grid (same style as grid folder cells)
-                val dockFolderSizePct = folderCustomization?.iconSizePercent ?: globalIconSizePercent.toInt()
+                val dockFolderSizePct = if (isLandscapeNow()) globalIconSizePercent.toInt()
+                    else folderCustomization?.iconSizePercent ?: globalIconSizePercent.toInt()
                 val folderBoxSize = (iconSize * dockFolderSizePct / globalIconSizePercent).dp
                 val folderCornerRadius = (iconSize * 0.29f).dp
                 val folderInvalidTint = if ((isDragging && !isHoverTargetValid) || (isHovered && !isValidDropTarget)) {

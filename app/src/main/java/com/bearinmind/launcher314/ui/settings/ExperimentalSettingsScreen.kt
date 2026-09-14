@@ -37,6 +37,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bearinmind.launcher314.data.getAllowRotation
+import com.bearinmind.launcher314.data.setAllowRotation
 import com.bearinmind.launcher314.data.getExtendedGridSize
 import com.bearinmind.launcher314.data.getExtendedIconSizes
 import com.bearinmind.launcher314.data.getFolderAutoSizeEnabled
@@ -121,6 +123,20 @@ fun ExperimentalSettingsScreen(onBack: () -> Unit) {
                     wallpaperAccent = it
                     setWallpaperAccentEnabled(context, it)
                     ThemeAccentSignal.state.intValue++
+                }
+            )
+            // Issue #89: applies live via requestedOrientation; onCreate re-applies on restart.
+            var allowRotation by remember { mutableStateOf(getAllowRotation(context)) }
+            SettingsToggleItem(
+                title = "Landscape mode",
+                subtitle = "Unlocks landscape rotation",
+                checked = allowRotation,
+                onCheckedChange = {
+                    allowRotation = it
+                    setAllowRotation(context, it)
+                    (context as? android.app.Activity)?.requestedOrientation =
+                        if (it) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 }
             )
             // Outer margins (issue #106): 100 = stock spacing, 0 = grid flush with the screen edges; checkbox enables the slider (Font / "Hide text" pattern).
