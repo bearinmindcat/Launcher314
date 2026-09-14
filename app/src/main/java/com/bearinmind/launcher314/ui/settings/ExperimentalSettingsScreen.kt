@@ -45,6 +45,10 @@ import com.bearinmind.launcher314.data.getExtendedGridSize
 import com.bearinmind.launcher314.data.getExtendedIconSizes
 import com.bearinmind.launcher314.data.getFolderAutoSizeEnabled
 import com.bearinmind.launcher314.data.setFolderAutoSizeEnabled
+import com.bearinmind.launcher314.data.getFolderTransparency
+import com.bearinmind.launcher314.data.setFolderTransparency
+import com.bearinmind.launcher314.data.getFolderTransparencyEnabled
+import com.bearinmind.launcher314.data.setFolderTransparencyEnabled
 import com.bearinmind.launcher314.data.getHomeOuterMarginPercent
 import com.bearinmind.launcher314.data.getOuterMarginsEnabled
 import com.bearinmind.launcher314.data.setExtendedGridSize
@@ -152,6 +156,54 @@ fun ExperimentalSettingsScreen(onBack: () -> Unit) {
                         else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 }
             )
+            // Folder transparency (issue #112): 0 = opaque, 100 = see-through; checkbox enables it.
+            var folderTransparencyOn by remember { mutableStateOf(getFolderTransparencyEnabled(context)) }
+            var folderTransparency by remember { mutableFloatStateOf(getFolderTransparency(context).toFloat()) }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 16.dp)
+                ) {
+                    ThumbDragHorizontalSlider(
+                        currentValue = folderTransparency,
+                        config = SliderConfigs.folderTransparency,
+                        enabled = folderTransparencyOn,
+                        onValueChange = {
+                            folderTransparency = it
+                            setFolderTransparency(context, it.roundToInt())
+                        },
+                        onValueChangeFinished = {
+                            setFolderTransparency(context, folderTransparency.roundToInt())
+                        }
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .width(72.dp)
+                        .height(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Checkbox(
+                        checked = folderTransparencyOn,
+                        onCheckedChange = {
+                            folderTransparencyOn = it
+                            setFolderTransparencyEnabled(context, it)
+                        },
+                        modifier = Modifier.offset(x = 10.dp),
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.primary,
+                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                }
+            }
             // Outer margins (issue #106): 100 = stock spacing, 0 = grid flush with the screen edges; checkbox enables the slider (Font / "Hide text" pattern).
             var outerMarginsOn by remember { mutableStateOf(getOuterMarginsEnabled(context)) }
             var outerMargin by remember { mutableFloatStateOf(getHomeOuterMarginPercent(context).toFloat()) }

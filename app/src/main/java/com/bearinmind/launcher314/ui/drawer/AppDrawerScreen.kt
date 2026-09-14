@@ -1183,7 +1183,10 @@ fun AppDrawerScreen(
                             }
                         }
                         .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.background)
+                        // Issue #112: same folder transparency as the home popup.
+                        .background(MaterialTheme.colorScheme.background.copy(
+                            alpha = com.bearinmind.launcher314.data.folderCardAlpha(context)
+                        ))
                 ) {
                     FolderContentScreen(
                         folder = currentFolder.copy(

@@ -7402,7 +7402,10 @@ fun LauncherScreen(
                     clipPath(revealPath) { this@drawWithContent.drawContent() }
                 }
                 .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.background)
+                // Issue #112: experimental folder transparency.
+                .background(MaterialTheme.colorScheme.background.copy(
+                    alpha = com.bearinmind.launcher314.data.folderCardAlpha(context)
+                ))
                 // Same 1dp outline as the closed folder icon on the home grid
                 // (LocalFolderBorderColor). It sits after .background but
                 // before .onGloballyPositioned, so it's part of the content

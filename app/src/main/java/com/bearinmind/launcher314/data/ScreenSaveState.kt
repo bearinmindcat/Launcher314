@@ -616,6 +616,35 @@ fun setExtendedIconSizes(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_EXTENDED_ICON_SIZES, enabled).apply()
 }
 
+// EXPERIMENTAL (issue #112): open-folder transparency, same scale as Drawer Transparency.
+private const val KEY_FOLDER_TRANSPARENCY = "experimental_folder_transparency"
+
+private const val KEY_FOLDER_TRANSPARENCY_ENABLED = "experimental_folder_transparency_enabled"
+
+fun getFolderTransparencyEnabled(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_FOLDER_TRANSPARENCY_ENABLED, false)
+}
+
+fun setFolderTransparencyEnabled(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_FOLDER_TRANSPARENCY_ENABLED, enabled).apply()
+}
+
+fun getFolderTransparency(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_FOLDER_TRANSPARENCY, 0).coerceIn(0, 100)
+}
+
+/** Folder card alpha — opaque unless the checkbox is on (issue #112). */
+fun folderCardAlpha(context: Context): Float =
+    if (getFolderTransparencyEnabled(context)) (100 - getFolderTransparency(context)) / 100f else 1f
+
+fun setFolderTransparency(context: Context, percent: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_FOLDER_TRANSPARENCY, percent.coerceIn(0, 100)).apply()
+}
+
 // EXPERIMENTAL (issue #111): instant drawer open/close + no blur ramps, for slower phones.
 private const val KEY_REDUCE_ANIMATIONS = "experimental_reduce_animations"
 

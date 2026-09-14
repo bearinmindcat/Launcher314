@@ -899,6 +899,14 @@ object SliderConfigs {
         label = "Outer Margins"
     )
 
+    val folderTransparency = HorizontalSliderConfig(
+        minValue = 0f,
+        maxValue = 100f,
+        tickValues = listOf(0, 25, 50, 75, 100),
+        snapTickValues = (0..100).toList(),
+        label = "Folder Transparency"
+    )
+
     val dockColumnsExtended = HorizontalSliderConfig(
         minValue = 1f,
         maxValue = 20f,
