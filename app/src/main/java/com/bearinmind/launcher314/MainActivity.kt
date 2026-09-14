@@ -414,6 +414,9 @@ class MainActivity : ComponentActivity() {
         // Drive the launcher window at the panel's max refresh rate (some devices leave it at 60Hz while system UI runs 120).
         requestHighRefreshRate()
 
+        // Issue #111: load the reduce-animations flag before any UI composes.
+        com.bearinmind.launcher314.data.AnimPrefs.refresh(this)
+
         // Issue #89 (experimental): runtime override lifts the manifest portrait lock.
         if (com.bearinmind.launcher314.data.getAllowRotation(this)) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED

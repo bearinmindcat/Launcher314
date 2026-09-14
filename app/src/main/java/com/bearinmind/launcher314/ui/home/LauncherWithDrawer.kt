@@ -117,6 +117,9 @@ fun LauncherWithDrawer(
 
     val coroutineScope = rememberCoroutineScope()
 
+    // Issue #111 (experimental): instant drawer settle, no per-frame blur ramps.
+    val reduceAnimations = com.bearinmind.launcher314.data.AnimPrefs.reduce
+
     // True while the drawer is animating CLOSED (committed close, settling toward
     // the closed position). showAppDrawer stays true during this (the position-
     // driven effect re-asserts it), so this separate flag tells the home swipe-up
@@ -153,6 +156,8 @@ fun LauncherWithDrawer(
         // Closing if the settle target is the closed position (not 0/open). Lets the
         // home swipe-up gesture engage during the close animation.
         drawerClosing = target >= drawerRangePx * 0.5f
+        // Reduce animations (issue #111): land immediately, no settle spring.
+        if (reduceAnimations) { swipeUpY.snapTo(target); return }
         val opening = target < swipeUpY.value
         // OPEN: a soft, slightly-bouncy spring (nice springy reveal).
         // CLOSE: CRITICALLY DAMPED (dampingRatio = 1) so it NEVER overshoots or
@@ -349,7 +354,9 @@ fun LauncherWithDrawer(
         // Animate: phase 1 = drawer fades out, phase 2 = home fades in
         coroutineScope.launch {
             drawerToHomeProgress.snapTo(0f)
-            drawerToHomeProgress.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
+            // Reduced: skip the 900ms cross-fade (issue #111).
+            if (reduceAnimations) drawerToHomeProgress.snapTo(1f)
+            else drawerToHomeProgress.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
         }
     }
 
@@ -838,7 +845,9 @@ fun LauncherWithDrawer(
                     swipeUpY.value <= drawerOpenSlackPx && !isDrawerSearchActive) {
                     val impulse = (available.y * 0.06f).coerceAtMost(900f)
                     coroutineScope.launch {
-                        swipeUpY.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 800f), initialVelocity = impulse)
+                        // No bounce when animations are reduced (issue #111).
+                        if (reduceAnimations) swipeUpY.snapTo(0f)
+                        else swipeUpY.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 800f), initialVelocity = impulse)
                     }
                     return available
                 }
@@ -1031,8 +1040,9 @@ fun LauncherWithDrawer(
                     .then(
                         if (android.os.Build.VERSION.SDK_INT >= 31) {
                             Modifier.graphicsLayer {
+                                // Reduced: keep the base blur, drop the per-frame swipe ramp (issue #111).
                                 val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
-                                val ph = (pr / 0.4f).coerceIn(0f, 1f)
+                                val ph = if (reduceAnimations) 0f else (pr / 0.4f).coerceIn(0f, 1f)
                                 val r = wallpaperBlurPercent / 100f * 25.dp.toPx() + ph * 22.dp.toPx()
                                 renderEffect = if (r > 0.5f) {
                                     androidx.compose.ui.graphics.BlurEffect(
@@ -1446,10 +1456,11 @@ fun LauncherWithDrawer(
                         val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
                         val ph = (pr / 0.4f).coerceIn(0f, 1f)   // WORKSPACE/BLUR_MANUAL 0->0.4
                         alpha = 1f - ph
-                        val s = 1f - 0.08f * ph                  // 1.0 -> 0.92
+                        // Reduced: keep the fade, drop the scale + per-frame depth blur (issue #111).
+                        val s = if (reduceAnimations) 1f else 1f - 0.08f * ph   // 1.0 -> 0.92
                         scaleX = s
                         scaleY = s
-                        renderEffect = if (Build.VERSION.SDK_INT >= 31 && ph > 0.001f) {
+                        renderEffect = if (!reduceAnimations && Build.VERSION.SDK_INT >= 31 && ph > 0.001f) {
                             val r = ph * 30.dp.toPx()            // 0 -> 30dp depth blur
                             androidx.compose.ui.graphics.BlurEffect(
                                 r, r, androidx.compose.ui.graphics.TileMode.Clamp

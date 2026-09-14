@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bearinmind.launcher314.data.getAllowRotation
 import com.bearinmind.launcher314.data.setAllowRotation
+import com.bearinmind.launcher314.data.getReduceAnimations
+import com.bearinmind.launcher314.data.setReduceAnimations
 import com.bearinmind.launcher314.data.getExtendedGridSize
 import com.bearinmind.launcher314.data.getExtendedIconSizes
 import com.bearinmind.launcher314.data.getFolderAutoSizeEnabled
@@ -123,6 +125,17 @@ fun ExperimentalSettingsScreen(onBack: () -> Unit) {
                     wallpaperAccent = it
                     setWallpaperAccentEnabled(context, it)
                     ThemeAccentSignal.state.intValue++
+                }
+            )
+            // Issue #111: applies on the launcher's next composition, no restart.
+            var reduceAnimations by remember { mutableStateOf(getReduceAnimations(context)) }
+            SettingsToggleItem(
+                title = "Reduce animations",
+                checked = reduceAnimations,
+                onCheckedChange = {
+                    reduceAnimations = it
+                    setReduceAnimations(context, it)
+                    com.bearinmind.launcher314.data.AnimPrefs.refresh(context)
                 }
             )
             // Issue #89: applies live via requestedOrientation; onCreate re-applies on restart.

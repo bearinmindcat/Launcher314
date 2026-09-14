@@ -538,7 +538,8 @@ internal fun DrawerTabRow(
                 .filterNotNull().first()
             if (draggingId != null || settlingId != null) return@LaunchedEffect
             val target = (left - (viewportWidthPx - width) / 2).coerceIn(0, chipScroll.maxValue)
-            chipScroll.animateScrollTo(target)
+            if (com.bearinmind.launcher314.data.AnimPrefs.reduce) chipScroll.scrollTo(target)
+            else chipScroll.animateScrollTo(target)
         }
 
         Row(

@@ -1,5 +1,7 @@
 package com.bearinmind.launcher314.ui.home
 
+import com.bearinmind.launcher314.data.AnimPrefs
+import com.bearinmind.launcher314.data.lessAnim
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.core.snap
@@ -533,7 +535,7 @@ fun DraggableGridCell(
                 val isScaledUp = showContextMenu || showBulkMenu || isDragging || isCustomizing || isSelected
                 val animatedIconScale by animateFloatAsState(
                     targetValue = if (isScaledUp) 1.265f else 1f,
-                    animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
+                    animationSpec = lessAnim(if (isScaledUp) tween(durationMillis = 150) else snap()),
                     label = "iconScale"
                 )
                 // Force 1f immediately when not in active interaction —
@@ -545,7 +547,7 @@ fun DraggableGridCell(
                 val hideLabel = showContextMenu || isDragging || isCustomizing || isSelected
                 val labelAlpha by animateFloatAsState(
                     targetValue = if (showContextMenu || isCustomizing || isSelected) 0f else 1f,
-                    animationSpec = tween(durationMillis = 150),
+                    animationSpec = lessAnim(tween(durationMillis = 150)),
                     label = "labelAlpha"
                 )
 
@@ -557,7 +559,7 @@ fun DraggableGridCell(
                 var flashOverlay by remember { mutableStateOf(false) }
                 val flashAlpha by animateFloatAsState(
                     targetValue = if (flashOverlay) 0.4f else 0f,
-                    animationSpec = if (flashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150),
+                    animationSpec = lessAnim(if (flashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150)),
                     label = "flash_alpha",
                     finishedListener = { if (flashOverlay) flashOverlay = false }
                 )
@@ -986,7 +988,7 @@ fun DraggableGridCell(
                                 com.bearinmind.launcher314.ui.theme.LocalHideIconText.current
                             val hideLabelAlpha by animateFloatAsState(
                                 targetValue = if (labelHidden) 0f else 1f,
-                                animationSpec = tween(durationMillis = 250),
+                                animationSpec = lessAnim(tween(durationMillis = 250)),
                                 label = "hideLabelAlpha"
                             )
                             val displayLabel = customization?.customLabel?.takeIf { it.isNotEmpty() }
@@ -1336,7 +1338,7 @@ fun DraggableGridCell(
                 val isFolderScaledUp = showContextMenu || isDragging || showFolderRemoveConfirm || isCustomizing
                 val animatedFolderScale by animateFloatAsState(
                     targetValue = if (isFolderScaledUp) 1.265f else 1f,
-                    animationSpec = if (isFolderScaledUp) tween(durationMillis = 150) else snap(),
+                    animationSpec = lessAnim(if (isFolderScaledUp) tween(durationMillis = 150) else snap()),
                     label = "folderIconScale"
                 )
                 val iconScale = if (isFolderScaledUp) animatedFolderScale else 1f
@@ -1345,7 +1347,7 @@ fun DraggableGridCell(
                 val hideFolderLabel = showContextMenu || isDragging || showFolderRemoveConfirm || isCustomizing
                 val folderLabelAlpha by animateFloatAsState(
                     targetValue = if (showContextMenu || showFolderRemoveConfirm) 0f else 1f,
-                    animationSpec = tween(durationMillis = 150),
+                    animationSpec = lessAnim(tween(durationMillis = 150)),
                     label = "folderLabelAlpha"
                 )
 
@@ -1354,7 +1356,7 @@ fun DraggableGridCell(
                 var folderFlashOverlay by remember { mutableStateOf(false) }
                 val folderFlashAlpha by animateFloatAsState(
                     targetValue = if (folderFlashOverlay) 0.4f else 0f,
-                    animationSpec = if (folderFlashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150),
+                    animationSpec = lessAnim(if (folderFlashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150)),
                     label = "folder_flash_alpha",
                     finishedListener = { if (folderFlashOverlay) folderFlashOverlay = false }
                 )
@@ -2027,7 +2029,7 @@ fun DockSlot(
     var dockFlashOverlay by remember { mutableStateOf(false) }
     val dockFlashAlpha by animateFloatAsState(
         targetValue = if (dockFlashOverlay) 0.4f else 0f,
-        animationSpec = if (dockFlashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150),
+        animationSpec = lessAnim(if (dockFlashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150)),
         label = "dock_flash_alpha",
         finishedListener = { if (dockFlashOverlay) dockFlashOverlay = false }
     )
@@ -2038,7 +2040,7 @@ fun DockSlot(
     val isDockScaledUp = showContextMenu || isDragging || isCustomizing
     val animatedDockScale by animateFloatAsState(
         targetValue = if (isDockScaledUp) 1.265f else 1f,
-        animationSpec = if (isDockScaledUp) tween(durationMillis = 150) else snap(),
+        animationSpec = lessAnim(if (isDockScaledUp) tween(durationMillis = 150) else snap()),
         label = "dockIconScale"
     )
     val iconScale = if (isDockScaledUp) animatedDockScale else 1f

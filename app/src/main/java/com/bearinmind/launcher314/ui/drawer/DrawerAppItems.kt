@@ -1,5 +1,7 @@
 package com.bearinmind.launcher314.ui.drawer
 
+import com.bearinmind.launcher314.data.AnimPrefs
+import com.bearinmind.launcher314.data.lessAnim
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -187,7 +189,7 @@ internal fun FolderItem(
     // Animate scale when context menu is shown (matches home screen folder style)
     val menuScale by animateFloatAsState(
         targetValue = if (showContextMenu) 1.265f else 1f,
-        animationSpec = if (showContextMenu) tween(durationMillis = 150) else snap(),
+        animationSpec = lessAnim(if (showContextMenu) tween(durationMillis = 150) else snap()),
         label = "folder_scale"
     )
 
@@ -203,7 +205,7 @@ internal fun FolderItem(
     // Hide label when context menu is shown (matches app behavior)
     val labelAlpha by animateFloatAsState(
         targetValue = if (showContextMenu) 0f else 1f,
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = lessAnim(tween(durationMillis = 150)),
         label = "folder_label_alpha"
     )
 
@@ -214,7 +216,7 @@ internal fun FolderItem(
     var flashOverlay by remember { mutableStateOf(false) }
     val flashAlpha by animateFloatAsState(
         targetValue = if (flashOverlay) 0.4f else 0f,
-        animationSpec = if (flashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150),
+        animationSpec = lessAnim(if (flashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150)),
         label = "flash_alpha",
         finishedListener = { if (flashOverlay) flashOverlay = false }
     )
@@ -758,7 +760,7 @@ internal fun FolderAppItem(
     val isScaledUp = showContextMenu || showBulkMenu || isSelected
     val scale by animateFloatAsState(
         targetValue = if (isScaledUp) 1.265f else 1f,
-        animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
+        animationSpec = lessAnim(if (isScaledUp) tween(durationMillis = 150) else snap()),
         label = "icon_scale"
     )
     var drawerIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
@@ -766,7 +768,7 @@ internal fun FolderAppItem(
     // Hide label when scaled up (matches home screen app behavior)
     val labelAlpha by animateFloatAsState(
         targetValue = if (isScaledUp) 0f else 1f,
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = lessAnim(tween(durationMillis = 150)),
         label = "label_alpha"
     )
 
@@ -776,7 +778,7 @@ internal fun FolderAppItem(
     var flashOverlay by remember { mutableStateOf(false) }
     val flashAlpha by animateFloatAsState(
         targetValue = if (flashOverlay) 0.4f else 0f,
-        animationSpec = if (flashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150),
+        animationSpec = lessAnim(if (flashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150)),
         label = "flash_alpha",
         finishedListener = { if (flashOverlay) flashOverlay = false }
     )
@@ -1208,7 +1210,7 @@ internal fun SelectableAppItem(
     val isScaledUp = showContextMenu || showBulkMenu || isSelected
     val scale by animateFloatAsState(
         targetValue = if (isScaledUp) 1.265f else 1f,
-        animationSpec = if (isScaledUp) tween(durationMillis = 150) else snap(),
+        animationSpec = lessAnim(if (isScaledUp) tween(durationMillis = 150) else snap()),
         label = "icon_scale"
     )
     var drawerIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
@@ -1216,7 +1218,7 @@ internal fun SelectableAppItem(
     // Hide label when scaled up (matches home screen app behavior)
     val labelAlpha by animateFloatAsState(
         targetValue = if (isScaledUp) 0f else 1f,
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = lessAnim(tween(durationMillis = 150)),
         label = "label_alpha"
     )
 
@@ -1227,7 +1229,7 @@ internal fun SelectableAppItem(
     var flashOverlay by remember { mutableStateOf(false) }
     val flashAlpha by animateFloatAsState(
         targetValue = if (flashOverlay) 0.4f else 0f,
-        animationSpec = if (flashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150),
+        animationSpec = lessAnim(if (flashOverlay) tween(durationMillis = 80) else tween(durationMillis = 150)),
         label = "flash_alpha",
         finishedListener = { if (flashOverlay) flashOverlay = false }
     )

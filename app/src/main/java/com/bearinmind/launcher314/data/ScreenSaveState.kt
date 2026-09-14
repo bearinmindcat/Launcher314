@@ -616,6 +616,19 @@ fun setExtendedIconSizes(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_EXTENDED_ICON_SIZES, enabled).apply()
 }
 
+// EXPERIMENTAL (issue #111): instant drawer open/close + no blur ramps, for slower phones.
+private const val KEY_REDUCE_ANIMATIONS = "experimental_reduce_animations"
+
+fun getReduceAnimations(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_REDUCE_ANIMATIONS, false)
+}
+
+fun setReduceAnimations(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_REDUCE_ANIMATIONS, enabled).apply()
+}
+
 // EXPERIMENTAL (issue #89): lift the portrait lock (landscape layouts not optimized yet).
 private const val KEY_ALLOW_ROTATION = "experimental_allow_rotation"
 

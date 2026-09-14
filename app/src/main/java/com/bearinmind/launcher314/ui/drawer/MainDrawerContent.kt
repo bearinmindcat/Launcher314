@@ -1,5 +1,7 @@
 package com.bearinmind.launcher314.ui.drawer
 
+import com.bearinmind.launcher314.data.AnimPrefs
+import com.bearinmind.launcher314.data.lessAnim
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -541,18 +543,18 @@ internal fun MainDrawerContent(
         val effectiveShowDropZone = showDropZone || (escapeHoverState?.isEscapeDragActive == true)
         val searchBarAlpha by animateFloatAsState(
             targetValue = if (effectiveShowDropZone) 0f else 1f,
-            animationSpec = tween(450),
+            animationSpec = lessAnim(tween(450)),
             label = "searchBarAlpha"
         )
         val dropZoneAlpha by animateFloatAsState(
             targetValue = if (effectiveShowDropZone) 1f else 0f,
-            animationSpec = tween(450),
+            animationSpec = lessAnim(tween(450)),
             label = "dropZoneAlpha"
         )
         // Edge fade: when drop zone shows, left 25% and right 25% of grey bg fade out
         val edgeFade by animateFloatAsState(
             targetValue = if (effectiveShowDropZone) 0f else 1f,
-            animationSpec = tween(450),
+            animationSpec = lessAnim(tween(450)),
             label = "edgeFade"
         )
         // Smooth hover highlight animation
@@ -1129,7 +1131,7 @@ internal fun MainDrawerContent(
 
                                 Box(
                                     modifier = Modifier
-                                        .then(if (searchQuery.isBlank()) Modifier.animateItemPlacement(tween(300)) else Modifier)
+                                        .then(if (searchQuery.isBlank() && !AnimPrefs.reduce) Modifier.animateItemPlacement(tween(300)) else Modifier)
                                         .height(cellHeightDp)
                                         .onGloballyPositioned { coords ->
                                             if (cellKey != null) {
@@ -1398,7 +1400,7 @@ internal fun MainDrawerContent(
                         }
                         Box(
                             modifier = Modifier
-                                .then(if (searchQuery.isBlank()) Modifier.animateItemPlacement(tween(300)) else Modifier)
+                                .then(if (searchQuery.isBlank() && !AnimPrefs.reduce) Modifier.animateItemPlacement(tween(300)) else Modifier)
                                 .onGloballyPositioned { coords ->
                                     drawerCellPositions[cellKey] = coords.positionInRoot()
                                     drawerCellSizes[cellKey] = coords.size
@@ -1460,7 +1462,7 @@ internal fun MainDrawerContent(
                         val isDropAnimTarget = app.packageName == dropAnimatingPackage
                         Box(
                             modifier = Modifier
-                                .then(if (searchQuery.isBlank()) Modifier.animateItemPlacement(tween(300)) else Modifier)
+                                .then(if (searchQuery.isBlank() && !AnimPrefs.reduce) Modifier.animateItemPlacement(tween(300)) else Modifier)
                                 .onGloballyPositioned { coords ->
                                     drawerCellPositions[cellKey] = coords.positionInRoot()
                                     drawerCellSizes[cellKey] = coords.size

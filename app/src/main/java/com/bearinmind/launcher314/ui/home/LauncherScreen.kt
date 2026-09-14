@@ -1,5 +1,7 @@
 package com.bearinmind.launcher314.ui.home
 
+import com.bearinmind.launcher314.data.AnimPrefs
+import com.bearinmind.launcher314.data.lessAnim
 import com.bearinmind.launcher314.ui.components.EdgeScrollIndicators
 import com.bearinmind.launcher314.ui.components.handleEdgeScrollDetection
 import com.bearinmind.launcher314.ui.components.GridCellHoverIndicator
@@ -1148,7 +1150,7 @@ fun LauncherScreen(
     val pagerState = rememberLoopedPagerState(loopHome, totalPages, prefs.getInt("launcher_current_page", 0))
     val currentPage by remember { derivedStateOf { pagerState.currentPage.mod(totalPages.coerceAtLeast(1)) } }
     // Launcher3-style page snap, hoisted so the dots strip shares it (issue #89).
-    val homePageSnapSpec = remember { spring<Float>(dampingRatio = 0.9f, stiffness = 500f) }
+    val homePageSnapSpec = remember { lessAnim(spring<Float>(dampingRatio = 0.9f, stiffness = 500f)) }
     val homePagerFlingBehavior = PagerDefaults.flingBehavior(
         state = pagerState,
         snapAnimationSpec = homePageSnapSpec
@@ -5762,7 +5764,7 @@ fun LauncherScreen(
                         val dotVisible = !(removingLastDot && page == totalPages - 1)
                         val dotProgress by animateFloatAsState(
                             targetValue = if (dotVisible) 1f else 0f,
-                            animationSpec = tween(durationMillis = 300),
+                            animationSpec = lessAnim(tween(durationMillis = 300)),
                             label = "dotProgress"
                         )
                         // Full slot width = element size + 8dp horizontal padding
@@ -5846,10 +5848,10 @@ fun LauncherScreen(
             val showDockChrome = dockPagesCount > 1 && (isDockSwiping || isDockSwipeLingering)
             val dockChromeAlpha by animateFloatAsState(
                 targetValue = if (showDockChrome) 1f else 0f,
-                animationSpec = tween(
+                animationSpec = lessAnim(tween(
                     durationMillis = if (showDockChrome) 120 else 400,
                     easing = FastOutSlowInEasing
-                ),
+                )),
                 label = "dockChrome"
             )
 
@@ -6895,11 +6897,11 @@ fun LauncherScreen(
         // progress) settles via spring physics instead of a fixed tween,
         // so the open and close read as a single fluid arc.
         targetValue = if (openHomeFolder != null) 1f else 0f,
-        animationSpec = spring(
+        animationSpec = lessAnim(spring(
             dampingRatio = 0.8f,
             stiffness = 380f,
             visibilityThreshold = 0.001f
-        ),
+        )),
         label = "folderOpenClose",
         finishedListener = { if (it == 0f && !escapedToHomeGrid) lastOpenedFolder = null }
     )
