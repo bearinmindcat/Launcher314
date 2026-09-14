@@ -324,10 +324,9 @@ fun AppDrawerPreviewSection(
         }
     }
 
-    // Calculate the preview height based on screen (short edge when the Landscape mode preview is active).
+    // LONG edge: slot and slider stay portrait-sized in Landscape mode (issue #89).
     val configuration = LocalConfiguration.current
-    val previewHeight = ((if (com.bearinmind.launcher314.data.getAllowRotation(LocalContext.current))
-        minOf(configuration.screenWidthDp, configuration.screenHeightDp) else configuration.screenHeightDp) * 0.4f).dp
+    val previewHeight = (maxOf(configuration.screenWidthDp, configuration.screenHeightDp) * 0.4f).dp
 
     // Compute UNIVERSAL overflow threshold — min of drawer and home screen thresholds
     // Icon formula: screenWidth / 4 * 0.55 * pct/100
@@ -1037,11 +1036,19 @@ private fun RealAppDrawerPreview(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Preview container
+        // Preview container — slot keeps the portrait footprint (issue #89).
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth().height(previewLongDp.dp * scaleFactor),
+            contentAlignment = Alignment.Center
+        ) {
+        // Landscape widens past our gutters, uniformly so height follows; capped by the slot.
+        val previewShrink = if (landscapePreview)
+            minOf((maxWidth + 112.dp) / previewWidth, maxHeight / previewHeight) else 1f
         Box(
             modifier = Modifier
                 .width(previewWidth)
                 .height(previewHeight)
+                .graphicsLayer { scaleX = previewShrink; scaleY = previewShrink }
                 .clip(RoundedCornerShape(8.dp))
                 .border(
                     width = 1.dp,
@@ -1413,7 +1420,8 @@ private fun RealAppDrawerPreview(
                     )
                 }
             }
-        }
+        } // end Preview Box
+        } // end reserved slot
 
     }
 }
@@ -2016,10 +2024,9 @@ fun HomeScreenPreviewSection(
         }
     }
 
-    // Calculate the preview height based on screen (short edge when the Landscape mode preview is active).
+    // LONG edge: slot and slider stay portrait-sized in Landscape mode (issue #89).
     val configuration = LocalConfiguration.current
-    val previewHeight = ((if (com.bearinmind.launcher314.data.getAllowRotation(LocalContext.current))
-        minOf(configuration.screenWidthDp, configuration.screenHeightDp) else configuration.screenHeightDp) * 0.4f).dp
+    val previewHeight = (maxOf(configuration.screenWidthDp, configuration.screenHeightDp) * 0.4f).dp
 
     // Compute UNIVERSAL overflow threshold — min of home screen and drawer thresholds
     // Icon formula: screenWidth / 4 * 0.55 * pct/100
@@ -2487,10 +2494,19 @@ private fun HomeScreenPreview(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Issue #89: slot always reserves the portrait footprint, so the layout never shifts.
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth().height(homeLongDp.dp * scaleFactor),
+            contentAlignment = Alignment.Center
+        ) {
+        // Landscape widens past our gutters, uniformly so height follows; capped by the slot.
+        val previewShrink = if (homeLandscapePreview)
+            minOf((maxWidth + 112.dp) / previewWidth, maxHeight / previewHeight) else 1f
         Box(
             modifier = Modifier
                 .width(previewWidth)
                 .height(previewHeight)
+                .graphicsLayer { scaleX = previewShrink; scaleY = previewShrink }
                 .clip(RoundedCornerShape(8.dp))
                 .border(
                     width = 1.dp,
@@ -2878,6 +2894,7 @@ private fun HomeScreenPreview(
                 }
             }
         } // end Preview Box
+        } // end reserved slot
     }
 }
 
