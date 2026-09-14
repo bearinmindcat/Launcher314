@@ -208,20 +208,17 @@ class MainActivity : ComponentActivity() {
         val gridColumns = getHomeGridSize(this)
         val gridRows = getHomeGridRows(this)
 
-        // Land the widget on the home page the user was viewing when they opened the picker (persisted in launcher_prefs).
+        // Target the page the user was viewing when they opened the picker.
         val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
         val targetPage = prefs.getInt("launcher_current_page", 0)
         val totalPages = prefs.getInt("launcher_total_pages", 1).coerceAtLeast(1)
 
+        // Issue #113: no room anywhere — add a page, like the "Add Screen" menu.
         val spot = findWidgetSpot(widget, gridColumns, gridRows, targetPage, totalPages)
-
-        if (spot == null) {
-            Toast.makeText(this, "Not enough space for widget on any page", Toast.LENGTH_SHORT).show()
-            WidgetManager.deleteWidgetId(pendingWidgetId)
-            pendingWidgetId = -1
-            pendingWidgetInfo = null
-            return
-        }
+            ?: WidgetSpot(
+                totalPages, 0, 0,
+                widget.cellWidth.coerceIn(1, gridColumns), widget.cellHeight.coerceIn(1, gridRows)
+            ).also { prefs.edit().putInt("launcher_total_pages", totalPages + 1).apply() }
 
         // Add the widget to the home screen using Einstein-style grid model
         val placedWidget = PlacedWidget(
@@ -242,10 +239,10 @@ class MainActivity : ComponentActivity() {
 
         // Issue #113: say so when it shrank or moved, or it reads as a bug.
         val shrunk = spot.cols < widget.cellWidth || spot.rows < widget.cellHeight
-        val moved = spot.page != targetPage
         val note = when {
-            shrunk && moved -> " to page ${spot.page + 1}, resized to fit"
-            moved -> " to page ${spot.page + 1}"
+            spot.page >= totalPages -> " to a new page"
+            shrunk && spot.page != targetPage -> " to page ${spot.page + 1}, resized to fit"
+            spot.page != targetPage -> " to page ${spot.page + 1}"
             shrunk -> ", resized to fit"
             else -> ""
         }
@@ -262,15 +259,8 @@ class MainActivity : ComponentActivity() {
     /** Where a widget landed: page, cell, and the span it actually got. */
     private data class WidgetSpot(val page: Int, val col: Int, val row: Int, val cols: Int, val rows: Int)
 
-    /** Pre-flight for the picker dialog — true when the add would find a spot (issue #113). */
-    fun canPlaceWidget(widget: WidgetInfo): Boolean {
-        val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
-        return findWidgetSpot(
-            widget, getHomeGridSize(this), getHomeGridRows(this),
-            prefs.getInt("launcher_current_page", 0),
-            prefs.getInt("launcher_total_pages", 1).coerceAtLeast(1)
-        ) != null
-    }
+    /** Issue #113: always true — a full launcher just gets a new page. */
+    fun canPlaceWidget(widget: WidgetInfo): Boolean = true
 
     /** Issue #113: asked-for page first, shrinking toward the min resize span, then other pages. */
     private fun findWidgetSpot(widget: WidgetInfo, gridColumns: Int, gridRows: Int, targetPage: Int, totalPages: Int): WidgetSpot? {
