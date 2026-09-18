@@ -78,7 +78,10 @@ internal fun FolderContentScreen(
     folder: AppFolder,
     allApps: List<AppInfo>,
     gridSize: Int,
-    iconSize: Int,
+    drawerIconSize: Int,
+    // Issue #114: the popup's real size — cells were computed against full screen width.
+    popupWidthDp: Float = 0f,
+    popupHeightDp: Float = 0f,
     labelFontSize: androidx.compose.ui.unit.TextUnit = 12.sp,
     labelFontFamily: FontFamily? = null,
     onBack: () -> Unit,
@@ -165,18 +168,20 @@ internal fun FolderContentScreen(
         onReorderApps(ordered)
     }
 
-    // Grid dimensions
-    val gridColumns = gridSize
-    val maxOccupied = if (folderCellMap.isEmpty()) 0 else folderCellMap.keys.max() + 1
-    val gridRows = maxOf(gridColumns, (maxOccupied + gridColumns - 1) / gridColumns)
-
-    // Grid cell proportional sizes (matching home screen pattern)
+    // Issue #114: the popup is ~72% of the screen, so the drawer's column count starves the cells — cap to what fits.
     val screenWidthDp = configuration.screenWidthDp.toFloat()
     val screenHeightDp = configuration.screenHeightDp.toFloat()
-    // The folder content area is 2/3 of screen height, with 16dp padding on each side
-    val folderContentHeight = screenHeightDp * 0.67f
-    val cellWidth = (screenWidthDp - 32f) / gridColumns
+    val contentWidthDp = if (popupWidthDp > 0f) popupWidthDp else screenWidthDp
+    val folderContentHeight = if (popupHeightDp > 0f) popupHeightDp - 52f else screenHeightDp * 0.67f
+    val gridColumns = ((contentWidthDp - 32f) / (drawerIconSize + 8f)).toInt()
+        .coerceIn(2, gridSize.coerceAtLeast(2))
+    val maxOccupied = if (folderCellMap.isEmpty()) 0 else folderCellMap.keys.max() + 1
+    val gridRows = ((maxOccupied + gridColumns - 1) / gridColumns + 1).coerceAtLeast(2)
+    val cellWidth = (contentWidthDp - 32f) / gridColumns
     val cellHeight = (folderContentHeight - 32f) / gridRows
+    // Icons shrink to their cell (home's rule) instead of overflowing onto the row above.
+    val iconSize = minOf(drawerIconSize.toFloat(), cellWidth * 0.82f, cellHeight * 0.58f)
+        .toInt().coerceAtLeast(1)
     val cellBasis = minOf(cellWidth, cellHeight)
     val markerHalfSize = (cellBasis * 0.073f).dp
     val plusMarkerSize = (cellBasis * 0.146f).dp
