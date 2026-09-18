@@ -787,6 +787,12 @@ object HomeFolderState {
     var navStack: List<HomeFolder> = emptyList()
 }
 
+/** Home selection mode, hoisted so gestures outside LauncherScreen can go inert while picking apps. */
+object HomeSelectionState {
+    val active = androidx.compose.runtime.mutableStateOf(false)
+    val cells = androidx.compose.runtime.mutableStateOf<Set<String>>(emptySet())
+}
+
 /** Home-button presses (LauncherWithDrawer bumps it) — drives return-to-default-page (issue #73). */
 object HomePressSignal {
     val state = androidx.compose.runtime.mutableIntStateOf(0)
@@ -909,8 +915,8 @@ fun LauncherScreen(
     }
 
     // Home screen selection state — uses "page_position" keys to uniquely identify cells
-    var selectedHomeCells by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var homeSelectionModeActive by remember { mutableStateOf(false) }
+    var selectedHomeCells by HomeSelectionState.cells
+    var homeSelectionModeActive by HomeSelectionState.active
     var showCreateHomeFolderDialog by remember { mutableStateOf(false) }
     var pendingFolderCellKey by remember { mutableStateOf("") }
 
@@ -2958,6 +2964,8 @@ fun LauncherScreen(
                 if (editingPackageName != null) return@pointerInput
                 detectTapGestures(
                     onDoubleTap = {
+                        // Select+unselect on one icon reads as a double-tap.
+                        if (HomeSelectionState.active.value) return@detectTapGestures
                         // Issue #40: dispatch via the user-assigned action.
                         // Falls back to the legacy lock-screen behavior if
                         // the gestureUiCallbacks aren't wired (e.g. preview).
@@ -3056,7 +3064,8 @@ fun LauncherScreen(
                     } while (true)
 
                     val threshold = size.width * 0.20f
-                    if (committed && maxDx > threshold) {
+                    // Inert while picking apps.
+                    if (committed && maxDx > threshold && !HomeSelectionState.active.value) {
                         action.dispatch(context, gestureUiCallbacks)
                     }
                 }
@@ -3385,7 +3394,6 @@ fun LauncherScreen(
                                                     if (cell is HomeGridCell.App) {
                                                         val cellKey = "${currentPage}_${index}"
                                                         selectedHomeCells = if (cellKey in selectedHomeCells) selectedHomeCells - cellKey else selectedHomeCells + cellKey
-                                                        if (selectedHomeCells.isEmpty()) homeSelectionModeActive = false
                                                     } else {
                                                         // Tap on empty cell or folder while in selection mode — deselect all
                                                         selectedHomeCells = emptySet()
@@ -3479,7 +3487,6 @@ fun LauncherScreen(
                                                     homeSelectionModeActive = true
                                                     val cellKey = "${currentPage}_${index}"
                                                     selectedHomeCells = if (cellKey in selectedHomeCells) selectedHomeCells - cellKey else selectedHomeCells + cellKey
-                                                    if (selectedHomeCells.isEmpty()) homeSelectionModeActive = false
                                                 }
                                             },
                                             onBulkRemove = {

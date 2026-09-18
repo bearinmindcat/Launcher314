@@ -518,8 +518,9 @@ fun DraggableGridCell(
                                     hapticFeedback.performLongPress()
                                     onLongPress(touchPosition)
                                 } else {
-                                    // Tap on empty cell
-                                    onTap()
+                                    // Null also means "swiped past touchSlop" — only a real release is a tap.
+                                    val upEvent = currentEvent.changes.firstOrNull { it.id == down.id }
+                                    if (upEvent != null && !upEvent.pressed) onTap()
                                 }
                             }
                         }

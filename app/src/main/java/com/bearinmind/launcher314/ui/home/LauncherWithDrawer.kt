@@ -656,6 +656,12 @@ fun LauncherWithDrawer(
             HomeFolderState.closeRequest.intValue++
             return@BackHandler
         }
+        // Back leaves selection mode; a full page has no empty cell to tap.
+        if (!showAppDrawer && HomeSelectionState.active.value) {
+            HomeSelectionState.cells.value = emptySet()
+            HomeSelectionState.active.value = false
+            return@BackHandler
+        }
         if (showAppDrawer && swipeUpY.value < drawerRangePx) {
             // Drawer is visible — close it and return to home screen
             coroutineScope.launch {
@@ -1363,8 +1369,10 @@ fun LauncherWithDrawer(
                                 // swipe-down action if they dragged down far enough. No
                                 // drawer state to reset (it never moved).
                                 // Issue #84: also commit on a fast down-fling — distance-only made quick short flicks silently fail.
-                                if (totalDragAmount > actionThreshold ||
-                                    velocityTracker.calculateVelocity().y > 600f) {
+                                // Inert while picking apps.
+                                if (!HomeSelectionState.active.value &&
+                                    (totalDragAmount > actionThreshold ||
+                                    velocityTracker.calculateVelocity().y > 600f)) {
                                     com.bearinmind.launcher314.data.getGestureAction(
                                         context,
                                         com.bearinmind.launcher314.data.GestureId.SWIPE_DOWN
@@ -1417,7 +1425,9 @@ fun LauncherWithDrawer(
                                         // No refresh here (issue #84): drawer never opened, and the reload janked the next swipe.
                                         showAppDrawer = false
                                         settleDrawer(drawerRangePx, releaseVelocityY)
-                                        if (swipeUpEnabled &&
+                                        // Inert while picking apps; opening the drawer still works.
+                                        if (!HomeSelectionState.active.value &&
+                                            swipeUpEnabled &&
                                             swipeUpAction !is com.bearinmind.launcher314.data.GestureAction.OpenDrawer &&
                                             swipeUpAction != com.bearinmind.launcher314.data.GestureAction.None &&
                                             totalDragAmount < -actionThreshold) {
