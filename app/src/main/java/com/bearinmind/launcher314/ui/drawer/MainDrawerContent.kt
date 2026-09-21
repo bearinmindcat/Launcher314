@@ -878,6 +878,7 @@ internal fun MainDrawerContent(
                     selectedTabId = extraCallbacks.selectedTabId,
                     allApps = allApps,
                     allFolders = extraCallbacks.allFolders,
+                    countProfile = if (availableProfiles.size > 1) selectedProfile else null,
                     onTabSelected = extraCallbacks.onTabSelected,
                     onTabsChanged = extraCallbacks.onTabsChanged
                 )

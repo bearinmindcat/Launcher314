@@ -406,6 +406,8 @@ internal fun DrawerTabRow(
     selectedTabId: String?,
     allApps: List<AppInfo>,
     allFolders: List<AppFolder> = emptyList(),
+    // Issue #104: set only when work apps exist — the count follows the shown profile.
+    countProfile: com.bearinmind.launcher314.helpers.ProfileType? = null,
     onTabSelected: (String?) -> Unit,
     onTabsChanged: (List<DrawerTab>) -> Unit
 ) {
@@ -480,7 +482,12 @@ internal fun DrawerTabRow(
     val showCounts = remember { isShowTabCounts(tabRowContext) }
     // Issue #104: chip counts show what the tab RENDERS — stored lists keep uninstalled/hidden entries.
     val hiddenPkgs = remember { com.bearinmind.launcher314.data.getHiddenApps(tabRowContext) }
-    val installedPkgs = remember(allApps) { allApps.map { it.packageName }.toSet() }
+    val installedPkgs = remember(allApps, countProfile) {
+        (if (countProfile != null) allApps.filter { it.profileType == countProfile } else allApps)
+            .map { it.packageName }.toSet()
+    }
+    // Issue #104: a pin escapes its folder, so it still renders.
+    val pinnedPkgs = remember { com.bearinmind.launcher314.data.getPinnedAppsOrder(tabRowContext).toSet() }
     val hidePlus = remember { isHidePlusChip(tabRowContext) }
     val chipScroll = rememberScrollState()
 
@@ -605,8 +612,17 @@ internal fun DrawerTabRow(
             key(tab.id) {
                 // No lock glyph on the drawer chip — keep it looking like a normal tab.
                 val baseLabel = if (showCounts) {
-                    val visible = tab.packages.count {
-                        com.bearinmind.launcher314.data.isFolderEntry(it) || (it in installedPkgs && it !in hiddenPkgs)
+                    // Issue #104: apps only — folders aren't apps, and a tab folder swallows its own.
+                    val swallowed = tab.packages
+                        .filter { com.bearinmind.launcher314.data.isFolderEntry(it) }
+                        .flatMap { com.bearinmind.launcher314.data.folderAndDescendantIds(allFolders, com.bearinmind.launcher314.data.folderEntryId(it)) }
+                        .toSet()
+                        .mapNotNull { id -> allFolders.firstOrNull { f -> f.id == id } }
+                        .flatMap { f -> f.appPackageNames.filterNot { com.bearinmind.launcher314.data.isFolderEntry(it) } }
+                        .toSet()
+                    val visible = tab.packages.distinct().count {
+                        !com.bearinmind.launcher314.data.isFolderEntry(it) && it in installedPkgs && it !in hiddenPkgs &&
+                            (it !in swallowed || it in pinnedPkgs)
                     }
                     "${tab.name} ($visible)"
                 } else tab.name
