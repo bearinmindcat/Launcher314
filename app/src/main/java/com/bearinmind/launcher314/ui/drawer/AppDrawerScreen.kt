@@ -876,7 +876,7 @@ fun AppDrawerScreen(
         if (bgc != null) Color(bgc).copy(alpha = (intensity / 100f).coerceIn(0f, 1f))
         else Color.White.copy(alpha = 0.3f)
     }
-    val drawerHideIconText = com.bearinmind.launcher314.data.getHideIconText(context)
+    val drawerHideIconText = com.bearinmind.launcher314.data.getHideIconTextDrawer(context)
     var folderCustomizationVersion by remember { mutableIntStateOf(0) }
     androidx.compose.runtime.CompositionLocalProvider(
         com.bearinmind.launcher314.ui.theme.LocalLabelTextColor provides resolvedTextColor,

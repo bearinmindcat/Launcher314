@@ -229,6 +229,36 @@ fun setHideIconText(context: Context, hide: Boolean) {
     prefs.edit().putBoolean(KEY_HIDE_ICON_TEXT, hide).apply()
 }
 
+// EXPERIMENTAL (issue #108): separate hide-icon-text for home vs drawer.
+private const val KEY_SPLIT_ICON_LABELS = "experimental_split_icon_labels"
+
+private const val KEY_HIDE_ICON_TEXT_DRAWER = "hide_icon_text_drawer"
+
+fun getSplitIconLabels(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_SPLIT_ICON_LABELS, false)
+}
+
+fun setSplitIconLabels(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_SPLIT_ICON_LABELS, enabled).apply()
+}
+
+/** Defaults to the shared value, so enabling the split changes nothing yet. */
+fun getHideIconTextDrawerRaw(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_HIDE_ICON_TEXT_DRAWER, getHideIconText(context))
+}
+
+fun setHideIconTextDrawer(context: Context, hide: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_HIDE_ICON_TEXT_DRAWER, hide).apply()
+}
+
+/** Drawer's effective value — its own only while split (issue #108). */
+fun getHideIconTextDrawer(context: Context): Boolean =
+    if (getSplitIconLabels(context)) getHideIconTextDrawerRaw(context) else getHideIconText(context)
+
 // GLOBAL ICON SHAPE (EXP method applied to all icons)
 
 fun getGlobalIconShape(context: Context): String? {

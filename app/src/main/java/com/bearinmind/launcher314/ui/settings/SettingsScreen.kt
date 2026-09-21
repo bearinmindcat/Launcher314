@@ -816,6 +816,12 @@ fun IconTextPersonalizationCard(
         var hideIconText by remember {
             mutableStateOf(com.bearinmind.launcher314.data.getHideIconText(context))
         }
+        // Issue #108: when split, this opens a picker instead of toggling.
+        val splitLabels = com.bearinmind.launcher314.data.getSplitIconLabels(context)
+        var drawerHideText by remember {
+            mutableStateOf(com.bearinmind.launcher314.data.getHideIconTextDrawerRaw(context))
+        }
+        var showLabelScope by remember { mutableStateOf(false) }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -849,10 +855,14 @@ fun IconTextPersonalizationCard(
                 contentAlignment = Alignment.Center
             ) {
                 Checkbox(
-                    checked = hideIconText,
+                    checked = if (splitLabels) hideIconText || drawerHideText else hideIconText,
                     onCheckedChange = { checked ->
-                        hideIconText = checked
-                        com.bearinmind.launcher314.data.setHideIconText(context, checked)
+                        if (splitLabels) {
+                            showLabelScope = true
+                        } else {
+                            hideIconText = checked
+                            com.bearinmind.launcher314.data.setHideIconText(context, checked)
+                        }
                     },
                     modifier = Modifier.offset(x = 10.dp),
                     colors = CheckboxDefaults.colors(
@@ -891,6 +901,51 @@ fun IconTextPersonalizationCard(
                     .padding(top = 4.dp),
                 textAlign = TextAlign.Center
             )
+        }
+
+        if (showLabelScope) {
+            var pickHome by remember { mutableStateOf(hideIconText) }
+            var pickDrawer by remember { mutableStateOf(drawerHideText) }
+            androidx.compose.ui.window.Dialog(onDismissRequest = { showLabelScope = false }) {
+                // Same card styling as the "Change icon" chooser.
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF252525),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
+                ) {
+                    Column(modifier = Modifier.padding(start = 24.dp, top = 20.dp, end = 24.dp, bottom = 16.dp)) {
+                        Text(text = "Hide icon text", color = Color(0xFFE2E2E2), fontSize = 20.sp)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LabelScopeRow("Home screen", pickHome) { pickHome = it }
+                        LabelScopeRow("App drawer", pickDrawer) { pickDrawer = it }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Divider(color = Color(0xFF444444), thickness = 1.dp)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = {
+                                    hideIconText = pickHome
+                                    drawerHideText = pickDrawer
+                                    com.bearinmind.launcher314.data.setHideIconText(context, pickHome)
+                                    com.bearinmind.launcher314.data.setHideIconTextDrawer(context, pickDrawer)
+                                    showLabelScope = false
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDDDDDD)),
+                                modifier = Modifier.weight(1f).padding(end = 3.dp)
+                            ) { Text("Done", fontSize = 14.sp) }
+                            OutlinedButton(
+                                onClick = { showLabelScope = false },
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF9A9A)),
+                                modifier = Modifier.weight(1f).padding(start = 3.dp)
+                            ) { Text("Cancel", fontSize = 14.sp) }
+                        }
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -2066,5 +2121,29 @@ private fun HomeScreenGestureSettings(
                 }
             }
         )
+    }
+}
+
+/** Issue #108: one checkbox row in the "Hide icon text" picker. */
+@Composable
+private fun LabelScopeRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!checked) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = CheckboxDefaults.colors(
+                checkedColor = Color(0xFFDDDDDD),
+                uncheckedColor = Color(0xFF888888),
+                checkmarkColor = Color(0xFF252525)
+            )
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text = label, color = Color(0xFFE2E2E2), fontSize = 14.sp)
     }
 }

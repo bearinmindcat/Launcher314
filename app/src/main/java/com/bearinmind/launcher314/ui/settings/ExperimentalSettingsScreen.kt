@@ -45,6 +45,10 @@ import com.bearinmind.launcher314.data.getExtendedGridSize
 import com.bearinmind.launcher314.data.getExtendedIconSizes
 import com.bearinmind.launcher314.data.getFolderAutoSizeEnabled
 import com.bearinmind.launcher314.data.setFolderAutoSizeEnabled
+import com.bearinmind.launcher314.data.getSplitIconLabels
+import com.bearinmind.launcher314.data.setSplitIconLabels
+import com.bearinmind.launcher314.data.getHideIconTextDrawerRaw
+import com.bearinmind.launcher314.data.setHideIconTextDrawer
 import com.bearinmind.launcher314.data.getFolderTransparency
 import com.bearinmind.launcher314.data.setFolderTransparency
 import com.bearinmind.launcher314.data.getFolderTransparencyEnabled
@@ -154,6 +158,20 @@ fun ExperimentalSettingsScreen(onBack: () -> Unit) {
                     (context as? android.app.Activity)?.requestedOrientation =
                         if (it) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                         else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
+            )
+            // Issue #108: drawer keeps names while home stays clean.
+            var splitLabels by remember { mutableStateOf(getSplitIconLabels(context)) }
+            var drawerHideLabels by remember { mutableStateOf(getHideIconTextDrawerRaw(context)) }
+            SettingsToggleItem(
+                title = "Separate icon labels",
+                subtitle = "Hide icon text separately in drawer & home screen",
+                checked = splitLabels,
+                onCheckedChange = {
+                    splitLabels = it
+                    setSplitIconLabels(context, it)
+                    // Seed from the shared value so nothing changes yet.
+                    if (it) setHideIconTextDrawer(context, drawerHideLabels)
                 }
             )
             // Folder transparency (issue #112): 0 = opaque, 100 = see-through; checkbox enables it.
