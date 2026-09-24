@@ -13,8 +13,8 @@ android {
         applicationId = "com.bearinmind.launcher314"
         minSdk = 24
         targetSdk = 36
-        versionCode = 36
-        versionName = "0.0.25-beta"
+        versionCode = 37
+        versionName = "0.0.26-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
