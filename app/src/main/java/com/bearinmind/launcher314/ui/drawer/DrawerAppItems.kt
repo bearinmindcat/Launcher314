@@ -1213,7 +1213,8 @@ internal fun SelectableAppItem(
         animationSpec = lessAnim(if (isScaledUp) tween(durationMillis = 150) else snap()),
         label = "icon_scale"
     )
-    var drawerIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    // Issue #115: a plain holder — as state, every scroll frame recomposed every visible item.
+    val drawerIconBounds = remember { IconBoundsRef() }
 
     // Hide label when scaled up (matches home screen app behavior)
     val labelAlpha by animateFloatAsState(
@@ -1391,7 +1392,7 @@ internal fun SelectableAppItem(
                         val h = coords.size.height * targetScale
                         val offsetX = (coords.size.width - w) / 2f
                         val offsetY = (coords.size.height - h) / 2f
-                        drawerIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                        drawerIconBounds.rect = androidx.compose.ui.geometry.Rect(
                             pos.x + offsetX, pos.y + offsetY,
                             pos.x + offsetX + w, pos.y + offsetY + h
                         )
@@ -1572,9 +1573,9 @@ internal fun SelectableAppItem(
         // this so opening Folder can ONLY widen the popup — never make it taller.
         var baseMenuHeightPx by remember { mutableStateOf(0) }
             AnimatedPopup(
-                visible = showContextMenu && drawerIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                visible = showContextMenu && drawerIconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                 onDismissRequest = { showContextMenu = false },
-                iconBoundsInRoot = drawerIconBoundsInRoot,
+                iconBoundsInRoot = drawerIconBounds.rect,
                 maxWidthDp = menuMaxW.toInt(),
                 xAnchorWidthDp = 225,
                 edgeMarginDp = popupEdgeMargin.toInt()
@@ -1902,9 +1903,9 @@ internal fun SelectableAppItem(
 
         // Bulk action menu for multiple selected apps
             AnimatedPopup(
-                visible = showBulkMenu && drawerIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                visible = showBulkMenu && drawerIconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                 onDismissRequest = { showBulkMenu = false },
-                iconBoundsInRoot = drawerIconBoundsInRoot
+                iconBoundsInRoot = drawerIconBounds.rect
             ) {
                         // Header showing selection count
                         Box(
@@ -2041,3 +2042,6 @@ fun CreateFolderDialog(
         }
     )
 }
+
+/** Issue #115: icon bounds that update without recomposing (see SelectableAppItem). */
+class IconBoundsRef { var rect = androidx.compose.ui.geometry.Rect.Zero }
