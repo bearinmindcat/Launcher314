@@ -320,11 +320,19 @@ fun LauncherWithDrawer(
     // Phase 1 (0→0.5): drawer fades out.  Phase 2 (0.5→1.0): home screen fades in.
     val drawerToHomeProgress = remember { Animatable(0f) }
 
-    // REST-STATE RESET (Launcher3's moveToRestState in onStop): the drawer snaps closed AND any mid-flight drawer-to-home fade is cleared — a frozen fade left home at alpha 0, the "phantom home screen" (issue #101).
+    // REST-STATE RESET (Launcher3's moveToRestState): a stuck fade or swipe leaves home at alpha 0 (issue #101).
     val drawerLifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(drawerLifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && (showAppDrawer || isDrawerDragging || drawerToHomeActive)) {
+            val drawerInUse = showAppDrawer || isDrawerDragging || drawerToHomeActive
+            val stuck = swipeUpY.value != drawerRangePx || drawerToHomeProgress.value != 0f
+            // Resume only repairs stuck state — closing a system dialog (e.g. uninstall) resumes with the drawer open.
+            val reset = when (event) {
+                Lifecycle.Event.ON_STOP -> drawerInUse || stuck
+                Lifecycle.Event.ON_RESUME -> !drawerInUse && stuck
+                else -> false
+            }
+            if (reset) {
                 isDrawerDragging = false
                 showAppDrawer = false
                 drawerToHomeActive = false
@@ -339,6 +347,19 @@ fun LauncherWithDrawer(
         drawerLifecycleOwner.lifecycle.addObserver(observer)
         onDispose { drawerLifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    // Issue #101: an idle drawer means home must be visible; snapshotFlow avoids recomposing.
+    LaunchedEffect(drawerRangePx) {
+        snapshotFlow {
+            !showAppDrawer && !isDrawerDragging && !drawerToHomeActive &&
+                !swipeUpY.isRunning && !drawerToHomeProgress.isRunning
+        }.collect { idle ->
+            if (idle) {
+                if (drawerToHomeProgress.value != 0f) drawerToHomeProgress.snapTo(0f)
+                if (swipeUpY.value != drawerRangePx) swipeUpY.snapTo(drawerRangePx)
+            }
+        }
+    }
+
     val drawerToHomeFadeAlpha = if (drawerToHomeProgress.value <= 0.5f)
         1f - (drawerToHomeProgress.value / 0.5f)   // drawer: 1→0 in first half
     else 0f                                          // drawer stays gone in second half
@@ -654,6 +675,18 @@ fun LauncherWithDrawer(
         // Issue #80: an open home screen folder closes first.
         if (HomeFolderState.open.value) {
             HomeFolderState.closeRequest.intValue++
+            return@BackHandler
+        }
+        // Issue #101: Back also clears a live drag-to-home fade.
+        if (drawerToHomeActive) {
+            drawerToHomeActive = false
+            drawerToHomeItem = null
+            showAppDrawer = false
+            homeRefreshTrigger++
+            coroutineScope.launch {
+                drawerToHomeProgress.snapTo(0f)
+                swipeUpY.snapTo(drawerRangePx)
+            }
             return@BackHandler
         }
         // Back leaves selection mode; a full page has no empty cell to tap.
