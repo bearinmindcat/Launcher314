@@ -1224,9 +1224,10 @@ fun WallpaperEditorScreen(
                             "filter_night" to androidx.compose.ui.graphics.ColorMatrix(com.bearinmind.launcher314.helpers.WallpaperFilters.NIGHT)
                         )
                     }
+                    val categoryCount = categoryKeys.size // Int capture keeps the pageCount lambda memoized (a list capture re-stored it every recomposition)
                     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
                         initialPage = categoryKeys.indexOf(activeCategoryShared).coerceAtLeast(0),
-                        pageCount = { categoryKeys.size }
+                        pageCount = { categoryCount }
                     )
                     // When the user taps a different section tab, reset the
                     // pager to page 0 so the first item of the new section is

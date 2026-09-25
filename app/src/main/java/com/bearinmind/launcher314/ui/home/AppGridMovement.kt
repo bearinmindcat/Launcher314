@@ -88,6 +88,7 @@ import com.bearinmind.launcher314.ui.widgets.PlacedWidget
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
+import com.bearinmind.launcher314.ui.components.IconBoundsRef
 import java.io.File
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
@@ -316,7 +317,6 @@ fun DraggableGridCell(
     isHovered: Boolean,
     isValidDropTarget: Boolean = true, // Whether this is a valid drop target (true = blue, false = red)
     isHoverTargetValid: Boolean = true, // When dragging, is the current hover position valid? (for icon tint)
-    dragOffset: Offset,
     isWidgetDragging: Boolean = false, // Skip gesture detection when a widget is being dragged
     isAnyDragActive: () -> Boolean = { false }, // Dynamic check: is any drag in progress? Evaluated at call time inside gesture handlers
     // Proportional sizing params (defaults match 360dp phone with 4 columns)
@@ -542,7 +542,7 @@ fun DraggableGridCell(
                 // Force 1f immediately when not in active interaction —
                 // snap() can lag one frame causing a visible pulse of the larger icon
                 val iconScale = if (isScaledUp) animatedIconScale else 1f
-                var iconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+                val iconBounds = remember { IconBoundsRef() } // Issue #115: not state — see IconBoundsRef
 
                 // Hide label when scaled up (context menu, dragging, customizing, or selected)
                 val hideLabel = showContextMenu || isDragging || isCustomizing || isSelected
@@ -883,7 +883,7 @@ fun DraggableGridCell(
                                         val h = coords.size.height * targetScale
                                         val offsetX = (coords.size.width - w) / 2f
                                         val offsetY = (coords.size.height - h) / 2f
-                                        iconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                                        iconBounds.rect = androidx.compose.ui.geometry.Rect(
                                             pos.x + offsetX, pos.y + offsetY,
                                             pos.x + offsetX + w, pos.y + offsetY + h
                                         )
@@ -1124,9 +1124,9 @@ fun DraggableGridCell(
 
                     // Context menu (shown on long press, like app drawer)
                     AnimatedPopup(
-                            visible = showContextMenu && iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                            visible = showContextMenu && iconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                             onDismissRequest = { showContextMenu = false },
-                            iconBoundsInRoot = iconBoundsInRoot
+                            iconBoundsInRoot = iconBounds.rect
                         ) {
                                     Box(
                                         modifier = Modifier
@@ -1254,9 +1254,9 @@ fun DraggableGridCell(
 
                 // Bulk action menu (shown when long-pressing a selected app in selection mode)
                 AnimatedPopup(
-                    visible = showBulkMenu && iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                    visible = showBulkMenu && iconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                     onDismissRequest = { showBulkMenu = false },
-                    iconBoundsInRoot = iconBoundsInRoot
+                    iconBoundsInRoot = iconBounds.rect
                 ) {
                     Box(
                         modifier = Modifier
@@ -1335,7 +1335,7 @@ fun DraggableGridCell(
                 // for the 1.265× scale-up that happens when the popup shows) so
                 // AnimatedPopup can anchor tight to the folder — same pattern
                 // the app-icon cell uses above.
-                var folderIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+                val folderIconBounds = remember { IconBoundsRef() } // Issue #115: not state — see IconBoundsRef
                 val isFolderScaledUp = showContextMenu || isDragging || showFolderRemoveConfirm || isCustomizing
                 val animatedFolderScale by animateFloatAsState(
                     targetValue = if (isFolderScaledUp) 1.265f else 1f,
@@ -1540,14 +1540,14 @@ fun DraggableGridCell(
                                         val h = coords.size.height * targetScale
                                         val offsetX = (coords.size.width - w) / 2f
                                         val offsetY = (coords.size.height - h) / 2f
-                                        folderIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                                        folderIconBounds.rect = androidx.compose.ui.geometry.Rect(
                                             pos.x + offsetX, pos.y + offsetY,
                                             pos.x + offsetX + w, pos.y + offsetY + h
                                         )
                                         // Also report to the parent (LauncherScreen) so the
                                         // folder-open popup can align its edge exactly with
                                         // the icon's real visible bounds.
-                                        onFolderIconPositioned?.invoke(folderIconBoundsInRoot)
+                                        onFolderIconPositioned?.invoke(folderIconBounds.rect)
                                     }
                                     .graphicsLayer {
                                         scaleX = combinedScale
@@ -1824,9 +1824,9 @@ fun DraggableGridCell(
 
                     // Context menu
                     AnimatedPopup(
-                            visible = showContextMenu && folderIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                            visible = showContextMenu && folderIconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                             onDismissRequest = { showContextMenu = false },
-                            iconBoundsInRoot = folderIconBoundsInRoot
+                            iconBoundsInRoot = folderIconBounds.rect
                         ) {
                                     Box(
                                         modifier = Modifier
@@ -1980,7 +1980,6 @@ fun DockSlot(
     isHovered: Boolean, // Shows hover indicator (includes original slot when dragging back over it)
     isValidDropTarget: Boolean = true, // Whether this is a valid drop target (true = blue, false = red)
     isHoverTargetValid: Boolean = true, // When dragging, is the current hover position valid? (for icon tint)
-    dragOffset: Offset,
     // Dock folder support
     folderData: DockFolder? = null,
     folderPreviewApps: List<HomeAppInfo> = emptyList(),

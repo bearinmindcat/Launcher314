@@ -76,11 +76,22 @@ data class AppCustomizations(
 
 private const val CUSTOMIZATIONS_FILE = "app_customizations.json"
 
+/** Parsed copy keyed by the file's mtime + size — every surface re-read and re-parsed the whole file, which only grows with use. */
+private object CustomizationsCache {
+    var stamp: Pair<Long, Long>? = null
+    var value: AppCustomizations? = null
+}
+
 fun loadAppCustomizations(context: Context): AppCustomizations {
     return try {
         val file = File(context.filesDir, CUSTOMIZATIONS_FILE)
         if (file.exists()) {
-            Json.decodeFromString<AppCustomizations>(file.readText())
+            val stamp = file.lastModified() to file.length()
+            synchronized(CustomizationsCache) {
+                CustomizationsCache.value?.takeIf { CustomizationsCache.stamp == stamp }
+            } ?: Json.decodeFromString<AppCustomizations>(file.readText()).also { parsed ->
+                synchronized(CustomizationsCache) { CustomizationsCache.stamp = stamp; CustomizationsCache.value = parsed }
+            }
         } else {
             AppCustomizations()
         }
@@ -98,6 +109,7 @@ fun saveAppCustomizations(context: Context, data: AppCustomizations) {
     try {
         val file = File(context.filesDir, CUSTOMIZATIONS_FILE)
         file.writeText(Json.encodeToString(data))
+        synchronized(CustomizationsCache) { CustomizationsCache.stamp = file.lastModified() to file.length(); CustomizationsCache.value = data }
         AppCustomizationsVersion.state.intValue++
     } catch (e: Exception) {
         e.printStackTrace()

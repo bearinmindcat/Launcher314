@@ -3,6 +3,7 @@ package com.bearinmind.launcher314.ui.home
 import com.bearinmind.launcher314.data.AnimPrefs
 import com.bearinmind.launcher314.data.lessAnim
 import com.bearinmind.launcher314.ui.components.EdgeScrollIndicators
+import com.bearinmind.launcher314.ui.components.IconBoundsRef
 import com.bearinmind.launcher314.ui.components.handleEdgeScrollDetection
 import com.bearinmind.launcher314.ui.components.GridCellHoverIndicator
 import android.content.Context
@@ -819,6 +820,24 @@ internal class WidgetPrefState(context: android.content.Context) {
 @Composable
 internal fun rememberWidgetPrefState(context: android.content.Context) = remember { WidgetPrefState(context) }
 
+/** Folder open/close spring (Lawnchair: stiffness 380, damping 0.8). Composition reads [shown] (flips only at the ends); reading [progress] there rebuilt the whole home every frame. */
+@Stable
+internal class FolderAnim(private val state: State<Float>) {
+    val progress: Float get() = state.value
+    val shown by derivedStateOf { state.value > 0f }
+}
+
+@Composable
+internal fun rememberFolderAnim(open: Boolean, onClosed: () -> Unit): FolderAnim {
+    val state = animateFloatAsState(
+        targetValue = if (open) 1f else 0f,
+        animationSpec = lessAnim(spring(dampingRatio = 0.8f, stiffness = 380f, visibilityThreshold = 0.001f)),
+        label = "folderOpenClose",
+        finishedListener = { if (it == 0f) onClosed() }
+    )
+    return remember(state) { FolderAnim(state) }
+}
+
 /** Pager creation + loop re-anchoring in one place (keeps LauncherScreen off the 64KB ceiling). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -871,7 +890,7 @@ fun LauncherScreen(
     onFolderOpenChanged: (Boolean) -> Unit = {},
     externalDragItem: Any? = null,
     externalDragInitialPos: Offset = Offset.Zero,
-    externalDragFingerPos: Offset = Offset.Zero,
+    externalDragFingerPos: () -> Offset = { Offset.Zero }, // lambda, not a value: a per-move param recomposed the whole home every frame of a drawer→home drag
     externalDragDropSignal: Int = 0,
     onExternalDragComplete: () -> Unit = {},
     gestureUiCallbacks: com.bearinmind.launcher314.data.GestureUiCallbacks? = null
@@ -1161,10 +1180,9 @@ fun LauncherScreen(
         state = pagerState,
         snapAnimationSpec = homePageSnapSpec
     )
-    // Expose pager settle state so the drawer swipe gesture can claim a vertical
-    // swipe immediately during a page settle (see HomePagerSwipeState).
-    LaunchedEffect(pagerState.isScrollInProgress) {
-        HomePagerSwipeState.isSettling = pagerState.isScrollInProgress
+    // Settle flag for the drawer swipe; snapshotFlow because an effect key recomposed the whole home on every swipe start/end.
+    LaunchedEffect(Unit) {
+        snapshotFlow { pagerState.isScrollInProgress }.collect { HomePagerSwipeState.isSettling = it }
     }
 
     // Persist the current home page index so MainActivity's add-widget flow
@@ -1497,45 +1515,46 @@ fun LauncherScreen(
         }
     }
 
-    // Recalculate widget hover cells when the page changes during a widget drag.
-    // Without this, the old hover state from the source page remains until the user moves.
-    LaunchedEffect(pagerState.targetPage, widgetDragState.draggedWidget) {
-        if (widgetDragState.draggedWidget == null) return@LaunchedEffect
-        // Don't recalculate hover cells during drop animation (scroll-back would
-        // set hoveredWidgetCells on intermediate pages, causing red tint/grey spaces)
-        if (isWidgetDropAnimating) return@LaunchedEffect
-        val widget = widgetDragState.draggedWidget ?: return@LaunchedEffect
-        if (cellSize.width <= 0 || cellSize.height <= 0) return@LaunchedEffect
-        val widgetCenter = widgetDragState.startPosition + widgetDragState.dragOffset
-        val dropTarget = calculateWidgetDropTargetFromCenter(
-            widgetCenter, cellPositions, cellSize,
-            gridColumns, gridRows,
-            widget.spanColumns, widget.spanRows
-        )
-        val targetCol = dropTarget?.first ?: -1
-        val targetRow = dropTarget?.second ?: -1
-        if (targetCol >= 0 && targetRow >= 0) {
-            val targetCells = getWidgetTargetCells(widget, targetCol, targetRow, gridColumns, gridRows)
-            hoveredWidgetCells = targetCells
-            val draggedSid = widget.stackId
-            val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) && (draggedSid == null || it.stackId != draggedSid) }
-            val hoveringOverWidget = otherWidgets.any { other ->
-                val otherCells = mutableSetOf<Int>()
-                for (r in other.startRow until other.startRow + other.rowSpan) {
-                    for (c in other.startColumn until other.startColumn + other.columnSpan) {
-                        otherCells.add(r * gridColumns + c)
+    // Re-check widget hover cells when the page changes mid widget-drag; snapshotFlow since a targetPage key rebuilt the home on every swipe.
+    LaunchedEffect(Unit) {
+        snapshotFlow { pagerState.targetPage to widgetDragState.draggedWidget }.collect {
+            if (widgetDragState.draggedWidget == null) return@collect
+            // Don't recalculate hover cells during drop animation (scroll-back would
+            // set hoveredWidgetCells on intermediate pages, causing red tint/grey spaces)
+            if (isWidgetDropAnimating) return@collect
+            val widget = widgetDragState.draggedWidget ?: return@collect
+            if (cellSize.width <= 0 || cellSize.height <= 0) return@collect
+            val widgetCenter = widgetDragState.startPosition + widgetDragState.dragOffset
+            val dropTarget = calculateWidgetDropTargetFromCenter(
+                widgetCenter, cellPositions, cellSize,
+                gridColumns, gridRows,
+                widget.spanColumns, widget.spanRows
+            )
+            val targetCol = dropTarget?.first ?: -1
+            val targetRow = dropTarget?.second ?: -1
+            if (targetCol >= 0 && targetRow >= 0) {
+                val targetCells = getWidgetTargetCells(widget, targetCol, targetRow, gridColumns, gridRows)
+                hoveredWidgetCells = targetCells
+                val draggedSid = widget.stackId
+                val otherWidgets = placedWidgets.filter { it.appWidgetId != widget.appWidgetId && it.page == pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) && (draggedSid == null || it.stackId != draggedSid) }
+                val hoveringOverWidget = otherWidgets.any { other ->
+                    val otherCells = mutableSetOf<Int>()
+                    for (r in other.startRow until other.startRow + other.rowSpan) {
+                        for (c in other.startColumn until other.startColumn + other.columnSpan) {
+                            otherCells.add(r * gridColumns + c)
+                        }
                     }
+                    targetCells.any { otherCells.contains(it) }
                 }
-                targetCells.any { otherCells.contains(it) }
+                val atOriginal = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) == widget.page
+                isWidgetOverWidget = hoveringOverWidget && !atOriginal
+                isWidgetDropTargetValid = if (hoveringOverWidget && !atOriginal) true
+                    else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
+            } else {
+                hoveredWidgetCells = emptySet()
+                isWidgetDropTargetValid = true
+                isWidgetOverWidget = false
             }
-            val atOriginal = targetCol == widget.startColumn && targetRow == widget.startRow && pagerState.targetPage.mod(totalPages.coerceAtLeast(1)) == widget.page
-            isWidgetOverWidget = hoveringOverWidget && !atOriginal
-            isWidgetDropTargetValid = if (hoveringOverWidget && !atOriginal) true
-                else canPlaceWidgetAt(widget, targetCol, targetRow, gridColumns, gridRows, buildGridCellsForPage(pagerState.targetPage))
-        } else {
-            hoveredWidgetCells = emptySet()
-            isWidgetDropTargetValid = true
-            isWidgetOverWidget = false
         }
     }
 
@@ -2528,53 +2547,55 @@ fun LauncherScreen(
     // Position tracking: drawer's gesture handler forwards finger position via state
     // (like updateEscapedDrag in the folder escape pattern)
     LaunchedEffect(externalDragFingerPos) {
-        if (!externalDragActive) return@LaunchedEffect
-        val fingerPos = externalDragFingerPos
-        draggedItemPosition = Offset(
-            fingerPos.x - cellSize.width / 2f,
-            fingerPos.y - cellSize.height / 2f
-        )
-        dragOffset = draggedItemPosition - (dragOriginalCellPos ?: Offset.Zero)
+        // Also watches externalDragActive: a hand-off can land with the finger already still, before the item effect sets active.
+        snapshotFlow { externalDragFingerPos() to externalDragActive }.collect { (fingerPos, _) ->
+            if (!externalDragActive) return@collect
+            draggedItemPosition = Offset(
+                fingerPos.x - cellSize.width / 2f,
+                fingerPos.y - cellSize.height / 2f
+            )
+            dragOffset = draggedItemPosition - (dragOriginalCellPos ?: Offset.Zero)
 
-        // Hover detection
-        val targetDockSlot = findDockSlotIndex(fingerPos)
-        hoveredDockSlot = targetDockSlot
-        hoveredGridCell = if (targetDockSlot == null) findCellIndex(fingerPos) else null
+            // Hover detection
+            val targetDockSlot = findDockSlotIndex(fingerPos)
+            hoveredDockSlot = targetDockSlot
+            hoveredGridCell = if (targetDockSlot == null) findCellIndex(fingerPos) else null
 
-        val draggingFolder = externalDragItemState is com.bearinmind.launcher314.data.AppFolder
-        if (targetDockSlot != null) {
-            val existingDockApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
-            val existingDockFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
-            val isSlotEmpty = existingDockApp == null && existingDockFolder == null
-            // Allow drop on empty slot, or on existing dock folder/app if dragging a single app
-            isHoveredDockSlotValid = isSlotEmpty ||
-                (!draggingFolder && (existingDockFolder != null || existingDockApp != null))
-            isHoveredCellValid = true
-            showFolderCreationIndicator = !draggingFolder && existingDockApp != null && existingDockFolder == null
-        } else if (hoveredGridCell != null) {
-            val pageCells = buildGridCellsForPage(pagerState.targetPage)
-            val targetCell = pageCells.getOrNull(hoveredGridCell!!)
-            isHoveredCellValid = targetCell is HomeGridCell.Empty ||
-                (!draggingFolder && (targetCell is HomeGridCell.App ||
-                    targetCell is HomeGridCell.Folder))
-            isHoveredDockSlotValid = true
-            showFolderCreationIndicator = !draggingFolder && targetCell is HomeGridCell.App
-        } else {
-            isHoveredCellValid = true
-            isHoveredDockSlotValid = true
-            showFolderCreationIndicator = false
+            val draggingFolder = externalDragItemState is com.bearinmind.launcher314.data.AppFolder
+            if (targetDockSlot != null) {
+                val existingDockApp = dockApps.find { it.position == targetDockSlot && it.page == currentDockPage }
+                val existingDockFolder = dockFolders.find { it.position == targetDockSlot && it.page == currentDockPage }
+                val isSlotEmpty = existingDockApp == null && existingDockFolder == null
+                // Allow drop on empty slot, or on existing dock folder/app if dragging a single app
+                isHoveredDockSlotValid = isSlotEmpty ||
+                    (!draggingFolder && (existingDockFolder != null || existingDockApp != null))
+                isHoveredCellValid = true
+                showFolderCreationIndicator = !draggingFolder && existingDockApp != null && existingDockFolder == null
+            } else if (hoveredGridCell != null) {
+                val pageCells = buildGridCellsForPage(pagerState.targetPage)
+                val targetCell = pageCells.getOrNull(hoveredGridCell!!)
+                isHoveredCellValid = targetCell is HomeGridCell.Empty ||
+                    (!draggingFolder && (targetCell is HomeGridCell.App ||
+                        targetCell is HomeGridCell.Folder))
+                isHoveredDockSlotValid = true
+                showFolderCreationIndicator = !draggingFolder && targetCell is HomeGridCell.App
+            } else {
+                isHoveredCellValid = true
+                isHoveredDockSlotValid = true
+                showFolderCreationIndicator = false
+            }
+
+            // Edge scroll near screen edges
+            edgeScrollJob = handleEdgeScrollDetection(
+                dragCenterX = fingerPos.x, edgeScrollZonePx = edgeScrollZonePx,
+                screenWidthPx = screenWidthPx, currentPage = pagerState.currentPage,
+                totalPages = totalPages, isScrollInProgress = pagerState.isScrollInProgress,
+                currentJob = edgeScrollJob, scope = dropScope, pagerState = pagerState,
+                setHoveringLeft = { isHoveringLeftEdge = it },
+                setHoveringRight = { isHoveringRightEdge = it },
+                setSuppressed = { edgeIndicatorSuppressed = it }
+            )
         }
-
-        // Edge scroll near screen edges
-        edgeScrollJob = handleEdgeScrollDetection(
-            dragCenterX = fingerPos.x, edgeScrollZonePx = edgeScrollZonePx,
-            screenWidthPx = screenWidthPx, currentPage = pagerState.currentPage,
-            totalPages = totalPages, isScrollInProgress = pagerState.isScrollInProgress,
-            currentJob = edgeScrollJob, scope = dropScope, pagerState = pagerState,
-            setHoveringLeft = { isHoveringLeftEdge = it },
-            setHoveringRight = { isHoveringRightEdge = it },
-            setSuppressed = { edgeIndicatorSuppressed = it }
-        )
     }
 
     // Shared cleanup for external drag
@@ -3260,7 +3281,6 @@ fun LauncherScreen(
                                                     else -> true
                                                 }
                                             } else true,
-                                            dragOffset = if (isDragging) dragOffset else Offset.Zero,
                                             // CRITICAL: Skip gesture processing when widget, escape drag, or another cell's drag is active
                                             // Prevents other cells from picking up the pointer and showing popups that steal focus
                                             isWidgetDragging = widgetDragState.draggedWidget != null || escapedToHomeGrid ||
@@ -3284,7 +3304,8 @@ fun LauncherScreen(
                                             folderCustomization = if (cell is HomeGridCell.Folder) appCustomizations.customizations["folder_${cell.folder.id}"] else null,
                                             onPositioned = { position, size ->
                                                 cellPositions = cellPositions + (index to position)
-                                                cellSize = size
+                                                // Cell 0 only: weight() rounding leaves cells 1px apart, so every cell writing this flip-flopped it each frame and rebuilt the page.
+                                                if (index == 0) cellSize = size
                                             },
                                             onFolderIconPositioned = { bounds ->
                                                 folderIconBoundsMap[index] = bounds
@@ -3392,7 +3413,7 @@ fun LauncherScreen(
                                             onTap = {
                                                 if (homeSelectionModeActive) {
                                                     if (cell is HomeGridCell.App) {
-                                                        val cellKey = "${currentPage}_${index}"
+                                                        val cellKey = "${page}_${index}"
                                                         selectedHomeCells = if (cellKey in selectedHomeCells) selectedHomeCells - cellKey else selectedHomeCells + cellKey
                                                     } else {
                                                         // Tap on empty cell or folder while in selection mode — deselect all
@@ -3479,13 +3500,14 @@ fun LauncherScreen(
                                             globalIconShape = globalIconShape,
                                             globalIconBgColor = globalIconBgColor,
                                             globalIconBgIntensity = globalIconBgIntensity,
-                                            isSelected = if (cell is HomeGridCell.App) "${currentPage}_${index}" in selectedHomeCells else false,
+                                            // This cell's own page, not currentPage — both pages of a swipe showed the current page's selection.
+                                            isSelected = if (cell is HomeGridCell.App) "${page}_${index}" in selectedHomeCells else false,
                                             selectionModeActive = homeSelectionModeActive,
                                             selectedCount = selectedHomeCells.size,
                                             onSelectToggle = {
                                                 if (cell is HomeGridCell.App) {
                                                     homeSelectionModeActive = true
-                                                    val cellKey = "${currentPage}_${index}"
+                                                    val cellKey = "${page}_${index}"
                                                     selectedHomeCells = if (cellKey in selectedHomeCells) selectedHomeCells - cellKey else selectedHomeCells + cellKey
                                                 }
                                             },
@@ -3506,7 +3528,7 @@ fun LauncherScreen(
                                                 homeSelectionModeActive = false
                                             },
                                             onCreateFolder = {
-                                                pendingFolderCellKey = "${currentPage}_${index}"
+                                                pendingFolderCellKey = "${page}_${index}"
                                                 showCreateHomeFolderDialog = true
                                             }
                                             )
@@ -3531,7 +3553,8 @@ fun LauncherScreen(
                                 }.forEach { widget ->
                                     key(widget.appWidgetId, widget.stackId) {
                                     val originCellIndex = widget.gridRow * gridColumns + widget.gridColumn
-                                    val originCellPos = cellPositions[originCellIndex]
+                                    // Page-local origin, read without subscribing — absolute positions change every frame of a page swipe.
+                                    val originCellPos = androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation { cellPositions[originCellIndex]?.minus(gridAreaOffset) }
 
                                     if (originCellPos != null) {
                                         // Check if THIS widget is being resized (use resize dimensions)
@@ -3544,12 +3567,12 @@ fun LauncherScreen(
                                         val widgetLeft = if (resizeDims != null) {
                                             resizeDims.column * cellSize.width
                                         } else {
-                                            originCellPos.x - gridAreaOffset.x
+                                            originCellPos.x
                                         }
                                         val widgetTop = if (resizeDims != null) {
                                             resizeDims.row * cellSize.height
                                         } else {
-                                            originCellPos.y - gridAreaOffset.y
+                                            originCellPos.y
                                         }
                                         val widgetWidth = if (resizeDims != null) {
                                             resizeDims.columnSpan * cellSize.width
@@ -3910,7 +3933,9 @@ fun LauncherScreen(
                                                 if (stackWidgets.size > 1) {
                                                     // Stacked widgets — swipeable pager with nav-style dots inside widget
                                                     val savedPage = (stackPageMap[widget.stackId] ?: 0).coerceIn(0, stackWidgets.size - 1)
-                                                    val stackPagerState = rememberPagerState(initialPage = savedPage, pageCount = { stackWidgets.size })
+                                                    // Int capture: a List capture defeats lambda memoization, so rememberPagerState re-stored pageCount every recomposition.
+                                                    val stackCount = stackWidgets.size
+                                                    val stackPagerState = rememberPagerState(initialPage = savedPage, pageCount = { stackCount })
                                                     // Sync current page to outer state for context menu + persist
                                                     LaunchedEffect(stackPagerState.currentPage) {
                                                         currentStackPage = stackPagerState.currentPage
@@ -4560,7 +4585,7 @@ fun LauncherScreen(
                                         var dragOffsetY by remember { mutableStateOf(0f) }
                                         var isDragging by remember { mutableStateOf(false) }
                                         var showContextMenu by remember { mutableStateOf(false) }
-                                        var iconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+                                        val iconBounds = remember { IconBoundsRef() } // Issue #115: not state — see IconBoundsRef
                                         var isFingerDown by remember { mutableStateOf(false) }
                                         var flashOverlay by remember { mutableStateOf(false) }
                                         val isCustomizingThis = customizingApp?.packageName == homeApp.packageName
@@ -5127,7 +5152,7 @@ fun LauncherScreen(
                                                         .align(Alignment.Center)
                                                         .offset(y = -(labelOffsetDp / 2))
                                                         .onGloballyPositioned { coords ->
-                                                            iconBoundsInRoot = coords.boundsInRoot()
+                                                            iconBounds.rect = coords.boundsInRoot()
                                                         }
                                                 )
                                                 // Press / flash overlay — same dim feedback as the
@@ -5162,9 +5187,9 @@ fun LauncherScreen(
 
                                         // Long-press popup — same actions as a regular grid app.
                                         com.bearinmind.launcher314.ui.components.AnimatedPopup(
-                                            visible = showContextMenu && iconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                                            visible = showContextMenu && iconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                                             onDismissRequest = { showContextMenu = false },
-                                            iconBoundsInRoot = iconBoundsInRoot
+                                            iconBoundsInRoot = iconBounds.rect
                                         ) {
                                             Box(
                                                 modifier = Modifier
@@ -5988,7 +6013,6 @@ fun LauncherScreen(
                                     else -> true
                                 }
                             } else true,
-                            dragOffset = if (isDockSlotDragging) dragOffset else Offset.Zero,
                             folderData = dockFolder,
                             onFolderIconPositioned = { bounds ->
                                 dockFolder?.let { folderIconBoundsMap[it.id.hashCode()] = bounds }
@@ -6476,9 +6500,6 @@ fun LauncherScreen(
             val originalPos = dragOriginalCellPos ?: Offset.Zero
 
             val p = if (isDropAnimating) dropAnimProgress.value else 0f
-            val currentOffset = if (isDropAnimating) {
-                dropStartOffset + (dropTargetOffset - dropStartOffset) * p
-            } else dragOffset
             // Scale: 1.1 during drag → shrink into folder or settle to 1.0
             val boxScale = if (dropCreatesFolder && isDropAnimating) {
                 1.1f * (1f - p * 0.6f) // Shrink into folder
@@ -6496,8 +6517,6 @@ fun LauncherScreen(
             }
             val textAlpha = if (isDropAnimating && !dropCreatesFolder) p else 0f
 
-            val appLeft = originalPos.x + currentOffset.x
-            val appTop = originalPos.y + currentOffset.y
 
             Box(
                 modifier = Modifier
@@ -6507,8 +6526,10 @@ fun LauncherScreen(
                     )
                     .zIndex(1000f)
                     .graphicsLayer {
-                        translationX = appLeft
-                        translationY = appTop
+                        // Read at draw time: dragOffset changes every frame and recomposed the whole home screen.
+                        val o = if (isDropAnimating) dropStartOffset + (dropTargetOffset - dropStartOffset) * dropAnimProgress.value else dragOffset
+                        translationX = originalPos.x + o.x
+                        translationY = originalPos.y + o.y
                         alpha = boxAlpha
                         scaleX = boxScale
                         scaleY = boxScale
@@ -6536,25 +6557,8 @@ fun LauncherScreen(
             val originalCellPos = dragOriginalCellPos ?: draggedItemIndex?.let { cellPositions[it] }
 
             if ((appInfo != null || draggedFolderData != null) && originalCellPos != null) {
-                val p = if (isDropAnimating) dropAnimProgress.value else 0f
-                val currentOffset = if (isDropAnimating) {
-                    dropStartOffset + (dropTargetOffset - dropStartOffset) * p
-                } else dragOffset
-                // When creating a folder, shrink & fade the overlay into the folder preview
-                val boxScale = if (dropCreatesFolder && isDropAnimating) {
-                    1.265f * (1f - p * 0.6f) // Shrink into folder
-                } else if (isDropAnimating && dropTargetOffset == Offset.Zero) {
-                    1f // Return to origin — match cell scale to avoid transition flicker
-                } else {
-                    1.265f - 0.265f * p // 1.265 during drag → 1.0 at drop end
-                }
-                val boxAlpha = if (dropCreatesFolder && isDropAnimating) {
-                    0.8f * (1f - p) // Fade out into folder
-                } else if (isDropAnimating && dropTargetOffset == Offset.Zero) {
-                    1f // Return to origin — constant alpha to avoid brightness flash
-                } else {
-                    0.8f + 0.2f * p
-                }
+                // Size only animates for a dock drop; everything else reads the progress in graphicsLayer below.
+                val p = if (isDropAnimating && dropTargetIsDock) dropAnimProgress.value else 0f
                 // Label is FULLY present during the drop (not a late fade-in) so the
                 // box + icons + label settle as one cohesive unit. The old `p` fade made
                 // the text/contents look like they rendered AFTER the folder was placed.
@@ -6565,12 +6569,6 @@ fun LauncherScreen(
                 val boxW = cellSize.width + (targetW - cellSize.width) * p
                 val boxH = cellSize.height + (targetH - cellSize.height) * p
 
-                // dragOffset was corrected at the transition point (onDragEnd during page
-                // scroll) so it represents true finger movement. No pager scroll compensation
-                // needed here — the overlay is in the root Box, outside the pager.
-                val appLeft = originalCellPos.x + currentOffset.x
-                val appTop = originalCellPos.y + currentOffset.y
-
                 Box(
                     modifier = Modifier
                         .size(
@@ -6579,11 +6577,18 @@ fun LauncherScreen(
                         )
                         .zIndex(1000f)
                         .graphicsLayer {
-                            translationX = appLeft
-                            translationY = appTop
+                            // Read at draw time: drag/drop values change every frame and recomposed the whole home screen.
+                            val dp = if (isDropAnimating) dropAnimProgress.value else 0f
+                            val o = if (isDropAnimating) dropStartOffset + (dropTargetOffset - dropStartOffset) * dp else dragOffset
+                            translationX = originalCellPos.x + o.x
+                            translationY = originalCellPos.y + o.y
+                            // Folder drop shrinks + fades into the preview; return-to-origin stays 1x/opaque (no flicker); else 1.265 → 1.0.
+                            val boxScale = if (dropCreatesFolder && isDropAnimating) 1.265f * (1f - dp * 0.6f)
+                                else if (isDropAnimating && dropTargetOffset == Offset.Zero) 1f else 1.265f - 0.265f * dp
                             scaleX = boxScale
                             scaleY = boxScale
-                            alpha = boxAlpha
+                            alpha = if (dropCreatesFolder && isDropAnimating) 0.8f * (1f - dp)
+                                else if (isDropAnimating && dropTargetOffset == Offset.Zero) 1f else 0.8f + 0.2f * dp
                             clip = false
                         },
                     contentAlignment = Alignment.Center
@@ -6634,9 +6639,6 @@ fun LauncherScreen(
 
             if ((appInfo != null || draggedFolderData != null) && originalDockPos != null) {
                 val p = if (isDropAnimating) dropAnimProgress.value else 0f
-                val currentOffset = if (isDropAnimating) {
-                    dropStartOffset + (dropTargetOffset - dropStartOffset) * p
-                } else dragOffset
                 val boxScale = if (isDropAnimating && dropTargetOffset == Offset.Zero) {
                     1f // Return to origin — match cell scale to avoid transition flicker
                 } else {
@@ -6654,9 +6656,6 @@ fun LauncherScreen(
                 val boxW = dockSlotSize.width + (targetW - dockSlotSize.width) * p
                 val boxH = dockSlotSize.height + (targetH - dockSlotSize.height) * p
 
-                // Use root-relative coordinates directly
-                val appLeft = originalDockPos.x + currentOffset.x
-                val appTop = originalDockPos.y + currentOffset.y
 
                 // Use target marker size based on where the drop is landing
                 val overlayMarkerHalfSize = if (isDropAnimating && !dropTargetIsDock) gridMarkerHalfSize else dockMarkerHalfSize
@@ -6669,8 +6668,10 @@ fun LauncherScreen(
                         )
                         .zIndex(1000f)
                         .graphicsLayer {
-                            translationX = appLeft
-                            translationY = appTop
+                            // Read at draw time: dragOffset changes every frame and recomposed the whole home screen.
+                            val o = if (isDropAnimating) dropStartOffset + (dropTargetOffset - dropStartOffset) * dropAnimProgress.value else dragOffset
+                            translationX = originalDockPos.x + o.x
+                            translationY = originalDockPos.y + o.y
                             scaleX = boxScale
                             scaleY = boxScale
                             alpha = boxAlpha
@@ -6895,23 +6896,7 @@ fun LauncherScreen(
             folderIconBoundsMap[openHomeFolder!!.position]
         else folderIconBoundsMap[openHomeFolder!!.id.hashCode()]
     }
-    val folderAnimProgress by animateFloatAsState(
-        // Match Lawnchair's SMOOTH (spring-based) folder animation. From
-        // src/com/android/launcher3/folder/FolderSpringAnimatorSet.kt:
-        //   STIFFNESS_SHAPE_POSITION = 380f   — for translation + scale
-        //   DAMPING_SHAPE_POSITION   = 0.8f   — slight, natural bounce
-        // The whole motion (popup + dim + everything driven by this
-        // progress) settles via spring physics instead of a fixed tween,
-        // so the open and close read as a single fluid arc.
-        targetValue = if (openHomeFolder != null) 1f else 0f,
-        animationSpec = lessAnim(spring(
-            dampingRatio = 0.8f,
-            stiffness = 380f,
-            visibilityThreshold = 0.001f
-        )),
-        label = "folderOpenClose",
-        finishedListener = { if (it == 0f && !escapedToHomeGrid) lastOpenedFolder = null }
-    )
+    val folderAnim = rememberFolderAnim(openHomeFolder != null) { if (!escapedToHomeGrid) lastOpenedFolder = null }
 
     // Visual-only folder close animation during escape drag.
     // Rendered as a separate Box so it doesn't affect pointer coordinates
@@ -7074,7 +7059,7 @@ fun LauncherScreen(
     }
 
     // Keep the folder overlay alive during escape drag (cell's gesture handler needs it)
-    if (lastOpenedFolder != null && (folderAnimProgress > 0f || escapedToHomeGrid)) {
+    if (lastOpenedFolder != null && (folderAnim.shown || escapedToHomeGrid)) {
         // Re-derive the folder from LIVE homeFolders / dockFolders by ID rather
         // than using the captured open snapshot. openHomeFolder/lastOpenedFolder
         // are point-in-time copies that DON'T update when the underlying folder
@@ -7396,7 +7381,7 @@ fun LauncherScreen(
                 // background + children, all clipped by the reveal path.
                 .drawWithContent {
                     if (escapedToHomeGrid) { drawContent(); return@drawWithContent }
-                    val p = folderAnimProgress.coerceIn(0f, 1f)
+                    val p = folderAnim.progress.coerceIn(0f, 1f)
                     if (p >= 0.999f) { drawContent(); return@drawWithContent }
                     val l = revStartLeft + (0f - revStartLeft) * p
                     val t = revStartTop + (0f - revStartTop) * p
@@ -7448,7 +7433,7 @@ fun LauncherScreen(
                     // folderHeaderBottomY (measured below) stays accurate for
                     // escape-drag detection.
                     .graphicsLayer {
-                        val mp = folderAnimProgress.coerceIn(0f, 1f)
+                        val mp = folderAnim.progress.coerceIn(0f, 1f)
                         if (mp < 0.999f && !escapedToHomeGrid) {
                             val a = ((mp - 0.12f) / 0.55f).coerceIn(0f, 1f)
                             alpha = a
@@ -7638,9 +7623,11 @@ fun LauncherScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .fillMaxHeight()
+                                        // Slot position before the morph layer: the cell's own report moved every frame, rebuilding the home and feeding back into the morph.
+                                        .onGloballyPositioned { folderCellPositions[cellIdx] = it.positionInRoot() }
                                         .graphicsLayer {
                                             clip = false
-                                            val mp = folderAnimProgress.coerceIn(0f, 1f)
+                                            val mp = folderAnim.progress.coerceIn(0f, 1f)
                                             if (mp < 0.999f && !escapedToHomeGrid) {
                                                 if (isPreviewSlot && morphCellPos != null &&
                                                     folderCellSize.width > 0) {
@@ -7673,7 +7660,6 @@ fun LauncherScreen(
                                         isAnyItemDragging = isDraggingInFolder,
                                         isDropTarget = false,
                                         isHovered = isDraggingInFolder && hoveredFolderCell == cellIdx,
-                                        dragOffset = if (isDragged) dragOffset else Offset.Zero,
                                         markerHalfSizeParam = gridMarkerHalfSize,
                                         plusMarkerSize = gridPlusMarkerSize,
                                         plusMarkerFontSize = gridPlusMarkerFont,
@@ -7682,9 +7668,8 @@ fun LauncherScreen(
                                         iconTextSpacer = gridIconTextSpacer,
                                         hoverCornerRadius = gridHoverCornerRadius,
                                         removeLabel = "Remove from folder",
-                                        onPositioned = { pos, size ->
-                                            folderCellPositions[cellIdx] = pos
-                                            folderCellSize = size
+                                        onPositioned = { _, size ->
+                                            if (cellIdx == 0) folderCellSize = size // one reference cell — see cellSize
                                         },
                                         onDragStart = {
                                             if (cellApp != null) {
@@ -8045,9 +8030,6 @@ fun LauncherScreen(
             val originalCellPos = dragOriginalFolderCellPos
             if (draggedApp != null && originalCellPos != null && folderCellSize.width > 0) {
                 val p = if (isFolderDropAnimating) folderDropAnimProgress.value else 0f
-                val currentOffset = if (isFolderDropAnimating) {
-                    folderDropStartOffset + (folderDropTargetOffset - folderDropStartOffset) * p
-                } else dragOffset
                 val boxScale = if (isFolderDropAnimating && folderDropTargetOffset == Offset.Zero) {
                     1f // Return to origin — match cell scale to avoid transition flicker
                 } else {
@@ -8062,8 +8044,6 @@ fun LauncherScreen(
                     1f // Return to origin — constant to avoid flicker
                 } else if (isFolderDropAnimating) p else 0f
 
-                val appLeft = originalCellPos.x - folderOverlayRootPos.x + currentOffset.x
-                val appTop = originalCellPos.y - folderOverlayRootPos.y + currentOffset.y
 
                 Box(
                     modifier = Modifier
@@ -8073,8 +8053,10 @@ fun LauncherScreen(
                         )
                         .zIndex(1000f)
                         .graphicsLayer {
-                            translationX = appLeft
-                            translationY = appTop
+                            // Read at draw time: dragOffset changes every frame and recomposed the whole home screen.
+                            val o = if (isFolderDropAnimating) folderDropStartOffset + (folderDropTargetOffset - folderDropStartOffset) * folderDropAnimProgress.value else dragOffset
+                            translationX = originalCellPos.x - folderOverlayRootPos.x + o.x
+                            translationY = originalCellPos.y - folderOverlayRootPos.y + o.y
                             // Fold drop: the held icon absorbs (shrinks + fades) into the target.
                             val fp = if (FolderReorderPreview.foldingDrop && isFolderDropAnimating) folderDropAnimProgress.value else 0f
                             scaleX = boxScale - (boxScale - 0.4f) * fp
@@ -8114,17 +8096,9 @@ fun LauncherScreen(
         // Spring-driven enter/exit so the outline visually grows out of /
         // collapses back into the popup card — same spring parameters as
         // the folder open/close anim (Lawnchair's FolderSpringAnimatorSet).
-        // Resize UI visibility tracks BOTH the resize enter/exit spring AND the
-        // folder open/close progress: min() means when the folder is closing
-        // (folderAnimProgress 1→0) the resize outline + panel collapse / fade
-        // into the folder in lockstep with the popup — one homogenous close.
-        // During a normal resize the folder is fully open (folderAnimProgress=1)
-        // so this is just resizeAnimProgress.
-        val resizeUiProgress = minOf(
-            resizeAnimProgress,
-            folderAnimProgress.coerceIn(0f, 1f)
-        )
-        if ((isResizingFolder || resizeAnimProgress > 0.001f) && resizeUiProgress > 0.001f) {
+        // min() with the folder progress collapses the resize UI in lockstep with a closing popup; read only while resizing (see FolderAnim).
+        val resizeUiProgress = if (isResizingFolder || resizeAnimProgress > 0.001f) minOf(resizeAnimProgress, folderAnim.progress.coerceIn(0f, 1f)) else 0f
+        if (resizeUiProgress > 0.001f) {
             FolderResizeOverlay(
                 folderId = folder.id,
                 popupOffsetXpx = popupX,

@@ -82,6 +82,7 @@ import com.bearinmind.launcher314.data.getScrollbarColor
 import com.bearinmind.launcher314.data.getScrollbarIntensity
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
+import com.bearinmind.launcher314.ui.components.IconBoundsRef
 import com.bearinmind.launcher314.ui.components.VerticalScrollbar
 import java.io.File
 import kotlin.math.sqrt
@@ -126,7 +127,7 @@ internal fun FolderItem(
     // scale-up when the popup opens) so AnimatedPopup can anchor tight to
     // the folder — same pattern used by FolderAppItem / the home-screen
     // folder cell.
-    var folderIconBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    val folderIconBounds = remember { IconBoundsRef() } // Issue #115: not state — see IconBoundsRef
 
     // First 4 items for the preview — apps and nested folders, in list order.
     val previewItems: List<Any> = remember(folder.appPackageNames, allApps, allFolders) {
@@ -357,7 +358,7 @@ internal fun FolderItem(
                         val h = coords.size.height * targetScale
                         val offsetX = (coords.size.width - w) / 2f
                         val offsetY = (coords.size.height - h) / 2f
-                        folderIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                        folderIconBounds.rect = androidx.compose.ui.geometry.Rect(
                             pos.x + offsetX, pos.y + offsetY,
                             pos.x + offsetX + w, pos.y + offsetY + h
                         )
@@ -484,9 +485,9 @@ internal fun FolderItem(
         // Context menu for folder
         var showDeleteConfirmDialog by remember { mutableStateOf(false) }
             AnimatedPopup(
-                visible = showContextMenu && folderIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                visible = showContextMenu && folderIconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                 onDismissRequest = { showContextMenu = false },
-                iconBoundsInRoot = folderIconBoundsInRoot
+                iconBoundsInRoot = folderIconBounds.rect
             ) {
                         // Folder name header
                         Box(
@@ -1213,8 +1214,7 @@ internal fun SelectableAppItem(
         animationSpec = lessAnim(if (isScaledUp) tween(durationMillis = 150) else snap()),
         label = "icon_scale"
     )
-    // Issue #115: a plain holder — as state, every scroll frame recomposed every visible item.
-    val drawerIconBounds = remember { IconBoundsRef() }
+    val drawerIconBounds = remember { IconBoundsRef() } // Issue #115: not state — see IconBoundsRef
 
     // Hide label when scaled up (matches home screen app behavior)
     val labelAlpha by animateFloatAsState(
@@ -2042,6 +2042,3 @@ fun CreateFolderDialog(
         }
     )
 }
-
-/** Issue #115: icon bounds that update without recomposing (see SelectableAppItem). */
-class IconBoundsRef { var rect = androidx.compose.ui.geometry.Rect.Zero }

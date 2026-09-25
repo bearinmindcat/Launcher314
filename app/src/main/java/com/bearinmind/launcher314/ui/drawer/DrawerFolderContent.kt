@@ -68,6 +68,7 @@ import com.bearinmind.launcher314.helpers.getOrGenerateBgColorShapedIcon
 import com.bearinmind.launcher314.helpers.getOrGenerateGlobalShapedIcon
 import com.bearinmind.launcher314.helpers.rememberHapticFeedback
 import com.bearinmind.launcher314.ui.components.AnimatedPopup
+import com.bearinmind.launcher314.ui.components.IconBoundsRef
 import com.bearinmind.launcher314.ui.components.GridCellHoverIndicator
 import kotlinx.coroutines.launch
 import java.io.File
@@ -391,9 +392,7 @@ internal fun FolderContentScreen(
                                 // Per-cell icon bounds (already scaled to 1.265×) so AnimatedPopup
                                 // can anchor the long-press menu tight to the icon — same fix
                                 // applied to the home-screen folder cell + drawer folder cell.
-                                var cellIconBoundsInRoot by remember(cellIdx) {
-                                    mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)
-                                }
+                                val cellIconBounds = remember(cellIdx) { IconBoundsRef() } // Issue #115: not state — see IconBoundsRef
 
                                 // Issue #88: slide to the would-be slot while a drag hovers (same preview as home folders).
                                 val reorderShift = remember { androidx.compose.animation.core.Animatable(Offset.Zero, Offset.VectorConverter) }
@@ -826,7 +825,7 @@ internal fun FolderContentScreen(
                                                             val h = coords.size.height * targetScale
                                                             val offsetX = (coords.size.width - w) / 2f
                                                             val offsetY = (coords.size.height - h) / 2f
-                                                            cellIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                                                            cellIconBounds.rect = androidx.compose.ui.geometry.Rect(
                                                                 pos.x + offsetX, pos.y + offsetY,
                                                                 pos.x + offsetX + w, pos.y + offsetY + h
                                                             )
@@ -899,9 +898,9 @@ internal fun FolderContentScreen(
                                         // Context menu (shown on long press without drag)
                                             AnimatedPopup(
                                                 visible = contextMenuCellIdx == cellIdx &&
-                                                    cellIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                                                    cellIconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                                                 onDismissRequest = { contextMenuCellIdx = null },
-                                                iconBoundsInRoot = cellIconBoundsInRoot
+                                                iconBoundsInRoot = cellIconBounds.rect
                                             ) {
                                                         Box(
                                                             modifier = Modifier
@@ -998,7 +997,7 @@ internal fun FolderContentScreen(
                                                             val h = coords.size.height * targetScale
                                                             val offX = (coords.size.width - w) / 2f
                                                             val offY = (coords.size.height - h) / 2f
-                                                            cellIconBoundsInRoot = androidx.compose.ui.geometry.Rect(
+                                                            cellIconBounds.rect = androidx.compose.ui.geometry.Rect(
                                                                 pos.x + offX, pos.y + offY,
                                                                 pos.x + offX + w, pos.y + offY + h
                                                             )
@@ -1048,9 +1047,9 @@ internal fun FolderContentScreen(
                                         // Sub-folder context menu
                                         AnimatedPopup(
                                             visible = contextMenuCellIdx == cellIdx &&
-                                                cellIconBoundsInRoot != androidx.compose.ui.geometry.Rect.Zero,
+                                                cellIconBounds.rect != androidx.compose.ui.geometry.Rect.Zero,
                                             onDismissRequest = { contextMenuCellIdx = null },
-                                            iconBoundsInRoot = cellIconBoundsInRoot
+                                            iconBoundsInRoot = cellIconBounds.rect
                                         ) {
                                             Box(
                                                 modifier = Modifier

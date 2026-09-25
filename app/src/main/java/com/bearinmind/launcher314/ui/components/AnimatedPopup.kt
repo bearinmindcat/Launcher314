@@ -306,3 +306,6 @@ private fun AnimatedPopupContent(
         }
     }
 }
+
+/** Popup anchor bounds that update without recomposing — as state, per-frame bounds rebuilt every icon while scrolling or paging (issue #115). */
+class IconBoundsRef { var rect = androidx.compose.ui.geometry.Rect.Zero }

@@ -207,6 +207,8 @@ internal fun MainDrawerContent(
 
     // Multi-select state
     var selectedAppPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // Once per selection change, not per item — each item used to filter the whole app list (issue #115).
+    val selectedAppsList = remember(filteredApps, selectedAppPackages) { filteredApps.filter { it.packageName in selectedAppPackages } }
     // Selection mode is explicitly activated by tapping "Select" in the context menu
     var selectionModeActive by remember { mutableStateOf(false) }
 
@@ -234,8 +236,9 @@ internal fun MainDrawerContent(
 
     // Track cell positions and sizes for drag overlay positioning (shared across paged/scroll modes)
     // Hoisted here so drag lambdas can access them for folder hover detection
-    val drawerCellPositions = remember { mutableStateMapOf<String, Offset>() }
-    val drawerCellSizes = remember { mutableStateMapOf<String, IntSize>() }
+    // Plain maps: every item rewrites these each scroll frame and only drag/drop lambdas read them, so state bookkeeping was pure cost.
+    val drawerCellPositions = remember { HashMap<String, Offset>() }
+    val drawerCellSizes = remember { HashMap<String, IntSize>() }
 
     // Drag-and-drop state for paged mode (return-to-origin only)
     var showDropZone by remember { mutableStateOf(false) } // drives crossfade, cleared on finger lift
@@ -1185,7 +1188,7 @@ internal fun MainDrawerContent(
                                                     }
                                                 )
                                             } else if (cellItem is AppInfo) {
-                                                val selectedApps = filteredApps.filter { it.packageName in selectedAppPackages }
+                                                val selectedApps = selectedAppsList
                                                 SelectableAppItem(
                                                     app = cellItem,
                                                     iconSize = iconSize,
@@ -1458,7 +1461,7 @@ internal fun MainDrawerContent(
                             }
                         }
                         // Get selected apps as AppInfo list for bulk operations
-                        val selectedApps = filteredApps.filter { it.packageName in selectedAppPackages }
+                        val selectedApps = selectedAppsList
 
                         val isDropAnimTarget = app.packageName == dropAnimatingPackage
                         Box(

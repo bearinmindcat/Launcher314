@@ -360,12 +360,9 @@ fun LauncherWithDrawer(
         }
     }
 
-    val drawerToHomeFadeAlpha = if (drawerToHomeProgress.value <= 0.5f)
-        1f - (drawerToHomeProgress.value / 0.5f)   // drawer: 1→0 in first half
-    else 0f                                          // drawer stays gone in second half
-    val homeScreenFadeInAlpha = if (drawerToHomeProgress.value <= 0.5f)
-        0f                                           // home hidden in first half
-    else (drawerToHomeProgress.value - 0.5f) / 0.5f // home: 0→1 in second half
+    // Functions, read only in graphicsLayer: as vals they rebuilt the whole launcher every frame of the 900ms cross-fade.
+    fun drawerToHomeFadeAlpha() = if (drawerToHomeProgress.value <= 0.5f) 1f - drawerToHomeProgress.value / 0.5f else 0f // drawer 1→0 in the first half
+    fun homeScreenFadeInAlpha() = if (drawerToHomeProgress.value <= 0.5f) 0f else (drawerToHomeProgress.value - 0.5f) / 0.5f // home 0→1 in the second half
 
     val onDrawerDragToHome: (Any, Offset) -> Unit = { item, fingerPos ->
         drawerToHomeItem = item
@@ -1493,7 +1490,7 @@ fun LauncherWithDrawer(
                     // (frost dissolve) over the first 40% of the swipe; through the
                     // transparent drawer you then see the blurred WALLPAPER.
                     if (drawerToHomeActive) {
-                        alpha = homeScreenFadeInAlpha
+                        alpha = homeScreenFadeInAlpha()
                         renderEffect = null
                     } else {
                         val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
@@ -1536,7 +1533,7 @@ fun LauncherWithDrawer(
                 onFolderOpenChanged = { isFolderOpen = it },
                 externalDragItem = if (drawerToHomeActive) drawerToHomeItem else null,
                 externalDragInitialPos = drawerToHomeInitialPos,
-                externalDragFingerPos = drawerToHomeFingerPos,
+                externalDragFingerPos = { drawerToHomeFingerPos },
                 externalDragDropSignal = drawerToHomeDropSignal,
                 onExternalDragComplete = {
                     drawerToHomeActive = false
@@ -1568,7 +1565,7 @@ fun LauncherWithDrawer(
                         // SCRIM_FADE_MANUAL 0.117 -> 0.4, computed at DRAW time
                         // (state read inside the lambda = no per-frame recomposition).
                         alpha = if (drawerToHomeActive) {
-                            drawerToHomeFadeAlpha * scrimMaxAlpha
+                            drawerToHomeFadeAlpha() * scrimMaxAlpha
                         } else {
                             val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
                             ((pr - 0.117f) / 0.283f).coerceIn(0f, 1f) * scrimMaxAlpha
@@ -1585,7 +1582,7 @@ fun LauncherWithDrawer(
                     .fillMaxSize()
                     .graphicsLayer {
                         alpha = if (drawerToHomeActive) {
-                            drawerToHomeFadeAlpha * noiseAlphaMax
+                            drawerToHomeFadeAlpha() * noiseAlphaMax
                         } else {
                             val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
                             ((pr - 0.117f) / 0.283f).coerceIn(0f, 1f) * noiseAlphaMax
@@ -1608,7 +1605,7 @@ fun LauncherWithDrawer(
                     .graphicsLayer {
                         // ALL_APPS_FADE_MANUAL 0.4 -> 0.8, computed at DRAW time so
                         // dragging never recomposes the app grid underneath.
-                        alpha = if (drawerToHomeActive) drawerToHomeFadeAlpha else {
+                        alpha = if (drawerToHomeActive) drawerToHomeFadeAlpha() else {
                             val pr = (1f - (effectiveSwipeY / drawerRangePx)).coerceIn(0f, 1f)
                             ((pr - 0.4f) / 0.4f).coerceIn(0f, 1f)
                         }
