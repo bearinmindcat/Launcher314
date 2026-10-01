@@ -36,6 +36,6 @@ Anyways who reads these descriptions anyways. Get in there buddy.
 
 ## License
 
-Launcher314 is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+Launcher314 is licensed under the GNU General Public License v3.0 only. See the [LICENSE](LICENSE) file for details.
 
 This app is free and open source software (FOSS).
