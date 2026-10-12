@@ -127,6 +127,16 @@ fun ExperimentalSettingsScreen(onBack: () -> Unit) {
                     setFolderAutoSizeEnabled(context, it)
                 }
             )
+            var folderShrinkIcons by remember { mutableStateOf(com.bearinmind.launcher314.data.getFolderShrinkIcons(context)) }
+            SettingsToggleItem(
+                title = "Shrink icons in folders",
+                subtitle = "Icons get smaller to fit the folder; off keeps them full size",
+                checked = folderShrinkIcons,
+                onCheckedChange = {
+                    folderShrinkIcons = it
+                    com.bearinmind.launcher314.data.setFolderShrinkIcons(context, it)
+                }
+            )
             var wallpaperAccent by remember { mutableStateOf(getWallpaperAccentEnabled(context)) }
             SettingsToggleItem(
                 title = "Wallpaper accent",

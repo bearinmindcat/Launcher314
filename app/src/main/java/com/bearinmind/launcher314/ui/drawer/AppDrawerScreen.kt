@@ -1227,6 +1227,7 @@ fun AppDrawerScreen(
                         },
                         onUninstallApp = { app -> uninstallApp(context, app.packageName) },
                         onAppInfo = { app -> openAppInfo(context, app.packageName) },
+                        onCustomizeApp = { app -> customizingDrawerApp = app },
                         onDeleteFolder = {
                             deleteFolder(currentFolder.id)
                             isFolderVisible = false

@@ -765,6 +765,19 @@ fun setFolderAutoSizeEnabled(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_FOLDER_AUTO_SIZE, enabled).apply()
 }
 
+// EXPERIMENTAL: folder icons shrink to fit their cell (default); off keeps them full size like pre-0.0.26 drawer folders, labels may overlap.
+private const val KEY_FOLDER_SHRINK_ICONS = "experimental_folder_shrink_icons"
+
+fun getFolderShrinkIcons(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_FOLDER_SHRINK_ICONS, true)
+}
+
+fun setFolderShrinkIcons(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_FOLDER_SHRINK_ICONS, enabled).apply()
+}
+
 // EXPERIMENTAL (issue #106): outer margins as % of the stock margin (100 = stock, 0 = flush with the screen edges), gated by an enable toggle.
 private const val KEY_OUTER_MARGINS_ENABLED = "experimental_outer_margins_enabled"
 private const val KEY_HOME_OUTER_MARGIN = "experimental_home_outer_margin"

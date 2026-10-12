@@ -426,6 +426,10 @@ private fun folderAutoSize(context: android.content.Context, folder: HomeFolder,
     return FolderAutoSize(cols, rows, cellW * cols + padPx, cellH * rows + titleBarPx + padPx)
 }
 
+/** In-folder icon size: capped to the cell unless "Shrink icons in folders" is off (then full home size, labels may overlap). */
+private fun folderIconPxFor(context: android.content.Context, basePx: Float, fitPx: Float): Float =
+    (if (com.bearinmind.launcher314.data.getFolderShrinkIcons(context)) minOf(basePx, fitPx) else basePx).coerceAtLeast(1f)
+
 /** Default OPEN-folder rows: one fewer than home, grown so EVERY app gets a cell — the fixed grid drops cell-less apps, so never default below the app count. */
 private fun folderDefaultRows(folder: HomeFolder, gridColumns: Int, gridRows: Int): Int {
     val cols = folderDefaultCols(gridColumns)
@@ -6856,12 +6860,10 @@ fun LauncherScreen(
                 dropScope.launch {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         val freshApps = loadAvailableApps(context)
-                        val debugApp = freshApps.find { it.packageName == app.packageName }
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                             allAvailableApps = freshApps
                             coil.Coil.imageLoader(context).memoryCache?.clear()
                             coil.Coil.imageLoader(context).diskCache?.clear()
-                            android.widget.Toast.makeText(context, "iconPath: ${debugApp?.iconPath?.takeLast(50)}", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -7313,7 +7315,7 @@ fun LauncherScreen(
         // below for the label (≤ ~58% of cell height).
         val folderFitIconPx = minOf(folderCellWpx * 0.82f, folderCellHpx * 0.58f)
         val baseFolderIconPx = with(folderDensity) { iconSizeDp.dp.toPx() }
-        val folderIconPx = minOf(baseFolderIconPx, folderFitIconPx).coerceAtLeast(1f)
+        val folderIconPx = folderIconPxFor(context, baseFolderIconPx, folderFitIconPx)
         val folderIconSizeDp = with(folderDensity) { folderIconPx.toDp() }.value.toInt()
             .coerceAtLeast(1)
 

@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
@@ -90,6 +91,7 @@ internal fun FolderContentScreen(
     onRemoveApps: (List<String>) -> Unit = {},
     onUninstallApp: (AppInfo) -> Unit = {},
     onAppInfo: (AppInfo) -> Unit = {},
+    onCustomizeApp: (AppInfo) -> Unit = {},
     onDeleteFolder: () -> Unit,
     onRenameFolder: (String) -> Unit,
     folders: List<AppFolder> = emptyList(),
@@ -182,8 +184,8 @@ internal fun FolderContentScreen(
     val gridRows = ((maxOccupied + gridColumns - 1) / gridColumns + 1).coerceAtLeast(2)
     val cellWidth = (contentWidthDp - 32f) / gridColumns
     val cellHeight = (folderContentHeight - 32f) / gridRows
-    // Icons shrink to their cell (home's rule) instead of overflowing onto the row above.
-    val iconSize = minOf(drawerIconSize.toFloat(), cellWidth * 0.82f, cellHeight * 0.58f)
+    // Icons shrink to their cell (home's rule) instead of overflowing onto the row above, unless the user turned shrinking off.
+    val iconSize = (if (com.bearinmind.launcher314.data.getFolderShrinkIcons(context)) minOf(drawerIconSize.toFloat(), cellWidth * 0.82f, cellHeight * 0.58f) else drawerIconSize.toFloat())
         .toInt().coerceAtLeast(1)
     val cellBasis = minOf(cellWidth, cellHeight)
     val markerHalfSize = (cellBasis * 0.073f).dp
@@ -936,6 +938,16 @@ internal fun FolderContentScreen(
                                                             onClick = {
                                                                 contextMenuCellIdx = null
                                                                 onRemoveApp(cellApp.packageName)
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Customize") },
+                                                            leadingIcon = {
+                                                                Icon(Icons.Outlined.Edit, contentDescription = null)
+                                                            },
+                                                            onClick = {
+                                                                contextMenuCellIdx = null
+                                                                onCustomizeApp(cellApp)
                                                             }
                                                         )
                                                         val otherFolders = folders.filter { it.id != folder.id }
