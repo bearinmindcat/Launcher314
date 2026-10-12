@@ -53,13 +53,15 @@ fun clearCachedIconsForPackage(context: Context, packageName: String) {
         File(context.filesDir, "bg_tinted_icons"),
         File(context.filesDir, "foreground_icons")
     )
+    // Issue #136: icons the user picked in Customize live in icon_pack_cache too — app updates must not wipe them.
+    val picked = IconPackManager.userPickedIconPackages(context)
     cacheDirs.forEach { dir ->
         if (dir.exists()) {
-            dir.listFiles()?.filter { it.name.startsWith(packageName) }?.forEach { it.delete() }
+            dir.listFiles()?.filter { it.name.startsWith(packageName) && !(dir.name == "icon_pack_cache" && it.name.removeSuffix(".png") in picked) }?.forEach { it.delete() }
         }
     }
     // Re-cache the icon pack icon for this package so it doesn't fall back to system icon
-    IconPackManager.recacheIconForPackage(context, packageName)
+    if (packageName !in picked) IconPackManager.recacheIconForPackage(context, packageName)
 }
 
 fun getGlobalShapedDir(context: Context): File {

@@ -217,9 +217,10 @@ object IconPackManager {
         val appFilterMap = parseAppFilter(context, iconPackPackage)
         val iconPackResources = pm.getResourcesForApplication(iconPackPackage)
         val cacheDir = getIconPackCacheDir(context)
+        val picked = userPickedIconPackages(context)
 
-        // Clear previous cache
-        cacheDir.listFiles()?.forEach { it.delete() }
+        // Clear previous cache, keeping per-app picks (issue #136)
+        cacheDir.listFiles()?.filter { it.name.removeSuffix(".png") !in picked }?.forEach { it.delete() }
 
         // Query all launchable activities to get ComponentInfo data
         val launchIntent = Intent(Intent.ACTION_MAIN).apply {
@@ -232,6 +233,7 @@ object IconPackManager {
             val activityInfo = resolveInfo.activityInfo
             val pkgName = activityInfo.packageName
             val activityName = activityInfo.name
+            if (pkgName in picked) continue
 
             val drawableName = findDrawableForPackage(appFilterMap, pkgName, activityName) ?: continue
 
@@ -293,9 +295,16 @@ object IconPackManager {
         }
     }
 
+    /** Apps whose icon_pack_cache icon was picked by hand in Customize (issue #136): pack switches and app updates must keep it. */
+    fun userPickedIconPackages(context: Context): Set<String> =
+        com.bearinmind.launcher314.data.loadAppCustomizations(context).customizations
+            .filterValues { it.customIconPackName != null || it.customIconPath?.contains("/icon_pack_cache/") == true }
+            .keys
+
     fun clearIconPackCache(context: Context) {
         val cacheDir = getIconPackCacheDir(context)
-        cacheDir.listFiles()?.forEach { it.delete() }
+        val picked = userPickedIconPackages(context)
+        cacheDir.listFiles()?.filter { it.name.removeSuffix(".png") !in picked }?.forEach { it.delete() }
         cachedAppFilterMap = emptyMap()
         cachedIconPackPackage = ""
     }
