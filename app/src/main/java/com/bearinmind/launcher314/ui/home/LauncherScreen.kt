@@ -6303,7 +6303,8 @@ fun LauncherScreen(
                                                 Offset(targetPos.x - originalDockPos.x, targetPos.y - originalDockPos.y)
                                             } else Offset.Zero
                                             dropAction = {
-                                                val updatedDockApps = dockApps.filter { it.position != currentDraggedSlot }
+                                                // Issue #134: only this dock page's slot — other pages keep their app there.
+                                                val updatedDockApps = dockApps.filter { !(it.position == currentDraggedSlot && it.page == currentDockPage) }
                                                 dockApps = updatedDockApps
                                                 dockFolders = dockFolders.map { f ->
                                                     if (f.id == toFolder.id) f.copy(appPackageNames = addAppToFolder(f.appPackageNames, fromApp.packageName))
@@ -6324,8 +6325,8 @@ fun LauncherScreen(
 
                                     // Start folder receive pulse on dock target if dropping on folder/app
                                     if (dropAction != null && !isDraggingDockFolder && targetDockSlot != null) {
-                                        val targetHasContent = dockApps.any { it.position == targetDockSlot } ||
-                                            dockFolders.any { it.position == targetDockSlot }
+                                        val targetHasContent = dockApps.any { it.position == targetDockSlot && it.page == currentDockPage } ||
+                                            dockFolders.any { it.position == targetDockSlot && it.page == currentDockPage }
                                         if (targetHasContent) folderReceiveDockSlot = targetDockSlot
                                     }
 
@@ -6376,7 +6377,8 @@ fun LauncherScreen(
                                     if (dockFolder != null) {
                                         saveDockFolders(dockFolders.filter { it.id != dockFolder.id })
                                     } else if (appInfo != null) {
-                                        saveDockApps(dockApps.filter { it.position != slot })
+                                        // Issue #134: remove only from this dock page; it used to clear the slot on every page.
+                                        saveDockApps(dockApps.filter { !(it.position == slot && it.page == dockPage) })
                                     }
                                     removeState.dockSlot = null
                                 }
