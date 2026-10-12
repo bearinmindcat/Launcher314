@@ -240,6 +240,24 @@ object WidgetManager {
         widgetViews.clear()
     }
 
+    // The activity that owns the host — on a launcher restart the new one starts before the old one is destroyed (issue #133).
+    private var owner: Any? = null
+
+    /** Call in onCreate: takes over the host and drops views built with a previous activity's context. */
+    fun attach(activity: Any) {
+        if (owner != null && owner !== activity) clearViewCache()
+        owner = activity
+        startListening()
+    }
+
+    /** Call in onDestroy: only the current owner may stop listening, or a dying old activity freezes every widget. */
+    fun detach(activity: Any) {
+        if (owner !== activity) return
+        owner = null
+        stopListening()
+        clearViewCache()
+    }
+
     /** Re-bind every cached view on onProvidersChanged (any provider added/updated/removed) — Launcher3's pattern so a freshly-updated widget APK renders immediately. */
     fun rebindAllCachedViews() {
         val manager = appWidgetManager ?: return

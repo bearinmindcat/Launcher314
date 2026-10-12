@@ -468,7 +468,7 @@ class MainActivity : ComponentActivity() {
 
         // Launcher3 pattern: the host listens for the Activity's whole lifetime — pairing with onStart/onStop drops intermediate RemoteViews pushes (the service only caches the LATEST per widget), breaking time-based widgets.
         WidgetManager.init(this)
-        WidgetManager.startListening()
+        WidgetManager.attach(this)
 
         // One-shot idempotent migration of legacy per-gesture prefs (issue #40) — must run before any composable reads the new keys.
         com.bearinmind.launcher314.data.migrateLegacyGesturePrefs(this)
@@ -598,10 +598,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Mirror startListening() in onCreate — per Launcher3 the host stays listening for the Activity's lifetime; stopping at onStop silently drops intermediate RemoteViews frames.
-        WidgetManager.stopListening()
-        // Drop the widget-view cache — the singleton cache holds THIS activity's context; keeping it across recreation leaks the dead activity (progressive drawer lag).
-        WidgetManager.clearViewCache()
+        // Stop listening + drop this activity's cached views, unless a newer activity already took over (issue #133).
+        WidgetManager.detach(this)
     }
 
     override fun onNewIntent(intent: Intent) {
