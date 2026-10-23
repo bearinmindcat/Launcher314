@@ -39,3 +39,8 @@ Anyways who reads these descriptions anyways. Get in there buddy.
 Launcher314 is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
 
 This app is free and open source software (FOSS).
+
+## Misc info for myself
+
+Try to use [semantic commit](https://kapeli.com/cheat_sheets/Semantic_Commits.docset/Contents/Resources/Documents/index)
+messages. Use `feat:` / `fix:` / `chore:` / `docs:` / etc.
