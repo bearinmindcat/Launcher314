@@ -32,13 +32,18 @@ object HomeAppScan {
     fun scanned(scanSeq: Int) { seq = scanSeq }
 
     /** Layout apps that are gone for good: not launchable, and disabled or uninstalled (unless a profile is paused, which hides its apps). */
-    fun gonePackages(context: Context, data: HomeScreenData, launchable: Set<String>): Set<String> {
-        val candidates = buildSet {
+    fun gonePackages(context: Context, data: HomeScreenData, launchable: Set<String>): Set<String> =
+        goneAmong(context, buildSet {
             data.apps.forEach { add(it.packageName) }
             data.dockApps.forEach { add(it.packageName) }
             data.folders.forEach { addAll(it.appPackageNames) }
             data.dockFolders.forEach { addAll(it.appPackageNames) }
-        }.filter { it.isNotEmpty() && !it.startsWith("shortcut_") && !isFolderEntry(it) && it !in launchable }
+        }, launchable)
+
+    /** Same rule as [gonePackages] for any list of stored entries (drawer folders use it too, issue #139). */
+    fun goneAmong(context: Context, entries: Collection<String>, launchable: Set<String>): Set<String> {
+        val candidates = entries.toSet()
+            .filter { it.isNotEmpty() && !it.startsWith("shortcut_") && !isFolderEntry(it) && it !in launchable }
         if (candidates.isEmpty()) return emptySet()
         val um = context.getSystemService(Context.USER_SERVICE) as UserManager
         val profilePaused = try {
@@ -55,7 +60,8 @@ object HomeAppScan {
     /** Removes [gone] apps everywhere; a top-level folder left with one app dissolves into it (as "Remove from folder" does). Null when nothing changed. */
     fun pruneLayout(data: HomeScreenData, gone: Set<String>): HomeScreenData? {
         if (gone.isEmpty()) return null
-        fun strip(list: List<String>) = list.map { if (it in gone) "" else it }.dropLastWhile { it.isEmpty() }
+        // Issue #139: drop the entry (not blank it) so the apps after it shift back instead of leaving a hole.
+        fun strip(list: List<String>) = list.filter { it !in gone }.dropLastWhile { it.isEmpty() }
         val apps = data.apps.filter { it.packageName !in gone }.toMutableList()
         val dockApps = data.dockApps.filter { it.packageName !in gone }.toMutableList()
         val folders = data.folders.mapNotNull { f ->
@@ -79,5 +85,14 @@ object HomeAppScan {
         }
         val out = HomeScreenData(apps, dockApps, folders, dockFolders)
         return if (out == data) null else out
+    }
+
+    /** Issue #139: drawer folders drop [gone] apps so the rest shift back (drawer folders never dissolve). Null when nothing changed. */
+    fun pruneDrawerFolders(folders: List<AppFolder>, gone: Set<String>): List<AppFolder>? {
+        if (gone.isEmpty() || folders.none { f -> f.appPackageNames.any { it in gone } }) return null
+        return folders.map { f ->
+            if (f.appPackageNames.none { it in gone }) f
+            else f.copy(appPackageNames = f.appPackageNames.filter { it !in gone }.dropLastWhile { it.isEmpty() })
+        }
     }
 }

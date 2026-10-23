@@ -571,11 +571,19 @@ fun AppDrawerScreen(
                         runCatching { pm.getPackageInfo(p, 0) }.isSuccess
                 })
             }
+            // Issue #139: uninstalled apps leave drawer folders too, so the apps after them shift back instead of leaving a hole.
+            val goneFromFolders = com.bearinmind.launcher314.data.HomeAppScan.goneAmong(
+                context, folders.flatMap { it.appPackageNames }, installedNow
+            )
             withContext(Dispatchers.Main) {
                 allApps = apps
                 if (prunedTabs != drawerTabs) {
                     drawerTabs = prunedTabs
                     saveDrawerTabs(context, prunedTabs)
+                }
+                com.bearinmind.launcher314.data.HomeAppScan.pruneDrawerFolders(folders, goneFromFolders)?.let { pruned ->
+                    saveFolders(pruned)
+                    openFolder = openFolder?.let { open -> pruned.firstOrNull { it.id == open.id } }
                 }
                 isLoading = false
             }
@@ -681,7 +689,8 @@ fun AppDrawerScreen(
         derivedStateOf {
             val availableApps = if (searchQuery.isBlank()) {
                 // Pinned apps are exempt from the folder swallow — a pin always shows at the top.
-                renamedApps.filter { (it.packageName !in appsInVisibleFolders || it.packageName in pinnedApps) && it.packageName !in hiddenApps }
+                // Issue #140: folders only show on Personal, so they never swallow a work/clone copy of the same package.
+                renamedApps.filter { (it.profileType != com.bearinmind.launcher314.helpers.ProfileType.PERSONAL || it.packageName !in appsInVisibleFolders || it.packageName in pinnedApps) && it.packageName !in hiddenApps }
             } else {
                 // When searching, include all apps (even those in folders) so they appear in results
                 renamedApps.filter { it.packageName !in hiddenApps }
@@ -721,7 +730,8 @@ fun AppDrawerScreen(
             // Issue #79: drop home screen apps from the browsing list only (pins exempt; tabs/search unaffected).
             val homeFiltered = if (searchQuery.isBlank() && homeScreenPkgs.isNotEmpty() &&
                 (!drawerTabsEnabled || selectedDrawerTabId == null)) {
-                tabFiltered.filter { it.packageName !in homeScreenPkgs || it.packageName in pinnedApps }
+                // Issue #140: home rows are personal copies, so a work/clone copy stays.
+                tabFiltered.filter { it.profileType != com.bearinmind.launcher314.helpers.ProfileType.PERSONAL || it.packageName !in homeScreenPkgs || it.packageName in pinnedApps }
             } else tabFiltered
             // Choose the search set. Fuzzy matcher only when the user opted in;
             // otherwise the classic case-insensitive substring search. Fuzzy
