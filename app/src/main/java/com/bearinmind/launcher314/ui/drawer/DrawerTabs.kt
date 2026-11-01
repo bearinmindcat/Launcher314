@@ -276,25 +276,27 @@ fun setSwipeTabsEnabled(context: Context, enabled: Boolean) {
 // Chip row style: alignment, per-chip app count, and whether the "+" chip shows.
 private const val KEY_CENTER_CHIPS = "drawer_tabs_center_chips" // legacy bool, migrated
 private const val KEY_TAB_ALIGNMENT = "drawer_tabs_alignment"     // legacy 3-way 0/1/2
-private const val KEY_TAB_ALIGNMENT_LR = "drawer_tabs_align_lr"   // 2-way: 0 = Left, 1 = Right
+private const val KEY_TAB_ALIGNMENT_LR = "drawer_tabs_align_lr"   // legacy 2-way: 0 = Left, 1 = Right
+private const val KEY_TAB_ALIGN = "drawer_tabs_align_3"           // 0 = Left, 1 = Center, 2 = Right
 private const val KEY_SHOW_COUNTS = "drawer_tabs_show_counts"
 private const val KEY_HIDE_PLUS = "drawer_tabs_hide_plus"
 
-// Alignment is Left (0) / Right (1) only — legacy 3-way values migrate once (old Right 2 -> 1, else Left).
+// Alignment: 0 = Left, 1 = Center, 2 = Right (Center is back, issue #142). Older keys migrate once, keeping the user's choice.
 fun getTabAlignment(context: Context): Int {
     val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    if (prefs.contains(KEY_TAB_ALIGNMENT_LR)) {
-        return prefs.getInt(KEY_TAB_ALIGNMENT_LR, 0).coerceIn(0, 1)
+    if (prefs.contains(KEY_TAB_ALIGN)) {
+        return prefs.getInt(KEY_TAB_ALIGN, 0).coerceIn(0, 2)
     }
-    val legacy = prefs.getInt(KEY_TAB_ALIGNMENT, 0)
-    val migrated = if (legacy >= 2) 1 else 0
-    prefs.edit().putInt(KEY_TAB_ALIGNMENT_LR, migrated).apply()
+    val migrated = if (prefs.contains(KEY_TAB_ALIGNMENT_LR)) {
+        if (prefs.getInt(KEY_TAB_ALIGNMENT_LR, 0) == 1) 2 else 0
+    } else prefs.getInt(KEY_TAB_ALIGNMENT, 0).coerceIn(0, 2)
+    prefs.edit().putInt(KEY_TAB_ALIGN, migrated).apply()
     return migrated
 }
 
 fun setTabAlignment(context: Context, alignment: Int) {
     context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        .edit().putInt(KEY_TAB_ALIGNMENT_LR, alignment.coerceIn(0, 1)).apply()
+        .edit().putInt(KEY_TAB_ALIGN, alignment.coerceIn(0, 2)).apply()
 }
 
 fun isHidePlusChip(context: Context): Boolean {
@@ -534,7 +536,11 @@ internal fun DrawerTabRow(
     // The currently-selected chip's key; its position is read inside the centering effect, not composition.
     val selectedKey = selectedTabId ?: "__all__"
 
-    val chipAlignment = if (tabAlignment == 1) Alignment.End else Alignment.Start
+    val chipAlignment = when (tabAlignment) {
+        1 -> Alignment.CenterHorizontally
+        2 -> Alignment.End
+        else -> Alignment.Start
+    }
 
     // On drop / cancel: spring the chip back into its slot, then commit the order or open the editor.
     val releaseDrag = {
