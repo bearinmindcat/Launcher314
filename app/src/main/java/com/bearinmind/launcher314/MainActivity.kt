@@ -442,6 +442,18 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
+        // Issue #144: started as an ordinary app while we're the default home (notification/tile/another launcher, no copy running) — hand off to the home copy so a 2nd, see-through copy never lingers in Recents.
+        val plainLaunch = intent?.action == null || intent?.action == Intent.ACTION_MAIN
+        if (!isHomeLaunch && launcherEnabled && plainLaunch && (navigateTo == null || navigateTo == "app_drawer") &&
+            LauncherUtils.isDefaultLauncher(this)
+        ) {
+            startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .apply { if (navigateTo != null) putExtra("navigate_to", navigateTo) })
+            finishAndRemoveTask()
+            return
+        }
+
         // Issue #35: icons moved out of cacheDir (purged on low storage); before anything reads an icon path.
         com.bearinmind.launcher314.data.IconStore.migrate(this)
 
@@ -483,7 +495,7 @@ class MainActivity : ComponentActivity() {
 
         // Determine start destination
         val startDestination = when {
-            navigateTo == "app_drawer" -> "app_drawer"
+            navigateTo == "app_drawer" && !isLauncherMode -> "app_drawer"
             navigateTo == "launcher_preview" -> "launcher"
             navigateTo == "launcher_preview_drawer" -> "launcher"
             isLauncherMode -> "launcher"
@@ -492,6 +504,8 @@ class MainActivity : ComponentActivity() {
 
         // Whether to auto-open the drawer
         val openDrawerOnStart = navigateTo == "launcher_preview_drawer"
+        // Issue #144: a drawer request handed to the home copy (above) opens the drawer over home, once (not on recreation).
+        if (isLauncherMode && navigateTo == "app_drawer" && savedInstanceState == null) openDrawerTrigger.intValue++
 
         setContent {
             Launcher314Theme {
@@ -616,6 +630,10 @@ class MainActivity : ComponentActivity() {
         }
 
         when {
+            // Drawer request (now also arrives as a home intent, issue #144) — checked before "Home pressed" so it isn't read as one.
+            navigateTo == "app_drawer" && isLauncherMode -> {
+                openDrawerTrigger.intValue++
+            }
             // Home pressed while in launcher mode — signal Compose to return home and close the drawer.
             isHomeLaunch && isLauncherMode -> {
                 com.bearinmind.launcher314.ui.home.HomePressSignal.launcherWasForeground =
@@ -628,10 +646,6 @@ class MainActivity : ComponentActivity() {
                     addCategory(Intent.CATEGORY_HOME)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 })
-            }
-            // Accessibility service requesting drawer open (already in launcher mode)
-            navigateTo == "app_drawer" && isLauncherMode -> {
-                openDrawerTrigger.intValue++
             }
             // navigate_to needing a mode switch — start a fresh activity so the old mode's back stack can't overlap behind the transparent launcher.
             navigateTo != null -> {
