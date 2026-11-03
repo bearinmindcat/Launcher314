@@ -15,6 +15,9 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -183,10 +186,31 @@ internal fun FolderContentScreen(
     val maxOccupied = if (folderCellMap.isEmpty()) 0 else folderCellMap.keys.max() + 1
     val gridRows = ((maxOccupied + gridColumns - 1) / gridColumns + 1).coerceAtLeast(2)
     val cellWidth = (contentWidthDp - 32f) / gridColumns
-    val cellHeight = (folderContentHeight - 32f) / gridRows
+    val fitCellHeight = (folderContentHeight - 32f) / gridRows
     // Icons shrink to their cell (home's rule) instead of overflowing onto the row above, unless the user turned shrinking off.
-    val iconSize = (if (com.bearinmind.launcher314.data.getFolderShrinkIcons(context)) minOf(drawerIconSize.toFloat(), cellWidth * 0.82f, cellHeight * 0.58f) else drawerIconSize.toFloat())
+    val shrinkIcons = com.bearinmind.launcher314.data.getFolderShrinkIcons(context)
+    val fullIconSize = if (shrinkIcons) minOf(drawerIconSize.toFloat(), cellWidth * 0.82f) else drawerIconSize.toFloat()
+    // Issue #114: big folders squeezed icons to a third with labels overlapping — below 80% icon + its label, scroll instead.
+    val minIconSize = if (shrinkIcons) fullIconSize * 0.8f else fullIconSize
+    val labelLineDp = maxOf(16f, (if (labelFontSize.isSp) labelFontSize.value else 12f) * 1.25f) * density.fontScale
+    val minCellHeight = maxOf(minIconSize / 0.58f, minIconSize + 4f + labelLineDp + 12f)
+    val folderScrolls = fitCellHeight < minCellHeight
+    val cellHeight = if (folderScrolls) minCellHeight else fitCellHeight
+    val iconSize = (if (shrinkIcons) minOf(fullIconSize, cellHeight * 0.58f) else fullIconSize)
         .toInt().coerceAtLeast(1)
+    val folderScroll = remember(folder.id) { androidx.compose.foundation.ScrollState(0) }
+    // Leftover folder scroll must not reach the drawer: a slow drag past the folder's top closed the whole drawer.
+    val folderScrollBlocker = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource) = available
+            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity) = available
+        }
+    }
+    // A scrolled folder isn't "at the top": a swipe-down scrolls it back instead of closing the drawer.
+    DisposableEffect(folderScroll, folderScrolls) {
+        com.bearinmind.launcher314.ui.components.DrawerListState.folderCanScrollUp = { folderScrolls && folderScroll.value > 0 }
+        onDispose { com.bearinmind.launcher314.ui.components.DrawerListState.folderCanScrollUp = { false } }
+    }
     val cellBasis = minOf(cellWidth, cellHeight)
     val markerHalfSize = (cellBasis * 0.073f).dp
     val plusMarkerSize = (cellBasis * 0.146f).dp
@@ -222,6 +246,57 @@ internal fun FolderContentScreen(
     // Header drop zone — drag app here to remove from folder
     var headerBottomY by remember { mutableStateOf(0f) }
     var dragOverHeader by remember { mutableStateOf(false) }
+    var appsAreaHeightPx by remember { mutableStateOf(0f) }
+
+    // Hovered cell / fold target for a drag centered at [dragCenter] (root px). Also re-run while auto-scrolling (issue #114).
+    fun updateDragHover(dragCenter: Offset) {
+        val hovered = cellPositions.entries.firstOrNull { (_, pos) ->
+            dragCenter.x >= pos.x && dragCenter.x < pos.x + cellSize.width &&
+            dragCenter.y >= pos.y && dragCenter.y < pos.y + cellSize.height
+        }?.key
+        var createTarget: Int? = null
+        if (hovered != null && hovered != draggedCellIdx && folderCellMap[hovered] != null) {
+            val pos = cellPositions[hovered]
+            if (pos != null) {
+                // Icon-center anchor + L3-style hysteretic exit at 0.8x.
+                val center = Offset(
+                    pos.x + cellSize.width / 2f,
+                    pos.y + cellSize.height / 2f - with(density) { 10.dp.toPx() }
+                )
+                val dist = (dragCenter - center).getDistance()
+                val exitR = folderCreateRadiusPx * (0.8f / 0.55f)
+                val wasTarget = folderCreateTargetCell == hovered
+                if (dist < folderCreateRadiusPx || (wasTarget && dist < exitR)) createTarget = hovered
+            }
+        }
+        folderCreateTargetCell = createTarget
+        hoveredCell = if (createTarget != null) null else hovered
+        com.bearinmind.launcher314.ui.home.FolderReorderPreview.updateHover(hoveredCell)
+    }
+
+    // Issue #114: holding a dragged app near the top/bottom edge of a scrolling folder scrolls it (after a short pause).
+    LaunchedEffect(isDraggingInFolder, folderScrolls) {
+        if (!isDraggingInFolder || !folderScrolls) return@LaunchedEffect
+        val edgePx = with(density) { 48.dp.toPx() }
+        val maxStepPx = with(density) { 10.dp.toPx() }
+        var inZoneSince = 0L
+        while (true) {
+            val now = withFrameMillis { it }
+            val orig = dragOriginalCellPos
+            if (orig == null || escapedToDrawer || cellSize.height == 0 || appsAreaHeightPx <= 0f) { inZoneSince = 0L; continue }
+            val center = Offset(orig.x + cellSize.width / 2f, orig.y + cellSize.height / 2f) + dragOffset
+            val top = folderRootPos.y
+            val bottom = top + appsAreaHeightPx
+            val step = when {
+                center.y < top + edgePx -> -maxStepPx * ((top + edgePx - center.y) / edgePx).coerceIn(0.25f, 1f)
+                center.y > bottom - edgePx -> maxStepPx * ((center.y - (bottom - edgePx)) / edgePx).coerceIn(0.25f, 1f)
+                else -> 0f
+            }
+            if (step == 0f) { inZoneSince = 0L; continue }
+            if (inZoneSince == 0L) inZoneSince = now
+            if (now - inZoneSince >= 300L && folderScroll.scrollBy(step) != 0f) updateDragHover(center)
+        }
+    }
 
     // Request focus when entering edit mode
     LaunchedEffect(isEditing) {
@@ -325,7 +400,10 @@ internal fun FolderContentScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
-                .onGloballyPositioned { folderRootPos = it.positionInRoot() }
+                .onGloballyPositioned {
+                    folderRootPos = it.positionInRoot()
+                    appsAreaHeightPx = it.size.height.toFloat()
+                }
         ) {
             if (folderCellMap.isEmpty()) {
                 Box(
@@ -338,17 +416,18 @@ internal fun FolderContentScreen(
                     )
                 }
             } else {
-                // Fixed Column/Row grid with drag-and-drop (matches home screen folder)
+                // Fixed Column/Row grid with drag-and-drop (matches home screen folder); scrolls when too tall (issue #114).
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .then(if (folderScrolls) Modifier.nestedScroll(folderScrollBlocker).verticalScroll(folderScroll) else Modifier)
                         .padding(16.dp)
                         .graphicsLayer { clip = false }
                 ) {
                     for (row in 0 until gridRows) {
                         Row(
                             modifier = Modifier
-                                .weight(1f)
+                                .then(if (folderScrolls) Modifier.height(cellHeight.dp) else Modifier.weight(1f))
                                 .fillMaxWidth()
                                 .graphicsLayer { clip = false }
                         ) {
@@ -443,7 +522,8 @@ internal fun FolderContentScreen(
                                                         contextMenuCellIdx = cellIdx
 
                                                         var dragStarted = false
-                                                        var lastDragPosition = longPress.position
+                                                        // Root coords: this cell moves when the folder auto-scrolls (issue #114).
+                                                        var lastDragRoot = Offset.Zero
 
                                                         try {
                                                             while (true) {
@@ -463,7 +543,7 @@ internal fun FolderContentScreen(
                                                                         draggedCellIdx = cellIdx
                                                                         dragOffset = Offset.Zero
                                                                         dragOriginalCellPos = cellPositions[cellIdx]
-                                                                        lastDragPosition = change.position
+                                                                        lastDragRoot = (cellPositions[cellIdx] ?: Offset.Zero) + change.position
                                                                         com.bearinmind.launcher314.ui.home.FolderReorderPreview.let { p ->
                                                                             p.fromIdx = cellIdx
                                                                             p.draggedPkg = currentCellApp.packageName
@@ -476,16 +556,14 @@ internal fun FolderContentScreen(
                                                                     }
 
                                                                     if (dragStarted && draggedCellIdx == cellIdx) {
-                                                                        val delta = Offset(
-                                                                            change.position.x - lastDragPosition.x,
-                                                                            change.position.y - lastDragPosition.y
-                                                                        )
-                                                                        lastDragPosition = change.position
+                                                                        val dragRoot = (cellPositions[cellIdx] ?: Offset.Zero) + change.position
+                                                                        val delta = dragRoot - lastDragRoot
+                                                                        lastDragRoot = dragRoot
                                                                         change.consume()
 
                                                                         if (escapedToDrawer) {
                                                                             // Already escaped — forward movement to drawer
-                                                                            val cellPos = cellPositions[cellIdx]
+                                                                            val cellPos = dragOriginalCellPos
                                                                             if (cellPos != null) {
                                                                                 val absPos = Offset(
                                                                                     cellPos.x + cellSize.width / 2f + dragOffset.x + delta.x,
@@ -498,7 +576,7 @@ internal fun FolderContentScreen(
                                                                             dragOffset += delta
 
                                                                             // Compute hovered cell & header detection
-                                                                            val cellPos = cellPositions[cellIdx]
+                                                                            val cellPos = dragOriginalCellPos
                                                                             if (cellPos != null && cellSize.width > 0) {
                                                                                 val dragCenter = Offset(
                                                                                     cellPos.x + cellSize.width / 2f + dragOffset.x,
@@ -517,28 +595,7 @@ internal fun FolderContentScreen(
                                                                                     // here (would crash: layout node removed mid-gesture)
                                                                                     currentOnEscapeToDrawer(currentCellApp, dragCenter)
                                                                                 } else {
-                                                                                    val hovered = cellPositions.entries.firstOrNull { (_, pos) ->
-                                                                                        dragCenter.x >= pos.x && dragCenter.x < pos.x + cellSize.width &&
-                                                                                        dragCenter.y >= pos.y && dragCenter.y < pos.y + cellSize.height
-                                                                                    }?.key
-                                                                                    var createTarget: Int? = null
-                                                                                    if (hovered != null && hovered != draggedCellIdx && folderCellMap[hovered] != null) {
-                                                                                        val pos = cellPositions[hovered]
-                                                                                        if (pos != null) {
-                                                                                            // Icon-center anchor + L3-style hysteretic exit at 0.8x.
-                                                                                            val center = Offset(
-                                                                                                pos.x + cellSize.width / 2f,
-                                                                                                pos.y + cellSize.height / 2f - with(density) { 10.dp.toPx() }
-                                                                                            )
-                                                                                            val dist = (dragCenter - center).getDistance()
-                                                                                            val exitR = folderCreateRadiusPx * (0.8f / 0.55f)
-                                                                                            val wasTarget = folderCreateTargetCell == hovered
-                                                                                            if (dist < folderCreateRadiusPx || (wasTarget && dist < exitR)) createTarget = hovered
-                                                                                        }
-                                                                                    }
-                                                                                    folderCreateTargetCell = createTarget
-                                                                                    hoveredCell = if (createTarget != null) null else hovered
-                                                                                    com.bearinmind.launcher314.ui.home.FolderReorderPreview.updateHover(hoveredCell)
+                                                                                    updateDragHover(dragCenter)
                                                                                 }
                                                                             }
                                                                         }

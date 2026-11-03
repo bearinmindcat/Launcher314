@@ -700,7 +700,7 @@ fun LauncherWithDrawer(
                 if (source == NestedScrollSource.Drag) {
                     if (!gestureActive) {
                         gestureActive = true
-                        pendingAtTop = com.bearinmind.launcher314.ui.components.DrawerListState.isAtTopProvider()
+                        pendingAtTop = com.bearinmind.launcher314.ui.components.DrawerListState.isAtTop()
                         accumDy = 0f
                         closeArmed = false
                     }
@@ -1590,7 +1590,7 @@ fun LauncherWithDrawer(
                     .pointerInput(isDrawerSearchActive) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                            val atTop = com.bearinmind.launcher314.ui.components.DrawerListState.isAtTopProvider()
+                            val atTop = com.bearinmind.launcher314.ui.components.DrawerListState.isAtTop()
                             val tracker = VelocityTracker()
                             tracker.addPointerInputChange(down)
                             var accumX = 0f

@@ -50,6 +50,9 @@ object DrawerScrollbarState {
  */
 object DrawerListState {
     var isAtTopProvider: () -> Boolean = { true }
+    /** True while an open drawer folder is scrolled down, so a swipe-down scrolls it back instead of closing the drawer (issue #114). */
+    var folderCanScrollUp: () -> Boolean = { false }
+    fun isAtTop(): Boolean = isAtTopProvider() && !folderCanScrollUp()
 }
 
 /**
