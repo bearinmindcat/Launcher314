@@ -1023,12 +1023,9 @@ fun DraggableGridCell(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .graphicsLayer { alpha = if (isDragging) 0f else labelAlpha * hideLabelAlpha },
+                                // Shadow only behind light text; dark text (light-theme folder cards) looked blurry with it (issue #123).
                                 style = MaterialTheme.typography.bodySmall.copy(
-                                    shadow = androidx.compose.ui.graphics.Shadow(
-                                        color = Color.Black,
-                                        offset = androidx.compose.ui.geometry.Offset(1f, 1f),
-                                        blurRadius = 3f
-                                    )
+                                    shadow = com.bearinmind.launcher314.ui.theme.labelShadowFor(perAppLabelColor)
                                 )
                             )
                         }
@@ -1110,11 +1107,7 @@ fun DraggableGridCell(
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth(),
                                     style = MaterialTheme.typography.bodySmall.copy(
-                                        shadow = androidx.compose.ui.graphics.Shadow(
-                                            color = Color.Black,
-                                            offset = androidx.compose.ui.geometry.Offset(1f, 1f),
-                                            blurRadius = 3f
-                                        )
+                                        shadow = com.bearinmind.launcher314.ui.theme.labelShadowFor(if (labelColor != Color.Unspecified) labelColor else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current)
                                     )
                                 )
                             }
@@ -1970,11 +1963,7 @@ private fun FolderGridCell(
                         .fillMaxWidth()
                         .graphicsLayer { alpha = if (isDragging || folderHideLabel) 0f else folderLabelAlpha },
                     style = MaterialTheme.typography.bodySmall.copy(
-                        shadow = androidx.compose.ui.graphics.Shadow(
-                            color = Color.Black,
-                            offset = androidx.compose.ui.geometry.Offset(1f, 1f),
-                            blurRadius = 3f
-                        )
+                        shadow = com.bearinmind.launcher314.ui.theme.labelShadowFor(folderLabelColor)
                     )
                 )
             }

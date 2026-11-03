@@ -2985,12 +2985,9 @@ private fun HomePreviewAppCell(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
+                // Matches the home: shadow only behind light text (issue #123).
                 style = LocalTextStyle.current.copy(
-                    shadow = Shadow(
-                        color = Color.Black,
-                        offset = Offset(1f, 1f),
-                        blurRadius = 2f
-                    )
+                    shadow = com.bearinmind.launcher314.ui.theme.labelShadowFor(previewLabelColor)?.copy(blurRadius = 2f)
                 )
             )
         }
@@ -3150,11 +3147,7 @@ private fun HomePreviewFolderCell(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
             style = LocalTextStyle.current.copy(
-                shadow = Shadow(
-                    color = Color.Black,
-                    offset = Offset(1f, 1f),
-                    blurRadius = 2f
-                )
+                shadow = com.bearinmind.launcher314.ui.theme.labelShadowFor(previewLabelColor)?.copy(blurRadius = 2f)
             )
         )
     }

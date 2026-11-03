@@ -291,12 +291,9 @@ private fun OverlayLabel(
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer { alpha = textAlpha },
+        // Same rule as the real cell: shadow only behind light text (issue #123).
         style = MaterialTheme.typography.bodySmall.copy(
-            shadow = androidx.compose.ui.graphics.Shadow(
-                color = Color.Black,
-                offset = Offset(1f, 1f),
-                blurRadius = 3f
-            )
+            shadow = com.bearinmind.launcher314.ui.theme.labelShadowFor(com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current)
         )
     )
 }
@@ -658,11 +655,7 @@ private fun OverlayAppContent(
                     .fillMaxWidth()
                     .graphicsLayer { alpha = if (labelHidden) 0f else textAlpha },
                 style = MaterialTheme.typography.bodySmall.copy(
-                    shadow = androidx.compose.ui.graphics.Shadow(
-                        color = Color.Black,
-                        offset = Offset(1f, 1f),
-                        blurRadius = 3f
-                    )
+                    shadow = com.bearinmind.launcher314.ui.theme.labelShadowFor(com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current)
                 )
             )
         }
@@ -762,11 +755,11 @@ private fun OverlayFolderContent(
         val folderHideLabel = folderCust?.hideLabel ?: false
         if (!folderHideLabel && showLabel && !com.bearinmind.launcher314.ui.theme.LocalHideIconText.current) {
             Spacer(modifier = Modifier.height(gridIconTextSpacer))
-            val folderLabelColor = if (isInvalid) Color(0xFFFF6B6B)
-                else if (folderCust?.labelColor != null) {
+            val folderLabelBase = if (folderCust?.labelColor != null) {
                     val li = (folderCust.labelColorIntensity ?: 100) / 100f
                     Color(folderCust.labelColor).copy(alpha = li.coerceIn(0f, 1f))
                 } else com.bearinmind.launcher314.ui.theme.LocalLabelTextColor.current // match real cell (was Color.White → caused a color change on drop)
+            val folderLabelColor = if (isInvalid) Color(0xFFFF6B6B) else folderLabelBase
             val folderFontSize = folderCust?.iconTextSizePercent?.let { gridAppNameFont * it / 100f } ?: gridAppNameFont
             val folderFontFamily = folderCust?.labelFontId?.let { id ->
                 FontManager.bundledFonts.find { it.id == id }?.fontFamily
@@ -784,11 +777,7 @@ private fun OverlayFolderContent(
                     .fillMaxWidth()
                     .graphicsLayer { alpha = textAlpha },
                 style = MaterialTheme.typography.bodySmall.copy(
-                    shadow = androidx.compose.ui.graphics.Shadow(
-                        color = Color.Black,
-                        offset = Offset(1f, 1f),
-                        blurRadius = 3f
-                    )
+                    shadow = com.bearinmind.launcher314.ui.theme.labelShadowFor(folderLabelBase)
                 )
             )
         }

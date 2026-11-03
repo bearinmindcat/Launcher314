@@ -6,7 +6,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.luminance
 
-/** Drawer label shadow: only behind light text; on dark (light-theme) text it smeared the label bold (issue #123). */
+/** Label shadow (home + drawer): only behind light text; on dark (light-theme) text it smeared the label bold (issue #123). */
 fun labelShadowFor(color: Color): Shadow? =
     if (color.luminance() > 0.5f) Shadow(color = Color.Black, offset = Offset(1f, 1f), blurRadius = 3f) else null
 
